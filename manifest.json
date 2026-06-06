@@ -1,5 +1,5 @@
 {
-  "id": "runtime-learner",
+  "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
   "version": "0.3.0",
   "description": "Runtime self-learning engine: observe local interaction patterns, learn repeated workflows and errors, then inject conservative skill hints.",

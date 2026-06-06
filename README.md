@@ -93,8 +93,8 @@ Phase 3 │ 自主进化（Agent Studio 目标）
 ## 安装
 
 ```powershell
-git clone https://github.com/326sun/runtime-learner.git
-cd runtime-learner
+git clone https://github.com/326sun/hanako-runtime-learner.git
+cd hanako-runtime-learner
 npm run install-plugin
 ```
 

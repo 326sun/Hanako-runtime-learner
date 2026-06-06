@@ -10,7 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const PLUGIN_NAME = "runtime-learner";
+const PLUGIN_NAME = "hanako-runtime-learner";
 const PLUGIN_SRC = __dirname;
 const PLUGIN_DEST = path.join(os.homedir(), ".hanako", "plugins", PLUGIN_NAME);
 
