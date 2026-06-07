@@ -61,7 +61,7 @@ npm run install-plugin
 | `self_learning_activity` | 最近学习活动时间线 |
 | `self_learning_stats` | 运行时统计：轮次、模式、可注入数 |
 | `self_learning_report` | N 日学习报告 |
-| `self_learning_control` | 审批、配置、回滚 |
+| `self_learning_control` | 查看、配置、回滚 |
 | `self_learning_open_dir` | 打开数据目录 |
 | `self_learning_chart` | 每日 Token 消耗柱状图（SVG，由宿主 skill 层提供） |
 
