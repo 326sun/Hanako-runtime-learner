@@ -1,12 +1,147 @@
 {
+  "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "0.3.0",
-  "description": "Runtime self-learning engine: observe local interaction patterns, learn repeated workflows and errors, then inject conservative skill hints.",
+  "version": "0.6.0",
+  "description": "运行时自我学习引擎：观察本地交互习惯，归纳重复工作流和错误，并注入保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
   "minAppVersion": "0.293.0",
+  "permissions": ["usage.read"],
+  "activationEvents": [
+    "onStartup",
+    "onToolCall:self_learning_stats",
+    "onToolCall:self_learning_report",
+    "onToolCall:self_learning_control",
+    "onToolCall:self_learning_activity",
+    "onToolCall:self_learning_open_dir",
+    "onToolCall:self_learning_search"
+  ],
   "capabilities": {
     "chat": true
+  },
+  "contributes": {
+    "configuration": {
+      "properties": {
+        "autoInjectHighConfidence": {
+          "type": "boolean",
+          "title": "自动注入高置信经验提示",
+          "default": true
+        },
+        "autoApproveHighConfidence": {
+          "type": "boolean",
+          "title": "自动批准高置信模式（无需手动审批）",
+          "default": true
+        },
+        "minInjectScore": {
+          "type": "number",
+          "title": "自动注入最低评分",
+          "default": 8
+        },
+        "minInjectCount": {
+          "type": "number",
+          "title": "自动注入最少重复次数",
+          "default": 2
+        },
+        "decayHalfLifeDays": {
+          "type": "number",
+          "title": "经验评分半衰期（天）",
+          "default": 30
+        },
+        "includePendingPreferences": {
+          "type": "boolean",
+          "title": "允许未审核的偏好提示参与注入",
+          "default": true
+        },
+        "learnFromUsage": {
+          "type": "boolean",
+          "title": "从模型用量元数据中学习",
+          "default": true
+        },
+        "largeUsageTokenThreshold": {
+          "type": "number",
+          "title": "大上下文用量阈值（token）",
+          "default": 120000
+        },
+        "officialUtilityModelDisplay": {
+          "type": "string",
+          "title": "当前默认小模型（跟随 Hanako 设置）",
+          "default": "跟随 Hanako 用户设置的小模型"
+        },
+        "modelAdvisorEnabled": {
+          "type": "boolean",
+          "title": "启用小模型后台整理",
+          "default": true
+        },
+        "modelAdvisorSource": {
+          "type": "string",
+          "title": "整理模型来源",
+          "default": "official"
+        },
+        "modelAdvisorBaseUrl": {
+          "type": "string",
+          "title": "备用整理模型 Base URL",
+          "default": ""
+        },
+        "modelAdvisorApiKey": {
+          "type": "string",
+          "title": "备用整理模型 API Key",
+          "default": ""
+        },
+        "modelAdvisorModel": {
+          "type": "string",
+          "title": "备用整理模型名称",
+          "default": ""
+        },
+        "modelAdvisorMaxTokens": {
+          "type": "number",
+          "title": "整理模型最大输出 token",
+          "default": 500
+        },
+        "modelAdvisorMinIntervalMinutes": {
+          "type": "number",
+          "title": "后台整理最小间隔（分钟）",
+          "default": 180
+        },
+        "workStatusEnabled": {
+          "type": "boolean",
+          "title": "显示自我学习工作状态",
+          "default": true
+        },
+        "workStatusText": {
+          "type": "string",
+          "title": "自我学习状态文案",
+          "default": "正在自我整理学习"
+        },
+        "tokenUsageSummary": {
+          "type": "string",
+          "title": "📊 学习统计 · 运行时",
+          "default": "暂无数据"
+        },
+        "learningStatsDetail": {
+          "type": "string",
+          "title": "📊 学习统计 · 模式与活动",
+          "default": "暂无数据"
+        },
+        "recentLearnings": {
+          "type": "string",
+          "title": "🧠 最近学到",
+          "default": "暂无"
+        },
+        "modelAdvisorUsage": {
+          "type": "string",
+          "title": "📊 学习统计 · 后台整理消耗",
+          "default": "暂无数据"
+        },
+        "dataDirPath": {
+          "type": "string",
+          "title": "📁 数据目录 · 对话中说「打开学习目录」可浏览",
+          "default": "暂无数据"
+        }
+      }
+    }
+  },
+  "depends": {
+    "capabilities": ["usage:list", "session:list", "agent:list"]
   }
 }

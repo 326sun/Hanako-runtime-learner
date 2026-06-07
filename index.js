@@ -5,24 +5,45 @@
  * 1. Observe: capture real Hanako runtime events per session.
  * 2. Learn: detect repeated workflows, errors, and explicit user corrections.
  * 3. Inject: update this plugin's self-learning skill with conservative hints.
+ *
+ * v0.6.0: Added activity log for user-visible learning timeline.
  */
 
 import fs from "fs";
 import path from "path";
-import os from "os";
-import { DEFAULT_CONFIG, ageDays, decayedScore, patternStatus, isInjectable } from "./lib/common.js";
+import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, decayedScore, patternStatus, isInjectable, describeOfficialUtilityModel, countJsonl, memoryStrength, buildSkillMdFromPatterns } from "./lib/common.js";
+import { definePlugin } from "./lib/hana-runtime-compat.js";
+import { readModelAdvice, runModelAdvisor } from "./lib/model-advisor.js";
 
-const DATA_DIR = path.join(os.homedir(), ".hanako", "self-learning");
+const DATA_DIR = learnerDir();
 const EXPERIENCE_LOG = path.join(DATA_DIR, "experience_log.jsonl");
 const ERROR_LOG = path.join(DATA_DIR, "error_log.jsonl");
+const USAGE_SUMMARY_FILE = path.join(DATA_DIR, "usage_summary.json");
+const CAPABILITIES_FILE = path.join(DATA_DIR, "host_capabilities.json");
 const PATTERNS_FILE = path.join(DATA_DIR, "patterns.json");
 const TURNS_FILE = path.join(DATA_DIR, "turns.jsonl");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+const ACTIVITY_LOG = path.join(DATA_DIR, "activity_log.jsonl");
 const HISTORY_DIR = path.join(DATA_DIR, "skill_history");
 const MAX_SESSIONS = 64;
 const MAX_TEXT = 500;
 const SKILL_REFRESH_MIN_MS = 10_000;
 const MAX_SKILL_HISTORY = 20;
+const MAX_ACTIVITY_ENTRIES = 500;
+const LOG_RETENTION_DAYS = 30;
+const MAX_PATTERN_COUNT = 50;
+
+const runtimeState = {
+  detector: null,
+  sessions: null,
+  unsub: null,
+  persistPatterns: null,
+  refreshSkill: null,
+  statusNotifiedAt: new Map(),
+  advisorSkipReasons: new Map(),
+  sessionStart: null,
+  sessionActivityCount: 0,
+};
 
 const TOOL_SHORT = {
   read: "read",
@@ -50,6 +71,21 @@ const TOOL_SHORT = {
   terminal: "terminal",
   current_status: "current_status",
 };
+
+// Tool categories for semantic pattern detection
+const TOOL_CATEGORY = {
+  read: "文件探索", find: "文件探索", grep: "文件探索", ls: "文件探索",
+  write: "代码编写", edit: "代码编写", bash: "代码编写", terminal: "终端操作",
+  web_search: "网络研究", web_fetch: "网络研究", browser: "网络研究",
+  todo_write: "任务编排", subagent: "任务编排", subagent_reply: "任务编排", subagent_close: "任务编排", workflow: "任务编排",
+  pin_memory: "记忆操作", search_memory: "记忆操作",
+  stage_files: "文件交付", install_skill: "技能管理",
+  computer: "桌面控制", notify: "通知", current_status: "状态查询",
+};
+
+function toolCategory(name) {
+  return TOOL_CATEGORY[name] || "其他";
+}
 
 const TASK_SIGS = {
   file_management: { tools: ["read", "write", "edit", "find", "grep", "ls"], min: 1 },
@@ -125,37 +161,171 @@ function classifyError(msg) {
   return "unknown";
 }
 
-function resultStatus(turn, stopReason) {
-  if (turn.errors.length > 0) return "partial";
-  if (stopReason && stopReason !== "stop") return "partial";
-  return "success";
+function usageModelKey(entry = {}) {
+  const provider = entry.model?.provider || "unknown";
+  const modelId = entry.model?.modelId || "unknown";
+  return `${provider}/${modelId}`;
 }
 
-function extractToolError(event) {
-  const raw = event?.error || event?.result?.error || event?.result?.message || event?.message;
-  const msg = typeof raw === "string" ? raw : raw?.message || "";
-  const tool = normalizeToolName(event?.toolName || event?.name) || "tool";
-  return msg ? `${tool}: ${safeText(msg)}` : `${tool}: failed`;
+function usageTotalTokens(entry = {}) {
+  const total = entry.usage?.totalTokens;
+  if (Number.isFinite(total)) return total;
+  const input = entry.usage?.input?.totalTokens;
+  const output = entry.usage?.output?.totalTokens;
+  return (Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0);
 }
 
-function messageText(message) {
-  if (!message) return "";
-  if (typeof message.content === "string") return safeText(message.content, 1000);
-  if (Array.isArray(message.content)) {
-    return safeText(message.content.map((part) => part?.text || part?.content || "").join(" "), 1000);
+function summarizeUsageEntry(entry = {}, sessionPath = null) {
+  return {
+    date: entry.endedAt || entry.startedAt || new Date().toISOString(),
+    requestId: entry.requestId || null,
+    status: entry.status || "unknown",
+    model: usageModelKey(entry),
+    subsystem: entry.source?.subsystem || "unknown",
+    operation: entry.source?.operation || "unknown",
+    trigger: entry.source?.trigger || "unknown",
+    sessionPath: sessionPath || entry.attribution?.sessionPath || entry.source?.actor?.sessionPath || null,
+    totalTokens: usageTotalTokens(entry),
+    inputTokens: entry.usage?.input?.totalTokens ?? null,
+    outputTokens: entry.usage?.output?.totalTokens ?? null,
+    reasoningTokens: entry.usage?.output?.reasoningTokens ?? null,
+    cacheHitRatio: entry.usage?.cache?.hitRatio ?? null,
+    costTotal: entry.usage?.costTotal ?? null,
+    error: entry.error?.message ? safeText(entry.error.message, 200) : null,
+  };
+}
+
+function updateUsageSummary(summaryEntry) {
+  const summary = readJson(USAGE_SUMMARY_FILE, {
+    totalRequests: 0,
+    status: {},
+    byModel: {},
+    bySubsystem: {},
+    totalTokens: 0,
+    costTotal: 0,
+    lastSeenAt: null,
+    recent: [],
+  });
+
+  summary.totalRequests += 1;
+  summary.status[summaryEntry.status] = (summary.status[summaryEntry.status] || 0) + 1;
+  summary.byModel[summaryEntry.model] = summary.byModel[summaryEntry.model] || { requests: 0, totalTokens: 0, costTotal: 0 };
+  summary.byModel[summaryEntry.model].requests += 1;
+  summary.byModel[summaryEntry.model].totalTokens += summaryEntry.totalTokens || 0;
+  summary.byModel[summaryEntry.model].costTotal += summaryEntry.costTotal || 0;
+  summary.bySubsystem[summaryEntry.subsystem] = (summary.bySubsystem[summaryEntry.subsystem] || 0) + 1;
+  summary.totalTokens += summaryEntry.totalTokens || 0;
+  summary.costTotal += summaryEntry.costTotal || 0;
+  summary.lastSeenAt = summaryEntry.date;
+  summary.recent = [summaryEntry, ...(summary.recent || [])].slice(0, 50);
+  writeJson(USAGE_SUMMARY_FILE, summary);
+  return summary;
+}
+
+function snapshotHostCapabilities(ctx) {
+  const capabilities = typeof ctx.bus?.listCapabilities === "function"
+    ? ctx.bus.listCapabilities()
+    : [];
+  const rows = capabilities.map((capability) => ({
+    type: capability.type,
+    available: capability.available !== false,
+  }));
+  const counts = {
+    updatedAt: new Date().toISOString(),
+    count: rows.length,
+    availableCount: rows.filter((item) => item.available).length,
+  };
+  writeJson(CAPABILITIES_FILE, counts);
+  return counts;
+}
+
+/* ── Activity Log for user-visible learning timeline ── */
+
+function logActivity(event) {
+  const entry = {
+    date: new Date().toISOString(),
+    sessionPath: event.sessionPath || null,
+    type: event.type || "unknown",
+    summary: event.summary || "",
+    detail: event.detail || null,
+  };
+  try {
+    appendJsonl(ACTIVITY_LOG, entry);
+    pruneActivityLog();
+  } catch {}
+}
+
+function pruneActivityLog() {
+  try {
+    if (!fs.existsSync(ACTIVITY_LOG)) return;
+    const lines = fs.readFileSync(ACTIVITY_LOG, "utf-8").trim().split("\n").filter(Boolean);
+    if (lines.length > MAX_ACTIVITY_ENTRIES) {
+      fs.writeFileSync(ACTIVITY_LOG, lines.slice(-MAX_ACTIVITY_ENTRIES).join("\n") + "\n", "utf-8");
+    }
+  } catch {}
+}
+
+function pruneDataFiles() {
+  const cutoff = Date.now() - LOG_RETENTION_DAYS * 86_400_000;
+
+  // Prune JSONL files: drop lines older than retention window
+  const logFiles = [EXPERIENCE_LOG, TURNS_FILE, ERROR_LOG, ACTIVITY_LOG];
+  for (const file of logFiles) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const lines = fs.readFileSync(file, "utf-8").trim().split("\n").filter(Boolean);
+      const kept = [];
+      for (const line of lines) {
+        try {
+          const row = JSON.parse(line);
+          if (new Date(row.date).getTime() >= cutoff) kept.push(line);
+        } catch { kept.push(line); } // Keep unparseable lines
+      }
+      if (kept.length < lines.length) {
+        fs.writeFileSync(file, kept.join("\n") + "\n", "utf-8");
+      }
+    } catch {}
   }
-  return "";
+
+  // Clean patterns.json: forgetting-curve based retention
+  try {
+    if (!fs.existsSync(PATTERNS_FILE)) return;
+    let all = JSON.parse(fs.readFileSync(PATTERNS_FILE, "utf-8"));
+    if (!Array.isArray(all)) return;
+    const config = readJson(CONFIG_FILE, DEFAULT_CONFIG);
+    const strengthThreshold = 1.5; // Below this and not approved → forget
+    all = all.filter(p => {
+      if (p.status === "approved") return true; // Permanent
+      if (p.type === "capability" || p.type === "host_capability") return false;
+      if (p.id?.startsWith("usage_large")) return false;
+      const ms = memoryStrength(p, config);
+      return ms >= strengthThreshold;
+    });
+    // Cap total count: keep top N by memory strength
+    if (all.length > MAX_PATTERN_COUNT) {
+      all.sort((a, b) => (memoryStrength(b, config) || 0) - (memoryStrength(a, config) || 0));
+      all = all.slice(0, MAX_PATTERN_COUNT);
+    }
+    fs.writeFileSync(PATTERNS_FILE, JSON.stringify(all, null, 2), "utf-8");
+  } catch {}
 }
 
-function extractAssistantText(event) {
-  return messageText(event?.message);
+function readRecentActivity(days = 1) {
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const rows = [];
+  try {
+    if (!fs.existsSync(ACTIVITY_LOG)) return rows;
+    for (const line of fs.readFileSync(ACTIVITY_LOG, "utf-8").trim().split("\n").filter(Boolean)) {
+      try {
+        const row = JSON.parse(line);
+        if (new Date(row.date).getTime() >= cutoff) rows.push(row);
+      } catch {}
+    }
+  } catch {}
+  return rows.reverse();
 }
 
-function extractCorrectionFromUserText(text) {
-  const clean = safeText(text, 300);
-  if (!clean) return "";
-  return CORRECTION_PATTERNS.some((pattern) => pattern.test(clean)) ? clean : "";
-}
+/* ── SessionTurn, PatternDetector, skill builder ── */
 
 class SessionTurn {
   constructor(sessionPath) {
@@ -240,31 +410,44 @@ class PatternDetector {
 
   ingest(exp) {
     this.turnCount += 1;
+    const newPatterns = [];
+
+    // Workflow detection: category-level, skip single-category chains
     if (exp.toolsUsed.length >= 2) {
-      const key = exp.toolsUsed.join("->");
-      const count = (this.seqCache.get(key) || 0) + 1;
-      this.seqCache.set(key, count);
-      if (count >= 3) {
-        const pid = `workflow:${key}`;
-        const desc = `Repeated workflow: ${exp.toolsUsed.join(" -> ")} (${exp.taskType})`;
-        const existing = this.patterns.get(pid);
-        if (existing) {
-          existing.count = count;
-          existing.lastSeen = exp.date;
-          existing.score = Math.max(existing.score || 0, count * 2);
-        } else {
-          this.patterns.set(pid, {
-            id: pid,
-            type: "workflow",
-            status: "pending",
-            desc,
-            count,
-            firstSeen: exp.date,
-            lastSeen: exp.date,
-            score: count * 2,
+      const cats = exp.toolsUsed.map(t => toolCategory(normalizeToolName(t)));
+      const uniqueCats = [...new Set(cats)];
+      if (uniqueCats.length >= 2) {
+        const catKey = uniqueCats.join("→");
+        const toolKey = exp.toolsUsed.join("->");
+        const count = (this.seqCache.get(catKey) || 0) + 1;
+        this.seqCache.set(catKey, count);
+        if (count >= 3) {
+          const pid = `workflow:${catKey}`;
+          const desc = `跨类别工作流: ${catKey}`;
+          const existing = this.patterns.get(pid);
+          const hint = `This ${uniqueCats.join(" → ")} sequence repeats across sessions. Consider whether these steps can be automated or consolidated.`;
+          const ctx = {
+            taskType: exp.taskType || "general",
             tools: [...exp.toolsUsed],
-            fix: "Before repeating this workflow, check whether the same sequence already failed or can be shortened.",
-          });
+            categories: uniqueCats,
+          };
+          if (existing) {
+            const wasBelow = existing.count < 3;
+            existing.count = count;
+            existing.lastSeen = exp.date;
+            existing.score = Math.max(existing.score || 0, count * 3);
+            existing.tools = [...new Set([...(existing.tools || []), ...exp.toolsUsed])];
+            existing.context = { ...existing.context, ...ctx, taskType: [...new Set([...(existing.context?.taskType ? [existing.context.taskType] : []), ctx.taskType])].join(",") };
+            if (wasBelow) newPatterns.push({ id: pid, type: "workflow", desc, count });
+          } else {
+            this.patterns.set(pid, {
+              id: pid, type: "workflow", status: "pending",
+              desc, count, context: ctx,
+              firstSeen: exp.date, lastSeen: exp.date,
+              score: count * 3, tools: [...exp.toolsUsed],
+              fix: hint,
+            });
+          }
         }
       }
     }
@@ -272,10 +455,15 @@ class PatternDetector {
     if (exp.correction) {
       const ck = `pref:${exp.correction.slice(0, 80)}`;
       const existing = this.patterns.get(ck);
+      if (!existing) {
+        newPatterns.push({ id: ck, type: "preference", desc: `User correction: ${exp.correction}` });
+      }
       if (existing) {
         existing.count += 1;
         existing.lastSeen = exp.date;
         existing.score += 3;
+        existing.tools = [...new Set([...(existing.tools || []), ...(exp.toolsUsed || [])])];
+        if (!existing.context) existing.context = { taskType: exp.taskType || "general" };
       } else {
         this.patterns.set(ck, {
           id: ck,
@@ -286,23 +474,27 @@ class PatternDetector {
           firstSeen: exp.date,
           lastSeen: exp.date,
           score: 6,
-          tools: [],
+          tools: exp.toolsUsed || [],
+          context: { taskType: exp.taskType || "general" },
           fix: exp.correction,
         });
       }
     }
+
+    return newPatterns;
   }
 
   ingestError(err) {
     const ek = `error:${err.errorType}`;
     const existing = this.patterns.get(ek);
     const inc = Math.max(1, err.severity || 1);
+    const isNew = !existing;
     if (existing) {
       existing.count += 1;
       existing.lastSeen = err.date;
       existing.score += inc;
       if (err.candidateSkill && !existing.fix) existing.fix = err.candidateSkill;
-      return existing;
+      return { pattern: existing, isNew: false };
     }
     const pattern = {
       id: ek,
@@ -317,11 +509,25 @@ class PatternDetector {
       fix: err.candidateSkill || "Check this failure mode before retrying the same action.",
     };
     this.patterns.set(ek, pattern);
-    return pattern;
+    return { pattern, isNew: true };
   }
+
+  ingestUsage() {}
+  ingestCapabilitySnapshot() {}
 
   all() {
     return [...this.patterns.values()]
+      .filter(pattern => {
+        // Skip old single-tool workflow chains (pre-category migration)
+        if (pattern.type === "workflow" && Array.isArray(pattern.tools) && pattern.tools.length >= 2) {
+          if (new Set(pattern.tools).size === 1) return false;
+        }
+        // Skip generic noise
+        if (pattern.id === "error:tool_error") return false;
+        if (pattern.type === "capability" || pattern.type === "host_capability") return false;
+        if (pattern.id?.startsWith("usage_large")) return false;
+        return true;
+      })
       .map((pattern) => ({
         ...pattern,
         status: patternStatus(pattern),
@@ -341,57 +547,24 @@ class PatternDetector {
 }
 
 function buildSkillMd(detector, config) {
-  const prefs = detector.prefs();
-  const hints = detector.highConfidence();
-  const lines = [
-    "# Runtime Self-Learning",
-    "",
-    "This plugin observes Hanako runtime behavior, learns repeated local patterns, and injects only high-confidence reminders.",
-    "Use these reminders conservatively. They are local hints, not hard rules.",
-    "",
-  ];
-
-  if (prefs.length) {
-    lines.push("## User Preferences");
-    for (const pref of prefs) lines.push(`- ${pref.fix}`);
-    lines.push("");
-  }
-
-  if (hints.length) {
-    lines.push("## Learned Runtime Hints");
-    for (const hint of hints) {
-      lines.push(`- [${hint.type}, ${hint.status}, count=${hint.count}, score=${hint.decayedScore}] ${hint.desc}${hint.fix ? ` -> ${hint.fix}` : ""}`);
-    }
-    lines.push("");
-  }
-
-  lines.push(
-    "## Available Tools",
-    "- `self_learning_stats`: inspect local learning statistics.",
-    "- `self_learning_report`: generate a local learning report.",
-    "- `self_learning_control`: review, approve, reject, configure, or roll back learned hints.",
-    "",
-    "## Safety",
-    "- Do not expose private file paths, prompts, or logs unless the user asks.",
-    "- Treat learned hints as suggestions and prefer current user instructions.",
-    "",
-    `Config: autoInjectHighConfidence=${config.autoInjectHighConfidence}, minInjectScore=${config.minInjectScore}, minInjectCount=${config.minInjectCount}`,
-    `Data dir: ${DATA_DIR}`,
-    `Updated: ${new Date().toISOString()}`,
-    "",
-  );
-  return lines.join("\n");
+  return buildSkillMdFromPatterns(detector.all(), config, {
+    turnCount: detector.turnCount,
+    dataDir: DATA_DIR,
+  });
 }
 
-export default class RuntimeLearnerPlugin {
-  async onload() {
-    const ctx = this.ctx;
+/* ── Plugin lifecycle ── */
+
+export default definePlugin({
+  async onload(ctx, { register }) {
     ensureDir();
 
     let config = loadConfig();
     const detector = new PatternDetector(config);
     const sessions = new Map();
     let lastSkillRefresh = 0;
+    runtimeState.sessionStart = new Date().toISOString();
+    runtimeState.sessionActivityCount = 0;
 
     const persistPatterns = () => {
       fs.writeFileSync(PATTERNS_FILE, JSON.stringify(detector.all(), null, 2), "utf-8");
@@ -420,6 +593,80 @@ export default class RuntimeLearnerPlugin {
       lastSkillRefresh = now;
     };
 
+    const notifyWorkStatus = async (sessionPath, detail = "") => {
+      if (!config.workStatusEnabled || !sessionPath) return;
+      const now = Date.now();
+      const last = runtimeState.statusNotifiedAt.get(sessionPath) || 0;
+      if (now - last < 30 * 60_000) return;
+      if (!ctx.bus?.request) return;
+      const capability = ctx.bus.getCapability?.("session:send");
+      if (capability && capability.available === false) return;
+      if (!capability && !ctx.bus.hasHandler?.("session:send")) return;
+      const text = `${config.workStatusText || "正在自我整理学习"}${detail ? `：${detail}` : ""}`;
+      try {
+        await ctx.bus.request("session:send", { sessionPath, text });
+        runtimeState.statusNotifiedAt.set(sessionPath, now);
+      } catch (err) {
+        ctx.log.debug?.(`runtime-learner: work status skipped: ${err.message}`);
+      }
+    };
+
+    const _cachedAdvisorSkip = (reason) => {
+      const key = reason || "unknown";
+      if (runtimeState.advisorSkipReasons.get(key) === reason) return true;
+      runtimeState.advisorSkipReasons.set(key, reason);
+      return false;
+    };
+
+    const maybeRunModelAdvisor = async (reason, sessionPath = null) => {
+      if (!config.modelAdvisorEnabled) return;
+      try {
+        const result = await runModelAdvisor({
+          config,
+          patterns: detector.all(),
+          usage: readJson(USAGE_SUMMARY_FILE, null),
+          capabilities: readJson(CAPABILITIES_FILE, null),
+          reason,
+        });
+        if (result.ok) {
+          refreshSkill(true);
+          const count = result.advice?.suggestions?.length || 0;
+          if (count > 0) {
+            logActivity({
+              type: "model_advisor",
+              summary: `Model advisor generated ${count} suggestions (source: ${result.advice?.source || "unknown"})`,
+              detail: result.advice?.suggestions?.slice(0, 3).map((s) => s.title).join(", ") || null,
+              sessionPath,
+            });
+            runtimeState.sessionActivityCount += 1;
+            ctx.log.info(`runtime-learner: model advisor generated ${count} suggestions`);
+            // Merge advisor insights back into patterns — replaces raw user text with distilled knowledge
+            let merged = 0;
+            for (const s of result.advice.suggestions) {
+              const stored = detector.patterns.get(s.patternId);
+              if (stored && s.advice && s.advice !== stored.fix) {
+                stored.fix = s.advice;
+                stored.advisorUpdatedAt = new Date().toISOString();
+                merged += 1;
+              }
+            }
+            if (merged > 0) {
+              ctx.log.info(`runtime-learner: merged ${merged} advisor insights into patterns`);
+              refreshSkill(true);
+            }
+          }
+          await notifyWorkStatus(sessionPath, count > 0 ? `已生成 ${count} 条候选建议` : "已完成");
+        } else if (!_cachedAdvisorSkip(result.reason)) {
+          ctx.log.info(`runtime-learner: model advisor skipped: ${result.reason}`);
+        }
+      } catch (err) {
+        const key = err.message || "unknown";
+        if (!_cachedAdvisorSkip(key)) {
+          ctx.log.warn(`runtime-learner: model advisor skipped: ${err.message}`);
+        }
+      }
+    };
+
     try {
       if (fs.existsSync(PATTERNS_FILE)) {
         const saved = JSON.parse(fs.readFileSync(PATTERNS_FILE, "utf-8"));
@@ -429,6 +676,164 @@ export default class RuntimeLearnerPlugin {
     } catch (err) {
       ctx.log.warn(`runtime-learner: load failed: ${err.message}`);
     }
+
+    try {
+      const capabilities = snapshotHostCapabilities(ctx);
+      detector.ingestCapabilitySnapshot?.(capabilities);
+    } catch (err) {
+      ctx.log.warn(`runtime-learner: capability snapshot skipped: ${err.message}`);
+    }
+
+    // Update token display in settings (called at startup and after each usage record)
+    const updateTokenDisplay = () => {
+      try {
+        const patterns = detector.all();
+        const injectable = patterns.filter((p) => p.injectable).length;
+        const pending = patterns.filter((p) => p.status === "pending").length;
+        const approved = patterns.filter((p) => p.status === "approved").length;
+
+        // Runtime stats
+        const expCount = countJsonl(EXPERIENCE_LOG);
+        const errCount = countJsonl(ERROR_LOG);
+        const actCount = countJsonl(ACTIVITY_LOG);
+        const runtime = `跟踪 ${expCount} 轮对话 · ${patterns.length} 个模式 (${injectable} 可注入) · ${errCount} 个错误 · ${actCount} 条活动记录`;
+
+        // Pattern details
+        const byType = {};
+        for (const p of patterns) byType[p.type] = (byType[p.type] || 0) + 1;
+        const typeLines = Object.entries(byType).map(([t, c]) => `${t}: ${c}`).join('  |  ');
+        const detail = `模式分布: ${typeLines || '无'}  |  待审核: ${pending}  |  已批准: ${approved}  |  本轮新增: ${runtimeState.sessionActivityCount}`;
+
+        // Recently learned: show distilled knowledge (fix), not raw corrections
+        let recentLearn = '暂无';
+        try {
+          const meaningful = patterns
+            .filter(p => p.status !== 'rejected')
+            .sort((a, b) => (b.decayedScore || 0) - (a.decayedScore || 0))
+            .slice(0, 5);
+          if (meaningful.length) {
+            recentLearn = meaningful.map(p => {
+              const icon = p.type === 'preference' ? '💬' : p.type === 'error' ? '⚠️' : '🔄';
+              // Prefer advisor-distilled fix over raw desc; skip bare user quotes
+              const text = (p.fix && !p.fix.startsWith('User correction:')) ? p.fix : p.desc;
+              return `${icon} ${text.slice(0, 80)}`;
+            }).join('\n');
+          }
+        } catch {}
+
+        // Model advisor status
+        const advice = readModelAdvice();
+        const adviceState = readJson(path.join(DATA_DIR, "model_advice_state.json"), {});
+        let advisorText = '未运行过';
+        if (config.modelAdvisorSource === 'off') {
+          advisorText = '已关闭';
+        } else if (advice?.updatedAt) {
+          const lastRun = new Date(advice.updatedAt).toLocaleString('zh-CN');
+          const sCount = advice.suggestions?.length || 0;
+          advisorText = `上次: ${lastRun}  ·  模型: ${advice.model || config.modelAdvisorModel || 'deepseek-v4-flash'}  ·  建议: ${sCount} 条`;
+        } else if (adviceState?.lastRunAt) {
+          const lastRun = new Date(adviceState.lastRunAt).toLocaleString('zh-CN');
+          advisorText = `上次: ${lastRun}  ·  无新建议（模式暂无需整理）`;
+        } else if (config.modelAdvisorEnabled) {
+          advisorText = '已就绪，等待首次运行';
+        }
+
+        const updates = { tokenUsageSummary: runtime, learningStatsDetail: detail, modelAdvisorUsage: advisorText, recentLearnings: recentLearn, dataDirPath: DATA_DIR };
+        try { ctx.config?.update?.(updates); } catch { try { for (const [k, v] of Object.entries(updates)) { try { ctx.config?.set?.(k, v); } catch {} } } catch {} }
+      } catch {}
+    };
+
+    // ── Auto-approve: shared logic for all three call sites ──
+
+    const autoApprovePatterns = (sessionPath = null) => {
+      if (!config.autoApproveHighConfidence) return 0;
+      const allPatterns = detector.all();
+      let count = 0;
+      for (const p of allPatterns) {
+        if (p.status === "pending" && p.injectable) {
+          const stored = detector.patterns.get(p.id);
+          if (stored && stored.status === "pending") {
+            stored.status = "approved";
+            stored.reviewedAt = new Date().toISOString();
+            count += 1;
+          }
+        }
+      }
+      if (count > 0) {
+        logActivity({
+          type: "auto_approved",
+          summary: `Auto-approved ${count} high-confidence pattern(s)`,
+          sessionPath,
+        });
+        ctx.log.info(`runtime-learner: auto-approved ${count} pattern(s)`);
+      }
+      return count;
+    };
+
+    const recordUsage = (entry, sessionPath = null) => {
+      if (!config.learnFromUsage) return;
+      const summaryEntry = summarizeUsageEntry(entry, sessionPath);
+      try {
+        updateUsageSummary(summaryEntry);
+        updateTokenDisplay();
+        detector.ingestUsage?.(summaryEntry);
+        autoApprovePatterns(sessionPath);
+        persistPatterns();
+        pruneDataFiles();
+        refreshSkill();
+        maybeRunModelAdvisor("usage", sessionPath);
+      } catch (err) {
+        ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
+      }
+    };
+
+    try {
+      const usageCapability = ctx.bus.getCapability?.("usage:list");
+      if (config.learnFromUsage && (usageCapability?.available || ctx.bus.hasHandler?.("usage:list"))) {
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const result = await ctx.bus.request("usage:list", { since, limit: 50 });
+        for (const entry of result?.entries || []) recordUsage(entry, entry.attribution?.sessionPath || null);
+        ctx.log.info(`runtime-learner: bootstrapped ${result?.entries?.length || 0} usage records`);
+      }
+    } catch (err) {
+      ctx.log.warn(`runtime-learner: usage bootstrap skipped: ${err.message}`);
+    }
+
+    // ── Turn helpers (defined before flushTurn which references them) ──
+
+    const resultStatus = (turn, stopReason) => {
+      if (turn.errors.length > 0) return "partial";
+      if (stopReason && stopReason !== "stop") return "partial";
+      return "success";
+    };
+
+    const extractToolError = (event) => {
+      const raw = event?.error || event?.result?.error || event?.result?.message || event?.message;
+      const msg = typeof raw === "string" ? raw : raw?.message || "";
+      const tool = normalizeToolName(event?.toolName || event?.name) || "tool";
+      return msg ? `${tool}: ${safeText(msg)}` : `${tool}: failed`;
+    };
+
+    const messageText = (message) => {
+      if (!message) return "";
+      if (typeof message.content === "string") return safeText(message.content, 1000);
+      if (Array.isArray(message.content)) {
+        return safeText(message.content.map((part) => part?.text || part?.content || "").join(" "), 1000);
+      }
+      return "";
+    };
+
+    const extractAssistantText = (event) => {
+      return messageText(event?.message);
+    };
+
+    const extractCorrectionFromUserText = (text) => {
+      const clean = safeText(text, 300);
+      if (!clean) return "";
+      return CORRECTION_PATTERNS.some((pattern) => pattern.test(clean)) ? clean : "";
+    };
+
+    // ── Turn lifecycle ──
 
     const getTurn = (sessionPath) => {
       const key = sessionPath || "unknown";
@@ -490,14 +895,7 @@ export default class RuntimeLearnerPlugin {
       };
 
       try {
-        appendJsonl(TURNS_FILE, {
-          date,
-          sessionPath: key,
-          tools,
-          errors: turn.errors,
-          stopReason,
-          correction,
-        });
+        appendJsonl(TURNS_FILE, { date, sessionPath: key, tools, errors: turn.errors, stopReason, correction });
         appendJsonl(EXPERIENCE_LOG, exp);
       } catch (err) {
         ctx.log.warn(`runtime-learner: write experience failed: ${err.message}`);
@@ -511,28 +909,55 @@ export default class RuntimeLearnerPlugin {
           taskType: exp.taskType,
           errorType: classifyError(errMsg),
           errorDesc: safeText(errMsg, 200),
-          rootCauseGuess: "unknown",
-          userCorrection: correction || "none",
-          fixApplied: "none",
-          repeatCountEstimate: 1,
           severity: stopReason === "error" ? 4 : 2,
-          isMechanical: false,
-          isContextual: true,
-          candidateSkill: null,
           tool: tools.at(-1) || null,
         };
         try {
           appendJsonl(ERROR_LOG, ee);
-          detector.ingestError(ee);
+          const { isNew } = detector.ingestError(ee);
+          if (isNew) {
+            logActivity({
+              type: "error_discovered",
+              summary: `New error pattern: ${ee.errorType} — ${ee.errorDesc}`,
+              sessionPath: key,
+            });
+            runtimeState.sessionActivityCount += 1;
+          }
         } catch (err) {
           ctx.log.warn(`runtime-learner: write error failed: ${err.message}`);
         }
       }
 
-      detector.ingest(exp);
+      const newPatterns = detector.ingest(exp);
+      for (const np of newPatterns) {
+        logActivity({
+          type: "pattern_discovered",
+          summary: `New ${np.type} pattern: ${np.desc}`,
+          sessionPath: key,
+        });
+        runtimeState.sessionActivityCount += 1;
+        ctx.log.info(`runtime-learner: discovered ${np.type} pattern: ${np.desc}`);
+      }
+
+      // Record session-end activity summary when turning
+      if (newPatterns.length > 0 || correction) {
+        const parts = [];
+        if (newPatterns.length > 0) parts.push(`${newPatterns.length} new pattern(s) detected`);
+        if (correction) parts.push(`user correction captured`);
+        logActivity({
+          type: "turn_complete",
+          summary: `Turn completed: ${tools.join(" -> ") || "no tools"}${parts.length ? ` — ${parts.join(", ")}` : ""}`,
+          sessionPath: key,
+          detail: newPatterns.map((p) => p.desc).join("; ") || null,
+        });
+      }
+
       try {
+        autoApprovePatterns(key);
         persistPatterns();
+        pruneDataFiles();
         refreshSkill();
+        maybeRunModelAdvisor("turn", key);
       } catch (err) {
         ctx.log.warn(`runtime-learner: refresh failed: ${err.message}`);
       }
@@ -540,19 +965,14 @@ export default class RuntimeLearnerPlugin {
       sessions.delete(key);
     };
 
-    let unsub = null;
+    const unsubs = [];
     try {
-      unsub = ctx.bus.subscribe((event, sessionPath) => {
+      unsubs.push(ctx.bus.subscribe((event, sessionPath) => {
         if (!event?.type) return;
         const turn = getTurn(sessionPath);
 
         if (event.type === "user_message" || event.type === "message_start") {
           if (event.message?.role === "user") turn.addUserText(messageText(event.message));
-          return;
-        }
-
-        if (event.type === "message_end" && event.message?.role === "user") {
-          turn.addUserText(messageText(event.message));
           return;
         }
 
@@ -580,41 +1000,78 @@ export default class RuntimeLearnerPlugin {
           return;
         }
 
-        // Backward compatibility for older or differently shaped runtimes.
         if (event.type === "assistantMessageEvent") {
           const ame = event.assistantMessageEvent || {};
           if (ame.toolName) turn.addTool(ame.toolName);
           if (ame.toolError) turn.addError(ame.toolError);
           if (ame.type === "done" || ame.type === "complete") flushTurn(sessionPath, event);
         }
-      });
+      }));
     } catch (err) {
       ctx.log.warn(`runtime-learner: EventBus subscribe failed: ${err.message}`);
     }
 
-    this._detector = detector;
-    this._sessions = sessions;
-    this._unsub = unsub;
-    this._persistPatterns = persistPatterns;
-    this._refreshSkill = refreshSkill;
+    try {
+      if (config.learnFromUsage && ctx.bus.subscribe) {
+        unsubs.push(ctx.bus.subscribe((event, sessionPath) => {
+          if (event?.type === "llm_usage" && event.entry) recordUsage(event.entry, sessionPath);
+        }, { types: ["llm_usage"] }));
+      }
+    } catch (err) {
+      ctx.log.warn(`runtime-learner: usage subscribe failed: ${err.message}`);
+    }
+
+    runtimeState.detector = detector;
+    runtimeState.sessions = sessions;
+    runtimeState.unsub = () => {
+      for (const unsub of unsubs) {
+        try { unsub?.(); } catch {}
+      }
+    };
+    runtimeState.persistPatterns = persistPatterns;
+    runtimeState.refreshSkill = refreshSkill;
+
+    // Session startup activity entry
+    logActivity({
+      type: "session_start",
+      summary: `Self-learning runtime started with ${detector.all().length} existing patterns`,
+    });
 
     try {
+      autoApprovePatterns();
       persistPatterns();
+      pruneDataFiles();
       refreshSkill(true);
+      maybeRunModelAdvisor("startup");
     } catch (err) {
       ctx.log.warn(`runtime-learner: initial refresh failed: ${err.message}`);
     }
 
     ctx.log.info("runtime-learner: started three-layer self-learning runtime");
-  }
+
+    updateTokenDisplay();
+  },
 
   async onunload() {
-    if (this._unsub) this._unsub();
-    if (this._detector && this._persistPatterns) {
-      try { this._persistPatterns(); } catch {}
+    // Session end activity entry
+    logActivity({
+      type: "session_end",
+      summary: `Self-learning session ended. ${runtimeState.sessionActivityCount} activities this session. ${runtimeState.detector?.all()?.length || 0} total patterns.`,
+    });
+
+    if (runtimeState.unsub) runtimeState.unsub();
+    if (runtimeState.detector && runtimeState.persistPatterns) {
+      try { runtimeState.persistPatterns(); } catch {}
     }
-    if (this._refreshSkill) {
-      try { this._refreshSkill(true); } catch {}
+    if (runtimeState.refreshSkill) {
+      try { runtimeState.refreshSkill(true); } catch {}
     }
-  }
-}
+    runtimeState.detector = null;
+    runtimeState.sessions = null;
+    runtimeState.unsub = null;
+    runtimeState.persistPatterns = null;
+    runtimeState.refreshSkill = null;
+    runtimeState.statusNotifiedAt.clear();
+    runtimeState.advisorSkipReasons.clear();
+  },
+});
