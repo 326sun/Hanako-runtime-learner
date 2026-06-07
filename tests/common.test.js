@@ -195,6 +195,33 @@ describe("buildSkillMdFromPatterns", () => {
     const md = buildSkillMdFromPatterns([], config, { turnCount: 0 });
     assert.ok(md.includes("0 active"));
   });
+
+  it("includes injectable runtime hints", () => {
+    const patterns = [
+      {
+        id: "usage:large_context:test",
+        type: "usage",
+        status: "pending",
+        score: 20, count: 3,
+        lastSeen: new Date().toISOString(),
+        desc: "Large context usage on test-model: 150000 tokens",
+        fix: "Compact inputs before retrying.",
+      },
+      {
+        id: "error:permission_denied",
+        type: "error",
+        status: "approved",
+        score: 1, count: 1,
+        lastSeen: new Date().toISOString(),
+        desc: "Repeated error: permission_denied",
+        fix: "Check write permissions.",
+      },
+    ];
+    const md = buildSkillMdFromPatterns(patterns, config, { turnCount: 2 });
+    assert.ok(md.includes("Active Runtime Hints"));
+    assert.ok(md.includes("Large context usage"));
+    assert.ok(md.includes("Check write permissions."));
+  });
 });
 
 describe("countJsonl", () => {

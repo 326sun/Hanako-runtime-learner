@@ -3,6 +3,7 @@ import path from "path";
 import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, hanakoHome, learnerDir as resolveLearnerDir, buildSkillMdFromPatterns } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
+import { applyProposal, listProposals, readProposal, rejectProposal } from "../lib/proposals.js";
 
 function paths(ctx) {
   const learnerDir = resolveLearnerDir();
@@ -13,6 +14,7 @@ function paths(ctx) {
     configPath: path.join(learnerDir, "config.json"),
     patternsPath: path.join(learnerDir, "patterns.json"),
     historyDir: path.join(learnerDir, "skill_history"),
+    proposalsDir: path.join(learnerDir, "proposals"),
     skillPath: path.join(pluginDir, "skills", "self-learning", "SKILL.md"),
   };
 }
@@ -48,10 +50,13 @@ const tool = defineTool({
     properties: {
       action: {
         type: "string",
-        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "run_model_advisor"],
+        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal"],
         description: "Control action to run.",
       },
       id: { type: "string", description: "Pattern id for approve/reject." },
+      proposalId: { type: "string", description: "Proposal id for show/apply/reject proposal actions." },
+      reason: { type: "string", description: "Optional reason for proposal rejection." },
+      status: { type: "string", description: "Optional proposal status filter: pending, applied, or rejected." },
       autoInjectHighConfidence: { type: "boolean", description: "Whether high-confidence pending patterns can be injected automatically." },
       autoApproveHighConfidence: { type: "boolean", description: "Whether high-confidence pending patterns are automatically approved (no manual review needed)." },
       minInjectScore: { type: "number", description: "Minimum decayed score for automatic injection." },
@@ -59,6 +64,8 @@ const tool = defineTool({
       decayHalfLifeDays: { type: "number", description: "Score half-life in days." },
       includePendingPreferences: { type: "boolean", description: "Whether detected user corrections can be injected before manual approval." },
       learnFromUsage: { type: "boolean", description: "Whether usage metadata can influence learned hints." },
+      officialMemoryBridgeEnabled: { type: "boolean", description: "Whether self_learning_search can include read-only Hanako official memory results." },
+      officialMemoryBridgeMaxResults: { type: "number", description: "Maximum official memory bridge results to include in search." },
       largeUsageTokenThreshold: { type: "number", description: "Token threshold for large-context usage hints." },
       officialUtilityModelDisplay: { type: "string", description: "Read-only display label for the current Hanako utility model." },
       modelAdvisorEnabled: { type: "boolean", description: "Whether the private small-model advisor can run." },
@@ -70,6 +77,7 @@ const tool = defineTool({
       modelAdvisorMinIntervalMinutes: { type: "number", description: "Minimum interval between advisor calls." },
       workStatusEnabled: { type: "boolean", description: "Whether to send a short status message when self-learning work completes." },
       workStatusText: { type: "string", description: "Status message prefix." },
+      proposalChatNotificationsEnabled: { type: "boolean", description: "Whether to send chat messages when new high-risk improvement proposals are created." },
     },
     required: ["action"],
   },
@@ -93,6 +101,12 @@ const tool = defineTool({
         approved: decorated.filter((x) => x.status === "approved").length,
         rejected: decorated.filter((x) => x.status === "rejected").length,
         historySnapshots: history.length,
+        proposals: {
+          pending: listProposals(p.learnerDir, { status: "pending" }).length,
+          applied: listProposals(p.learnerDir, { status: "applied" }).length,
+          rejected: listProposals(p.learnerDir, { status: "rejected" }).length,
+          dir: p.proposalsDir,
+        },
         dataDir: p.learnerDir,
       }, null, 2);
     }
@@ -141,6 +155,40 @@ const tool = defineTool({
       fs.mkdirSync(p.historyDir, { recursive: true });
       regenerateSkill(p, patterns, config);
       return JSON.stringify({ ok: true, skillPath: p.skillPath }, null, 2);
+    }
+
+    if (action === "list_proposals") {
+      const status = input.status || null;
+      return JSON.stringify(listProposals(p.learnerDir, { status, limit: 30 }).map((proposal) => ({
+        id: proposal.id,
+        type: proposal.type,
+        title: proposal.title,
+        risk: proposal.risk,
+        status: proposal.status,
+        autoApply: proposal.autoApply,
+        reason: proposal.reason,
+        updatedAt: proposal.updatedAt,
+        triggerPatternIds: proposal.triggerPatternIds || [],
+      })), null, 2);
+    }
+
+    if (action === "show_proposal") {
+      if (!input.proposalId && !input.id) throw new Error("proposalId is required");
+      const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
+      if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
+      return JSON.stringify(proposal, null, 2);
+    }
+
+    if (action === "apply_proposal") {
+      if (!input.proposalId && !input.id) throw new Error("proposalId is required");
+      const applied = applyProposal(p.learnerDir, input.proposalId || input.id, { configPath: p.configPath });
+      return JSON.stringify({ ok: true, proposal: applied }, null, 2);
+    }
+
+    if (action === "reject_proposal") {
+      if (!input.proposalId && !input.id) throw new Error("proposalId is required");
+      const rejected = rejectProposal(p.learnerDir, input.proposalId || input.id, input.reason || "");
+      return JSON.stringify({ ok: true, proposal: rejected }, null, 2);
     }
 
     if (action === "run_model_advisor") {

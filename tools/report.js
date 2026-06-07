@@ -2,6 +2,7 @@ import path from "path";
 import { readJson, readRecentJsonl, countBy, loadLearnerConfig, decoratePatterns, learnerDir as resolveLearnerDir, describeOfficialUtilityModel } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { MODEL_ADVICE_FILE } from "../lib/model-advisor.js";
+import { listProposals } from "../lib/proposals.js";
 
 const tool = defineTool({
   name: "self_learning_report",
@@ -36,6 +37,8 @@ const tool = defineTool({
     const usage = readJson(usageSummaryPath, null);
     const capabilities = readJson(capabilitiesPath, null);
     const modelAdvice = readJson(MODEL_ADVICE_FILE, null);
+    const proposals = listProposals(learnerDir, { limit: 30 });
+    const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
     const officialUtilityModel = describeOfficialUtilityModel();
     config.officialUtilityModelDisplay = officialUtilityModel.display;
     const topModels = Object.entries(usage?.byModel || {})
@@ -51,6 +54,7 @@ const tool = defineTool({
       `- Patterns detected: ${patterns.length}`,
       `- Injectable hints: ${injectable.length}`,
       `- Pending review: ${pending.length}`,
+      `- Pending proposals: ${pendingProposals.length}`,
       `- Rejected: ${rejected.length}`,
       `- Skill candidates: ${skillCandidates.length}`,
       "",
@@ -61,11 +65,14 @@ const tool = defineTool({
       `- decayHalfLifeDays: ${config.decayHalfLifeDays}`,
       `- includePendingPreferences: ${config.includePendingPreferences}`,
       `- learnFromUsage: ${config.learnFromUsage}`,
+      `- officialMemoryBridgeEnabled: ${config.officialMemoryBridgeEnabled}`,
+      `- officialMemoryBridgeMaxResults: ${config.officialMemoryBridgeMaxResults}`,
       `- largeUsageTokenThreshold: ${config.largeUsageTokenThreshold}`,
       `- modelAdvisorEnabled: ${config.modelAdvisorEnabled}`,
       `- modelAdvisorSource: ${config.modelAdvisorSource}`,
       `- officialUtilityModel: ${officialUtilityModel.display}`,
       `- workStatusEnabled: ${config.workStatusEnabled}`,
+      `- proposalChatNotificationsEnabled: ${config.proposalChatNotificationsEnabled}`,
       "",
       "## Usage Signals",
       ...(usage ? [
@@ -100,6 +107,9 @@ const tool = defineTool({
       "",
       "## Pending Review",
       ...(pending.length ? pending.slice(0, 10).map((p) => `- [score=${p.decayedScore}] ${p.id}: ${p.desc}`) : ["- No pending patterns"]),
+      "",
+      "## Pending Proposals",
+      ...(pendingProposals.length ? pendingProposals.slice(0, 10).map((proposal) => `- [${proposal.risk}, ${proposal.type}] ${proposal.id}: ${proposal.title || proposal.reason || "Untitled proposal"}`) : ["- No pending proposals"]),
       "",
       `> Data dir: ${learnerDir}`,
     ].join("\n");

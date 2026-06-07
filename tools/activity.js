@@ -22,7 +22,7 @@ function readRecentActivity(days = 1) {
 
 const tool = defineTool({
   name: "self_learning_activity",
-  description: "View recent self-learning activity timeline: pattern discoveries, error detections, model advisor runs, and session summaries.",
+  description: "View recent self-learning activity timeline: pattern discoveries, error detections, proposal creation, model advisor runs, and session summaries.",
   parameters: {
     type: "object",
     properties: {

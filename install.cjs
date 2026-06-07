@@ -26,6 +26,8 @@ const JS_FILES = [
   "lib/hana-runtime-compat.js",
   "lib/official-utility-model.js",
   "lib/model-advisor.js",
+  "lib/official-memory-bridge.js",
+  "lib/proposals.js",
   "tools/stats.js",
   "tools/report.js",
   "tools/control.js",

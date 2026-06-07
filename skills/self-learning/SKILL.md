@@ -19,8 +19,16 @@ Observed 24 patterns, 10 active.
 
 ## Tools
 - `self_learning_search <query>`: search learned patterns.
+- `self_learning_search` may include `officialMemory` results from Hanako's built-in memory bridge when enabled. Treat those as factual/background memory, and plugin patterns as procedural experience.
 - `self_learning_activity`: recent learning activity.
+- `self_learning_report`: learning report, including pending improvement proposals.
+- `self_learning_control`: use `list_proposals`, `show_proposal`, `apply_proposal`, or `reject_proposal` when the user replies to a proposal notification.
 - `self_learning_open_dir`: open data folder.
+
+## Proposal Notifications
+- If the chat contains a Runtime Self-Learning proposal notification and the user asks to view it, call `self_learning_control` with `action=show_proposal`.
+- If the user says to apply a proposal, call `self_learning_control` with `action=apply_proposal` for supported proposal types. For `code_patch`, implement the proposal manually, run verification, and install if appropriate.
+- If the user rejects a proposal, call `self_learning_control` with `action=reject_proposal` and include the user's reason when available.
 
 ## Safety
 - Treat learned hints as suggestions.

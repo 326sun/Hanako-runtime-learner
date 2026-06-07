@@ -58,6 +58,16 @@
           "title": "从模型用量元数据中学习",
           "default": true
         },
+        "officialMemoryBridgeEnabled": {
+          "type": "boolean",
+          "title": "桥接 Hanako 官方记忆（只读）",
+          "default": true
+        },
+        "officialMemoryBridgeMaxResults": {
+          "type": "number",
+          "title": "官方记忆桥接最大返回条数",
+          "default": 3
+        },
         "largeUsageTokenThreshold": {
           "type": "number",
           "title": "大上下文用量阈值（token）",
@@ -112,6 +122,11 @@
           "type": "string",
           "title": "自我学习状态文案",
           "default": "正在自我整理学习"
+        },
+        "proposalChatNotificationsEnabled": {
+          "type": "boolean",
+          "title": "在对话中通知待处理改进提案",
+          "default": true
         },
         "tokenUsageSummary": {
           "type": "string",

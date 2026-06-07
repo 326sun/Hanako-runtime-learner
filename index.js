@@ -14,6 +14,7 @@ import path from "path";
 import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, decayedScore, patternStatus, isInjectable, describeOfficialUtilityModel, countJsonl, memoryStrength, buildSkillMdFromPatterns } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { readModelAdvice, runModelAdvisor } from "./lib/model-advisor.js";
+import { applyProposal, buildCodePatchProposal, buildSkillPatchProposal } from "./lib/proposals.js";
 
 const DATA_DIR = learnerDir();
 const EXPERIENCE_LOG = path.join(DATA_DIR, "experience_log.jsonl");
@@ -33,6 +34,7 @@ const MAX_ACTIVITY_ENTRIES = 500;
 const LOG_RETENTION_DAYS = 30;
 const MAX_PATTERN_COUNT = 50;
 const MAX_LOG_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB — skip prune for small files
+const CODE_PROPOSAL_MIN_COUNT = 3;
 
 const runtimeState = {
   detector: null,
@@ -42,6 +44,7 @@ const runtimeState = {
   refreshSkill: null,
   statusNotifiedAt: new Map(),
   advisorSkipReasons: new Map(),
+  proposalNotifiedIds: new Set(),
   sessionStart: null,
   sessionActivityCount: 0,
   pendingAdoptionChecks: new Map(), // sessionPath → { searches: [{patternId, tools}], remaining: 3 }
@@ -114,6 +117,7 @@ const CORRECTION_PATTERNS = [
 function ensureDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.mkdirSync(HISTORY_DIR, { recursive: true });
+  fs.mkdirSync(path.join(DATA_DIR, "proposals"), { recursive: true });
 }
 
 function appendJsonl(file, value) {
@@ -140,7 +144,7 @@ function safeText(value, max = MAX_TEXT) {
 function normalizeToolName(name) {
   if (!name) return null;
   const text = String(name);
-  return TOOL_SHORT[text] || text.replace(/^runtime-learner_/, "");
+  return TOOL_SHORT[text] || text.replace(/^(hanako-runtime-learner_|runtime-learner_)/, "");
 }
 
 function classifyTask(tools) {
@@ -175,6 +179,19 @@ function usageTotalTokens(entry = {}) {
   const input = entry.usage?.input?.totalTokens;
   const output = entry.usage?.output?.totalTokens;
   return (Number.isFinite(input) ? input : 0) + (Number.isFinite(output) ? output : 0);
+}
+
+function stableKey(value) {
+  return String(value || "unknown")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || "unknown";
+}
+
+function isUsageFailure(entry = {}) {
+  const status = String(entry.status || "").toLowerCase();
+  return !!(entry.error || (status && status !== "unknown" && !["success", "ok", "completed", "complete"].includes(status)));
 }
 
 function summarizeUsageEntry(entry = {}, sessionPath = null) {
@@ -589,7 +606,63 @@ class PatternDetector {
     return { pattern, isNew: true };
   }
 
-  ingestUsage() {}
+  ingestUsage(entry = {}) {
+    const patterns = [];
+    const now = entry.date || new Date().toISOString();
+    const model = stableKey(entry.model);
+    const operation = stableKey(entry.operation || entry.subsystem);
+    const totalTokens = Number(entry.totalTokens || 0);
+    const threshold = Number(this.config?.largeUsageTokenThreshold || DEFAULT_CONFIG.largeUsageTokenThreshold);
+
+    if (totalTokens >= threshold) {
+      patterns.push({
+        id: `usage:large_context:${model}`,
+        type: "usage",
+        desc: `Large context usage on ${entry.model}: ${totalTokens} tokens`,
+        fix: `Before using ${entry.model} for similar work, search prior context and compact inputs; split large jobs when possible.`,
+        score: Math.max(4, Math.min(20, Math.round(totalTokens / Math.max(1, threshold)) * 4)),
+        context: { taskType: "usage", model: entry.model, operation: entry.operation, subsystem: entry.subsystem },
+      });
+    }
+
+    if (isUsageFailure(entry)) {
+      patterns.push({
+        id: `usage:failed_request:${model}:${operation}`,
+        type: "usage",
+        desc: `Model request failure on ${entry.model}/${entry.operation || entry.subsystem || "unknown"}`,
+        fix: entry.error
+          ? `This request path has failed before: ${entry.error}. Check provider health, auth, and request size before retrying.`
+          : "This request path has failed before. Check provider health, auth, and request size before retrying.",
+        score: 3,
+        context: { taskType: "usage", model: entry.model, operation: entry.operation, subsystem: entry.subsystem },
+      });
+    }
+
+    const changed = [];
+    for (const pattern of patterns) {
+      const existing = this.patterns.get(pattern.id);
+      if (existing) {
+        existing.count += 1;
+        existing.lastSeen = now;
+        existing.score = Math.max(existing.score || 0, 0) + pattern.score;
+        existing.desc = pattern.desc;
+        existing.fix = pattern.fix;
+        existing.context = { ...(existing.context || {}), ...(pattern.context || {}) };
+        changed.push({ pattern: existing, isNew: false });
+      } else {
+        const next = {
+          ...pattern,
+          status: "pending",
+          count: 1,
+          firstSeen: now,
+          lastSeen: now,
+        };
+        this.patterns.set(pattern.id, next);
+        changed.push({ pattern: next, isNew: true });
+      }
+    }
+    return changed;
+  }
   ingestCapabilitySnapshot() {}
 
   all() {
@@ -669,14 +742,88 @@ export default definePlugin({
       }
     };
 
-    const refreshSkill = (force = false) => {
+    const canSendSessionMessage = () => {
+      if (!ctx.bus?.request) return false;
+      const capability = ctx.bus.getCapability?.("session:send");
+      if (capability && capability.available === false) return false;
+      if (!capability && !ctx.bus.hasHandler?.("session:send")) return false;
+      return true;
+    };
+
+    const sendSessionMessage = async (sessionPath, text) => {
+      if (!sessionPath || !text || !canSendSessionMessage()) return false;
+      try {
+        await ctx.bus.request("session:send", { sessionPath, text });
+        return true;
+      } catch (err) {
+        ctx.log.debug?.(`runtime-learner: session message skipped: ${err.message}`);
+        return false;
+      }
+    };
+
+    const formatProposalNotification = (proposal) => [
+      "Runtime Self-Learning 发现一个可改进点，需要你决定是否应用：",
+      "",
+      `提案 ID: ${proposal.id}`,
+      `风险: ${proposal.risk || "unknown"}`,
+      `类型: ${proposal.type || "unknown"}`,
+      `标题: ${proposal.title || proposal.reason || "Untitled proposal"}`,
+      "",
+      "回复“查看提案 <ID>”可以看详情；回复“应用提案 <ID>”或“拒绝提案 <ID>”让我处理。",
+      "说明：code_patch 不会由插件自动写入代码，应用它表示让我按提案修改文件、测试并安装。",
+    ].join("\n");
+
+    const notifyProposalReview = async (sessionPath, proposals = []) => {
+      if (!config.proposalChatNotificationsEnabled || !sessionPath || proposals.length === 0) return;
+      for (const proposal of proposals) {
+        if (!proposal?.id || runtimeState.proposalNotifiedIds.has(proposal.id)) continue;
+        const sent = await sendSessionMessage(sessionPath, formatProposalNotification(proposal));
+        if (sent) runtimeState.proposalNotifiedIds.add(proposal.id);
+      }
+    };
+
+    const maybeProposeCodeImprovements = (patterns = detector.all(), sessionPath = null) => {
+      let created = 0;
+      const createdProposals = [];
+      for (const pattern of patterns) {
+        if (!["error", "usage"].includes(pattern.type)) continue;
+        if ((pattern.count || 0) < CODE_PROPOSAL_MIN_COUNT) continue;
+        const proposal = buildCodePatchProposal({ learnerDir: DATA_DIR, pattern });
+        if (proposal.status === "pending" && proposal.createdAt === proposal.updatedAt) {
+          created += 1;
+          createdProposals.push(proposal);
+        }
+      }
+      if (created > 0) {
+        logActivity({
+          type: "proposal_created",
+          summary: `Created ${created} high-risk code improvement proposal(s) for review`,
+          sessionPath,
+        });
+        void notifyProposalReview(sessionPath, createdProposals);
+      }
+      return created;
+    };
+
+    const refreshSkill = (force = false, sessionPath = null) => {
       const now = Date.now();
       if (!force && now - lastSkillRefresh < SKILL_REFRESH_MIN_MS) return;
       const skillDir = path.join(ctx.pluginDir, "skills", "self-learning");
       fs.mkdirSync(skillDir, { recursive: true });
       const skillPath = path.join(skillDir, "SKILL.md");
       snapshotSkill(skillPath);
-      fs.writeFileSync(skillPath, buildSkillMd(detector, config), "utf-8");
+      const content = buildSkillMd(detector, config);
+      const triggerPatternIds = detector.highConfidence().map((pattern) => pattern.id);
+      const proposal = buildSkillPatchProposal({
+        learnerDir: DATA_DIR,
+        skillPath,
+        content,
+        triggerPatternIds,
+      });
+      if (proposal.autoApply && proposal.status !== "applied") {
+        applyProposal(DATA_DIR, proposal.id, { configPath: CONFIG_FILE });
+      }
+      maybeProposeCodeImprovements(undefined, sessionPath);
       lastSkillRefresh = now;
     };
 
@@ -716,7 +863,7 @@ export default definePlugin({
           reason,
         });
         if (result.ok) {
-          refreshSkill(true);
+          refreshSkill(true, sessionPath);
           const count = result.advice?.suggestions?.length || 0;
           if (count > 0) {
             logActivity({
@@ -739,7 +886,7 @@ export default definePlugin({
             }
             if (merged > 0) {
               ctx.log.info(`runtime-learner: merged ${merged} advisor insights into patterns`);
-              refreshSkill(true);
+              refreshSkill(true, sessionPath);
             }
           }
           await notifyWorkStatus(sessionPath, count > 0 ? `已生成 ${count} 条候选建议` : "已完成");
@@ -867,11 +1014,20 @@ export default definePlugin({
       try {
         updateUsageSummary(summaryEntry);
         updateTokenDisplay();
-        detector.ingestUsage?.(summaryEntry);
+        const usageChanges = detector.ingestUsage?.(summaryEntry) || [];
+        for (const change of usageChanges) {
+          if (!change.isNew) continue;
+          logActivity({
+            type: "usage_pattern_discovered",
+            summary: `New usage pattern: ${change.pattern.desc}`,
+            sessionPath,
+          });
+          runtimeState.sessionActivityCount += 1;
+        }
         autoApprovePatterns(sessionPath);
         persistPatterns();
         pruneDataFiles();
-        refreshSkill();
+        refreshSkill(false, sessionPath);
         maybeRunModelAdvisor("usage", sessionPath);
       } catch (err) {
         ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
@@ -908,6 +1064,7 @@ export default definePlugin({
     const messageText = (message) => {
       if (!message) return "";
       if (typeof message.content === "string") return safeText(message.content, 1000);
+      if (typeof message.text === "string") return safeText(message.text, 1000);
       if (Array.isArray(message.content)) {
         return safeText(message.content.map((part) => part?.text || part?.content || "").join(" "), 1000);
       }
@@ -1050,7 +1207,7 @@ export default definePlugin({
         autoApprovePatterns(key);
         persistPatterns();
         pruneDataFiles();
-        refreshSkill();
+        refreshSkill(false, key);
         maybeRunModelAdvisor("turn", key);
       } catch (err) {
         ctx.log.warn(`runtime-learner: refresh failed: ${err.message}`);
@@ -1060,6 +1217,7 @@ export default definePlugin({
       const pending = runtimeState.pendingAdoptionChecks.get(key);
       if (pending) {
         pending.remaining -= 1;
+        let adopted = 0;
         for (const s of pending.searches) {
           if (s.tools.length === 0) continue;
           const matchCount = s.tools.filter(t => tools.includes(t)).length;
@@ -1068,9 +1226,14 @@ export default definePlugin({
             if (stored) {
               stored.score = (stored.score || 0) + 3;
               stored.lastAdoptedAt = new Date().toISOString();
+              adopted += 1;
               ctx.log.info(`runtime-learner: adopted workflow ${s.patternId}, score +3`);
             }
           }
+        }
+        if (adopted > 0) {
+          persistPatterns();
+          refreshSkill(true, key);
         }
         if (pending.remaining <= 0) runtimeState.pendingAdoptionChecks.delete(key);
       }
@@ -1099,7 +1262,7 @@ export default definePlugin({
           };
           detector.ingest(pexp);
           persistPatterns();
-          refreshSkill();
+          refreshSkill(false, sessionPath);
           ctx.log.info("runtime-learner: ingested pin_memory as preference pattern");
         }
       } catch (err) {
@@ -1116,20 +1279,19 @@ export default definePlugin({
         const results = parsed.results || [];
         const ids = results.map(r => r.id).filter(Boolean);
 
-        // Immediate feedback: boost all returned patterns
+        // Immediate feedback: record exposure only. Score changes require later adoption.
         if (ids.length > 0) {
-          let boosted = 0;
+          let touched = 0;
           for (const id of ids) {
             const stored = detector.patterns.get(id);
             if (stored) {
-              stored.score = (stored.score || 0) + 1;
               stored.lastSearchedAt = new Date().toISOString();
-              boosted += 1;
+              touched += 1;
             }
           }
-          if (boosted > 0) {
+          if (touched > 0) {
             persistPatterns();
-            ctx.log.info(`runtime-learner: feedback boosted ${boosted} pattern(s)`);
+            ctx.log.info(`runtime-learner: search exposed ${touched} pattern(s)`);
           }
         }
 
@@ -1154,6 +1316,11 @@ export default definePlugin({
       unsubs.push(ctx.bus.subscribe((event, sessionPath) => {
         if (!event?.type) return;
         const turn = getTurn(sessionPath);
+
+        if (event.type === "session_user_message") {
+          turn.addUserText(messageText(event.message));
+          return;
+        }
 
         if (event.type === "user_message" || event.type === "message_start") {
           if (event.message?.role === "user") turn.addUserText(messageText(event.message));

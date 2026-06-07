@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { readJson, decoratePatterns, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
+import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
 
 const PATTERNS_FILE = path.join(resolveLearnerDir(), "patterns.json");
 const CONFIG_FILE = path.join(resolveLearnerDir(), "config.json");
@@ -75,8 +76,11 @@ const tool = defineTool({
     const limit = Math.min(input.limit || 5, 10);
 
     const allPatterns = readJson(PATTERNS_FILE, []);
-    const config = readJson(CONFIG_FILE, DEFAULT_CONFIG);
-    const tokens = tokenize(query);
+      const config = readJson(CONFIG_FILE, DEFAULT_CONFIG);
+      const tokens = tokenize(query);
+      const officialMemory = config.officialMemoryBridgeEnabled
+        ? searchOfficialMemory(query, { limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)) })
+        : [];
 
     let candidates = allPatterns.filter(p => {
       if (p.status === "rejected") return false;
@@ -117,22 +121,24 @@ const tool = defineTool({
       }));
 
     if (!results.length) {
+        return JSON.stringify({
+          ok: true,
+          query,
+          count: 0,
+          results: [],
+          officialMemory,
+          hint: "No matching patterns. Try broader keywords, different taskType filter, or check self_learning_stats for an overview.",
+        }, null, 2);
+      }
+
       return JSON.stringify({
         ok: true,
         query,
-        count: 0,
-        results: [],
-        hint: "No matching patterns. Try broader keywords, different taskType filter, or check self_learning_stats for an overview.",
+        count: results.length,
+        strategy: "text + context + relation + memory",
+        results,
+        officialMemory,
       }, null, 2);
-    }
-
-    return JSON.stringify({
-      ok: true,
-      query,
-      count: results.length,
-      strategy: "text + context + relation + memory",
-      results,
-    }, null, 2);
   },
 });
 

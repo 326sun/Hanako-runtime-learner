@@ -1,71 +1,105 @@
 # Runtime Self-Learning
 
-不会装？先看 [`INSTALL.md`](./INSTALL.md)。
+Hanako runtime self-learning plugin. It observes local runtime signals, extracts repeatable experience, and feeds useful hints back into later conversations.
 
-**让 Hanako 从自己的运行日志里学东西。** 自动发现你重复做的工作流、常犯的错误、口头纠正过的偏好，下次对话时提醒 Agent 不要再踩同样的坑。
+## What It Does
 
-## 一句话解释
+- Learns repeated workflows, common errors, usage pressure, and explicit user corrections.
+- Searches learned experience through `self_learning_search`.
+- Bridges Hanako official memory as read-only background memory.
+- Generates improvement proposals when repeated runtime patterns suggest code or workflow changes.
+- Sends pending proposal notifications into the current chat when Hanako exposes `session:send`.
 
-Hanako 每次对话都是无状态的。同一个错误可能重复犯，同样的流程每次都要从头描述。这个插件给它加了一层本地长期记忆——不需要你手动 `pin_memory`，它自己从工具调用序列里找规律。
-
-## 怎么工作的
-
-```
-对话进行中 → EventBus 监听工具调用 → 会话结束触发学习 →
-→ 检测跨类别工作流 + 错误模式 + 你的纠正语句 →
-→ 艾宾浩斯遗忘曲线评分（重复越多的记得越牢）→
-→ Agent 需要时用 self_learning_search 检索相关经验
-```
-
-**不占 token。** 学习到的模式存在本地，Agent 按需搜索，每次只注入几条相关的。存的越多，检索越准，但注入量不变。
-
-## 装
+## Install
 
 ```powershell
-git clone https://github.com/326sun/hanako-runtime-learner.git
-cd hanako-runtime-learner
+npm run check
+npm test
 npm run install-plugin
 ```
 
-## 工具（Agent 可调用）
+Then restart Hanako and enable `Runtime Self-Learning`.
 
-| 工具 | 做什么 |
-|------|--------|
-| `self_learning_search` 查询 | 按关键词搜经验（文本 + 上下文 + 关系 + 记忆四路加权） |
-| `self_learning_activity` | 最近学了什么 |
-| `self_learning_stats` | 学了多少、可注入几条 |
-| `self_learning_report` | N 天学习报告 |
-| `self_learning_control` | 批准/拒绝某条经验、调参数、回滚 |
-| `self_learning_open_dir` | 打开数据目录 |
+## Tools
 
-## 测试
+| Tool | Purpose |
+| --- | --- |
+| `self_learning_search` | Search learned patterns and optional official memory results. |
+| `self_learning_activity` | Show recent learning activity. |
+| `self_learning_stats` | Show counts, config, and pending proposals. |
+| `self_learning_report` | Generate a compact learning report. |
+| `self_learning_control` | Approve/reject patterns, update config, and handle proposals. |
+| `self_learning_open_dir` | Open the local learning data directory. |
 
-```powershell
-npm run test        # 25 个单元测试（衰减算法、注入判断、搜索评分）
+## Proposal Flow
+
+Low-risk skill refreshes are auto-applied.
+
+High-risk `code_patch` proposals are not auto-applied. When one is created, the plugin tries to post a chat notification with the proposal ID. The user can reply:
+
+- `show proposal <ID>`
+- `apply proposal <ID>`
+- `reject proposal <ID>`
+
+For `code_patch`, applying means a coding agent should inspect the proposal, edit files, run verification, and reinstall the plugin when appropriate.
+
+## Official Memory
+
+Hanako official memory is not exposed as a stable plugin API. This plugin uses a read-only file bridge:
+
+- Official memory remains factual/background memory.
+- Runtime self-learning remains procedural experience.
+- Search keeps the two result types separate.
+
+## Data
+
+All plugin data is local:
+
+```text
+~/.hanako/self-learning/
 ```
 
-## 配置要点
+Important files:
 
-| 参数 | 默认 | 说明 |
-|------|------|------|
-| 自动注入 | 开 | 高置信经验自动可用，低分需手动批 |
-| 自动批准 | 开 | 高置信模式无需人工审批 |
-| 记忆半衰期 | 30 天 | 超过此天数分数减半，不活跃的经验自动遗忘 |
-| 后台整理 | 开 | 用小模型定期分析经验，生成结构化建议 |
+- `patterns.json`
+- `activity_log.jsonl`
+- `experience_log.jsonl`
+- `error_log.jsonl`
+- `proposals/*.json`
+- `skills/self-learning/SKILL.md`
 
-## 与官方记忆的关系
+## Key Config
 
-- **官方记忆**（`pin_memory`）：你说"记住这个"，它记住。适合明确的重要事实。
-- **本插件**：你不用说，它自己看。适合重复模式、常见错误、隐性偏好。
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `autoInjectHighConfidence` | `true` | Inject high-confidence hints. |
+| `autoApproveHighConfidence` | `true` | Auto-approve strong repeated patterns. |
+| `learnFromUsage` | `true` | Learn from usage metadata. |
+| `officialMemoryBridgeEnabled` | `true` | Include read-only official memory in search. |
+| `proposalChatNotificationsEnabled` | `true` | Notify the chat when high-risk proposals are created. |
+| `modelAdvisorEnabled` | `true` | Let the small-model advisor refine patterns. |
 
-两者互补。而且你 `pin_memory` 的内容会自动被本插件吸收，搜索时一起找到。
+## Verify
 
-## 数据
+```powershell
+npm run check
+npm test
+```
 
-所有数据在 `~/.hanako/self-learning/`，不离开你的电脑。30 天自动清理过期日志。
+Current test suite covers scoring, injection decisions, proposal safety, and official-memory bridging.
 
-## 卸
+## Uninstall
 
-删 `~/.hanako/plugins/hanako-runtime-learner/`，重启。学习数据在 `~/.hanako/self-learning/` 单独可删。
+Delete:
 
-MIT
+```text
+~/.hanako/plugins/hanako-runtime-learner/
+```
+
+Optional data cleanup:
+
+```text
+~/.hanako/self-learning/
+```
+
+License: MIT
