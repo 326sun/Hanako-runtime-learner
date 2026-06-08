@@ -7,17 +7,26 @@ const ACTIVITY_LOG = path.join(resolveLearnerDir(), "activity_log.jsonl");
 
 function readRecentActivity(days = 1) {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-  const rows = [];
   try {
-    if (!fs.existsSync(ACTIVITY_LOG)) return rows;
-    for (const line of fs.readFileSync(ACTIVITY_LOG, "utf-8").trim().split("\n").filter(Boolean)) {
+    if (!fs.existsSync(ACTIVITY_LOG)) return [];
+    const TAIL_BYTES = 64 * 1024;
+    const stat = fs.statSync(ACTIVITY_LOG);
+    const start = Math.max(0, stat.size - TAIL_BYTES);
+    const buf = Buffer.alloc(Math.min(stat.size, TAIL_BYTES));
+    const fd = fs.openSync(ACTIVITY_LOG, "r");
+    try { fs.readSync(fd, buf, 0, buf.length, start); } finally { fs.closeSync(fd); }
+    const lines = buf.toString("utf-8").split("\n").filter(Boolean);
+    if (start > 0 && lines.length > 0) lines.shift();
+    const rows = [];
+    for (let i = lines.length - 1; i >= 0; i--) {
       try {
-        const row = JSON.parse(line);
+        const row = JSON.parse(lines[i]);
         if (new Date(row.date).getTime() >= cutoff) rows.push(row);
       } catch {}
     }
+    return rows; // newest-first from reverse iteration
   } catch {}
-  return rows.reverse();
+  return [];
 }
 
 const tool = defineTool({

@@ -1,14 +1,45 @@
 import fs from "fs";
 import path from "path";
-import { readJson, decoratePatterns, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG } from "../lib/common.js";
+import { readJson, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG, knowledgeTier } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
 
 const PATTERNS_FILE = path.join(resolveLearnerDir(), "patterns.json");
 const CONFIG_FILE = path.join(resolveLearnerDir(), "config.json");
 
+// Cross-language synonym table for mixed CN/EN search expansion
+const SYNONYMS = {
+  coding: ["代码", "编写", "code", "编程"],
+  code: ["代码", "编写", "coding", "编程"],
+  "代码": ["coding", "code", "编写", "编程"],
+  "编写": ["coding", "code", "代码"],
+  preference: ["偏好", "设定", "pref", "设置"],
+  "偏好": ["preference", "pref", "设定", "设置"],
+  workflow: ["工作流", "流程"],
+  "工作流": ["workflow", "流程"],
+  error: ["错误", "报错", "异常"],
+  "错误": ["error", "报错", "异常"],
+  research: ["研究", "搜索", "调研"],
+  "研究": ["research", "搜索", "调研"],
+  search: ["搜索", "查找", "检索"],
+  "搜索": ["search", "查找", "检索"],
+  file: ["文件", "文档"],
+  "文件": ["file", "文档"],
+  memory: ["记忆", "记住"],
+  "记忆": ["memory", "记住"],
+  usage: ["用量", "消耗", "token"],
+  "用量": ["usage", "消耗", "token"],
+};
+
 function tokenize(query) {
-  return String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  const raw = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
+  // Expand with synonyms (deduplicated)
+  const expanded = new Set(raw);
+  for (const token of raw) {
+    const syns = SYNONYMS[token];
+    if (syns) for (const s of syns) expanded.add(s);
+  }
+  return [...expanded];
 }
 
 function textScore(pattern, tokens) {
@@ -33,24 +64,21 @@ function contextScore(pattern, tokens) {
   return score;
 }
 
+function matchesTaskFilter(pattern, taskFilter) {
+  if (!taskFilter) return true;
+  const raw = pattern.context?.taskType || "";
+  return String(raw).split(",").map((item) => item.trim()).includes(taskFilter);
+}
+
 function relationBoost(pattern, allPatterns) {
-  // Use explicit relation edges from the knowledge tree
+  // Use only explicit relation edges — no O(n²) category overlap scan
   const rels = pattern.context?.relations || [];
+  if (!rels.length) return 0;
   let boost = 0;
   for (const rel of rels) {
     const target = allPatterns.find(p => p.id === rel.targetId);
     if (target && target.status !== "rejected") {
       boost += (rel.weight || 0.2) * Math.min(1, (target.score || 0) / 15);
-    }
-  }
-  // Also boost from simple category overlap as a baseline
-  if (pattern.context?.categories) {
-    const cats = new Set(pattern.context.categories);
-    for (const other of allPatterns) {
-      if (other.id === pattern.id) continue;
-      const otherCats = new Set(other.context?.categories || []);
-      const overlap = [...cats].filter(c => otherCats.has(c)).length;
-      if (overlap > 0) boost += overlap * 0.2 * Math.min(1, (other.score || 0) / 15);
     }
   }
   return Math.min(boost, 5);
@@ -84,10 +112,9 @@ const tool = defineTool({
 
     let candidates = allPatterns.filter(p => {
       if (p.status === "rejected") return false;
-      if (p.type === "capability" || p.type === "host_capability") return false;
-      if (p.id?.startsWith("usage_large")) return false;
+      if (knowledgeTier(p) === "ephemeral") return false;
       if (typeFilter && p.type !== typeFilter) return false;
-      if (taskFilter && (!p.context || p.context.taskType !== taskFilter)) return false;
+      if (!matchesTaskFilter(p, taskFilter)) return false;
       return true;
     });
 
@@ -110,6 +137,7 @@ const tool = defineTool({
       .map(p => ({
         id: p.id,
         type: p.type,
+        knowledgeTier: knowledgeTier(p),
         desc: p.desc,
         fix: p.fix || null,
         context: p.context ? { taskType: p.context.taskType, categories: p.context.categories } : null,

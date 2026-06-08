@@ -9,6 +9,7 @@ import {
   DEFAULT_CONFIG,
   ageDays,
   decayedScore,
+  knowledgeTier,
   memoryStrength,
   isInjectable,
   decoratePatterns,
@@ -66,6 +67,31 @@ describe("decayedScore", () => {
     const d = decayedScore(pattern, {});
     assert.ok(d > 9.9);
   });
+
+  it("does not decay durable knowledge", () => {
+    const old = new Date(Date.now() - 365 * 86_400_000).toISOString();
+    const pattern = { type: "preference", lastSeen: old, score: 10 };
+    assert.equal(decayedScore(pattern, config), 10);
+  });
+});
+
+describe("knowledgeTier", () => {
+  it("partitions preferences as durable knowledge", () => {
+    assert.equal(knowledgeTier({ type: "preference" }), "durable");
+  });
+
+  it("respects explicit core preference partition", () => {
+    assert.equal(knowledgeTier({ type: "preference", knowledgeTier: "core" }), "core");
+  });
+
+  it("partitions runtime noise as ephemeral", () => {
+    assert.equal(knowledgeTier({ type: "capability" }), "ephemeral");
+    assert.equal(knowledgeTier({ id: "usage:large_context:abc" }), "ephemeral");
+  });
+
+  it("defaults ordinary patterns to core", () => {
+    assert.equal(knowledgeTier({ type: "workflow" }), "core");
+  });
 });
 
 describe("memoryStrength", () => {
@@ -92,6 +118,12 @@ describe("memoryStrength", () => {
     const ms = memoryStrength(pattern, config);
     assert.ok(ms < 1, `expected < 1, got ${ms}`);
   });
+
+  it("keeps durable knowledge strength stable", () => {
+    const ages = new Date(Date.now() - 365 * 86_400_000).toISOString();
+    const pattern = { type: "preference", lastSeen: ages, score: 10, count: 1 };
+    assert.equal(memoryStrength(pattern, config), 10);
+  });
 });
 
 describe("isInjectable", () => {
@@ -115,8 +147,13 @@ describe("isInjectable", () => {
     assert.equal(isInjectable(pattern, config), false);
   });
 
-  it("pending preference is never injectable (archival by design)", () => {
-    const pattern = { status: "pending", type: "preference", score: 20, count: 5, fix: "do this" };
+  it("legacy pending preference is injectable when includePendingPreferences is on", () => {
+    const pattern = { status: "pending", type: "preference", score: 0, count: 1, fix: "do this" };
+    assert.equal(isInjectable(pattern, config), true);
+  });
+
+  it("core preference correction is searchable but not injectable", () => {
+    const pattern = { status: "pending", type: "preference", knowledgeTier: "core", score: 20, count: 5, fix: "do this" };
     assert.equal(isInjectable(pattern, config), false);
   });
 
@@ -170,10 +207,27 @@ describe("buildSkillMdFromPatterns", () => {
       {
         id: "pref:test",
         type: "preference",
-        status: "pending",
+        status: "approved",
         score: 20, count: 5,
         lastSeen: new Date().toISOString(),
         fix: "Always use tabs",
+      },
+      {
+        id: "pref:distilled",
+        type: "preference",
+        status: "pending",
+        score: 20, count: 5,
+        lastSeen: new Date().toISOString(),
+        advisorUpdatedAt: new Date().toISOString(),
+        fix: "Advisor-distilled hint",
+      },
+      {
+        id: "pref:raw",
+        type: "preference",
+        status: "pending",
+        score: 20, count: 5,
+        lastSeen: new Date().toISOString(),
+        fix: "Raw unprocessed correction",
       },
       {
         id: "workflow:read→write",
@@ -184,8 +238,23 @@ describe("buildSkillMdFromPatterns", () => {
         desc: "Read then write workflow",
       },
     ];
+    patterns.push({
+      id: "pref:transient",
+      type: "preference",
+      knowledgeTier: "core",
+      status: "pending",
+      score: 30,
+      count: 5,
+      lastSeen: new Date().toISOString(),
+      fix: "Transient correction only",
+    });
     const md = buildSkillMdFromPatterns(patterns, config, { turnCount: 10, dataDir: "/tmp/test" });
     assert.ok(md.includes("# Runtime Self-Learning"));
+    assert.ok(md.includes("Verified User Preferences"));
+    assert.ok(md.includes("Always use tabs"));
+    assert.ok(md.includes("Advisor-distilled hint"));
+    assert.ok(!md.includes("Raw unprocessed correction"));
+    assert.ok(!md.includes("Transient correction only"));
     assert.ok(md.includes("Recent Workflows"));
   });
 
@@ -221,6 +290,7 @@ describe("buildSkillMdFromPatterns", () => {
     assert.ok(md.includes("Check write permissions."));
   });
 });
+
 
 describe("countJsonl", () => {
   const tmpDir = path.join(os.tmpdir(), "learner-test-" + Date.now());

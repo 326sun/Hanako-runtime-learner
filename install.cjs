@@ -23,11 +23,13 @@ console.log("\n[1/4] Syntax check before install...");
 const JS_FILES = [
   "index.js",
   "lib/common.js",
+  "lib/helpers.js",
   "lib/hana-runtime-compat.js",
   "lib/official-utility-model.js",
   "lib/model-advisor.js",
   "lib/official-memory-bridge.js",
   "lib/proposals.js",
+  "lib/session-turn.js",
   "tools/stats.js",
   "tools/report.js",
   "tools/control.js",

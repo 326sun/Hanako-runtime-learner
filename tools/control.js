@@ -66,6 +66,7 @@ const tool = defineTool({
       learnFromUsage: { type: "boolean", description: "Whether usage metadata can influence learned hints." },
       officialMemoryBridgeEnabled: { type: "boolean", description: "Whether self_learning_search can include read-only Hanako official memory results." },
       officialMemoryBridgeMaxResults: { type: "number", description: "Maximum official memory bridge results to include in search." },
+      durableMemoryMaxCount: { type: "number", description: "Maximum durable preference/settings patterns to retain." },
       largeUsageTokenThreshold: { type: "number", description: "Token threshold for large-context usage hints." },
       officialUtilityModelDisplay: { type: "string", description: "Read-only display label for the current Hanako utility model." },
       modelAdvisorEnabled: { type: "boolean", description: "Whether the private small-model advisor can run." },
@@ -119,6 +120,7 @@ const tool = defineTool({
         count: pattern.count,
         score: pattern.score,
         decayedScore: pattern.decayedScore,
+        knowledgeTier: pattern.knowledgeTier,
         injectable: pattern.injectable,
         desc: pattern.desc,
         fix: pattern.fix || null,
@@ -132,6 +134,7 @@ const tool = defineTool({
       const target = patterns.find((pattern) => pattern.id === input.id);
       if (!target) throw new Error(`pattern not found: ${input.id}`);
       target.status = action === "approve" ? "approved" : "rejected";
+      if (action === "approve" && target.type === "preference") target.knowledgeTier = "durable";
       target.reviewedAt = new Date().toISOString();
       writeJson(p.patternsPath, patterns);
       regenerateSkill(p, patterns, config);

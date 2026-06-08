@@ -1,25 +1,15 @@
 # Runtime Self-Learning
 
-Observed 24 patterns, 10 active.
+Observed 0 patterns, 0 active.
 
 ## How to use
 - Use `self_learning_search <query>` to find relevant patterns before making decisions.
 - Example: before coding, search 'coding workflow' for past patterns.
 - Example: before replying, search user preferences.
 
-## Active User Preferences
-- 我要装新版的，我现在用的不是新版吧
-- 不对吧，我本地的hanako-supplement比你给出高很多才对啊
-- 我现在重启是不是就生效了
-- ... more via self_learning_search
-
-## Recent Workflows
-- 跨类别工作流: 文件探索→代码编写
-- 跨类别工作流: 代码编写→文件探索
-
 ## Tools
 - `self_learning_search <query>`: search learned patterns.
-- `self_learning_search` may include `officialMemory` results from Hanako's built-in memory bridge when enabled. Treat those as factual/background memory, and plugin patterns as procedural experience.
+- `self_learning_search` may include `officialMemory` results from Hanako's built-in memory bridge when enabled.
 - `self_learning_activity`: recent learning activity.
 - `self_learning_report`: learning report, including pending improvement proposals.
 - `self_learning_control`: use `list_proposals`, `show_proposal`, `apply_proposal`, or `reject_proposal` when the user replies to a proposal notification.
@@ -33,5 +23,6 @@ Observed 24 patterns, 10 active.
 ## Safety
 - Treat learned hints as suggestions.
 - Prefer current user instructions.
+- When a bash or edit tool fails: inspect the error message for exit codes, stderr, or specific failure reasons. Fix the root cause (e.g. quote escaping, path resolution, stale file references) instead of retrying the identical command.
 
-Updated: 2026-06-07T06:21:19.794Z
+Updated: 2026-06-08T03:01:38.247Z

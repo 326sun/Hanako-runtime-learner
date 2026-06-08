@@ -33,6 +33,8 @@ const tool = defineTool({
 
     const byStatus = { pending: 0, approved: 0, rejected: 0 };
     for (const pattern of decorated) byStatus[pattern.status] = (byStatus[pattern.status] || 0) + 1;
+    const byKnowledgeTier = {};
+    for (const pattern of decorated) byKnowledgeTier[pattern.knowledgeTier] = (byKnowledgeTier[pattern.knowledgeTier] || 0) + 1;
 
     let historySnapshots = 0;
     try {
@@ -46,6 +48,7 @@ const tool = defineTool({
       patternCount: decorated.length,
       injectableCount: decorated.filter((pattern) => pattern.injectable).length,
       byStatus,
+      byKnowledgeTier,
       historySnapshots,
       usage: readJson(usageSummaryPath, null),
       hostCapabilities: readJson(capabilitiesPath, null),
@@ -79,6 +82,7 @@ const tool = defineTool({
         status: pattern.status,
         count: pattern.count,
         decayedScore: pattern.decayedScore,
+        knowledgeTier: pattern.knowledgeTier,
         injectable: pattern.injectable,
         desc: pattern.desc,
       })),
