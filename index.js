@@ -13,7 +13,7 @@ import fs from "fs";
 import path from "path";
 import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, describeOfficialUtilityModel, countJsonl, buildSkillMdFromPatterns, cleanupTempFiles } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
-import { readModelAdvice, runModelAdvisor } from "./lib/model-advisor.js";
+import { runModelAdvisor } from "./lib/model-advisor.js";
 import { applyProposal, buildCodePatchProposal, buildSkillPatchProposal } from "./lib/proposals.js";
 import { usageModelKey, usageTotalTokens, summarizeUsageEntry, updateUsageSummary, snapshotHostCapabilities, USAGE_SUMMARY_FILE } from "./lib/usage-pipeline.js";
 import { normalizeToolName, safeText, toolCategory, shortHash, preferencePatternId, stableKey, isUsageFailure, TASK_SIGS, ERR_PATTERNS, CORRECTION_STRONG, CORRECTION_WEAK, classifyTask, classifyError, extractCorrectionFromUserText, sanitizeAdvice, usageDedupKey, normalizeSeenIds } from "./lib/helpers.js";
