@@ -1,9 +1,10 @@
 import fs from "fs";
 import path from "path";
-import { readJson, loadLearnerConfig, countJsonl, decoratePatterns, learnerDir as resolveLearnerDir, describeOfficialUtilityModel } from "../lib/common.js";
+import { readJson, loadLearnerConfig, countJsonl, decoratePatterns, describeOfficialUtilityModel } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { MODEL_ADVICE_FILE } from "../lib/model-advisor.js";
 import { listProposals } from "../lib/proposals.js";
+import { toolPaths, loadConfig, loadPatterns } from "./_shared.js";
 
 const tool = defineTool({
   name: "self_learning_stats",
@@ -14,22 +15,13 @@ const tool = defineTool({
     required: [],
   },
   async execute() {
-    const learnerDir = resolveLearnerDir();
-    const patternsPath = path.join(learnerDir, "patterns.json");
-    const experiencePath = path.join(learnerDir, "experience_log.jsonl");
-    const errorPath = path.join(learnerDir, "error_log.jsonl");
-    const turnsPath = path.join(learnerDir, "turns.jsonl");
-    const configPath = path.join(learnerDir, "config.json");
-    const historyDir = path.join(learnerDir, "skill_history");
-    const usageSummaryPath = path.join(learnerDir, "usage_summary.json");
-    const capabilitiesPath = path.join(learnerDir, "host_capabilities.json");
-
-    const config = loadLearnerConfig(configPath);
+    const p = toolPaths();
+    const config = loadConfig(p.configPath);
     const officialUtilityModel = describeOfficialUtilityModel();
     config.officialUtilityModelDisplay = officialUtilityModel.display;
-    const patterns = readJson(patternsPath, []);
+    const patterns = loadPatterns(p.patternsPath);
     const decorated = decoratePatterns(patterns, config);
-    const proposals = listProposals(learnerDir, { limit: 50 });
+    const proposals = listProposals(p.learnerDir, { limit: 50 });
 
     const byStatus = { pending: 0, approved: 0, rejected: 0 };
     for (const pattern of decorated) byStatus[pattern.status] = (byStatus[pattern.status] || 0) + 1;
@@ -38,20 +30,20 @@ const tool = defineTool({
 
     let historySnapshots = 0;
     try {
-      historySnapshots = fs.readdirSync(historyDir).filter((name) => name.endsWith("-SKILL.md")).length;
+      historySnapshots = fs.readdirSync(p.historyDir).filter((name) => name.endsWith("-SKILL.md")).length;
     } catch {}
 
     return JSON.stringify({
-      totalTurns: countJsonl(experiencePath),
-      compactTurns: countJsonl(turnsPath),
-      errors: countJsonl(errorPath),
+      totalTurns: countJsonl(p.experiencePath),
+      compactTurns: countJsonl(p.turnsPath),
+      errors: countJsonl(p.errorPath),
       patternCount: decorated.length,
       injectableCount: decorated.filter((pattern) => pattern.injectable).length,
       byStatus,
       byKnowledgeTier,
       historySnapshots,
-      usage: readJson(usageSummaryPath, null),
-      hostCapabilities: readJson(capabilitiesPath, null),
+      usage: readJson(p.usageSummaryPath, null),
+      hostCapabilities: readJson(p.capabilitiesPath, null),
       officialUtilityModel,
       officialMemoryBridge: {
         enabled: config.officialMemoryBridgeEnabled !== false,
@@ -86,7 +78,7 @@ const tool = defineTool({
         injectable: pattern.injectable,
         desc: pattern.desc,
       })),
-      dataDir: learnerDir,
+      dataDir: p.learnerDir,
     }, null, 2);
   },
 });

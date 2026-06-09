@@ -49,6 +49,7 @@ const JS_FILES = [
   "lib/policy-profiles.js",
   "lib/audit-bundle.js",
   "lib/usage-pipeline.js",
+  "lib/pipeline.js",
   "tools/stats.js",
   "tools/report.js",
   "tools/control.js",
@@ -57,6 +58,7 @@ const JS_FILES = [
   "tools/search.js",
   "tools/doctor.js",
   "tools/normalize-config.js",
+  "tools/_shared.js",
 ];
 let syntaxOk = true;
 for (const file of JS_FILES) {

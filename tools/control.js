@@ -32,10 +32,6 @@ function paths(ctx) {
   };
 }
 
-function loadConfig(configPath) {
-  return loadLearnerConfig(configPath, { persist: true });
-}
-
 function buildSkill(patterns, config, learnerDir) {
   return buildSkillMdFromPatterns(patterns, config, { dataDir: learnerDir });
 }
@@ -100,7 +96,7 @@ const tool = defineTool({
   },
   async execute(input = {}, ctx) {
     const p = paths(ctx);
-    const config = loadConfig(p.configPath);
+    const config = loadLearnerConfig(p.configPath, { persist: true });
     const patterns = readJson(p.patternsPath, []);
     const action = input.action;
 

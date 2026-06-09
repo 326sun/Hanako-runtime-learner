@@ -1,8 +1,8 @@
-import path from "path";
-import { readJson, readRecentJsonl, countBy, loadLearnerConfig, decoratePatterns, learnerDir as resolveLearnerDir, describeOfficialUtilityModel } from "../lib/common.js";
+import { readJson, readRecentJsonl, countBy, loadLearnerConfig, decoratePatterns, describeOfficialUtilityModel } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { MODEL_ADVICE_FILE } from "../lib/model-advisor.js";
 import { listProposals } from "../lib/proposals.js";
+import { toolPaths, loadConfig, loadPatterns } from "./_shared.js";
 
 const tool = defineTool({
   name: "self_learning_report",
@@ -16,28 +16,22 @@ const tool = defineTool({
   },
   async execute(input = {}) {
     const days = input.days || 7;
-    const learnerDir = resolveLearnerDir();
-    const experiencePath = path.join(learnerDir, "experience_log.jsonl");
-    const errorPath = path.join(learnerDir, "error_log.jsonl");
-    const patternsPath = path.join(learnerDir, "patterns.json");
-    const configPath = path.join(learnerDir, "config.json");
-    const usageSummaryPath = path.join(learnerDir, "usage_summary.json");
-    const capabilitiesPath = path.join(learnerDir, "host_capabilities.json");
+    const p = toolPaths();
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
-    const experiences = readRecentJsonl(experiencePath, cutoff);
-    const errors = readRecentJsonl(errorPath, cutoff);
-    const config = loadLearnerConfig(configPath);
-    const patterns = decoratePatterns(readJson(patternsPath, []), config);
+    const experiences = readRecentJsonl(p.experiencePath, cutoff);
+    const errors = readRecentJsonl(p.errorPath, cutoff);
+    const config = loadConfig(p.configPath);
+    const patterns = decoratePatterns(loadPatterns(p.patternsPath), config);
 
     const injectable = patterns.filter((pattern) => pattern.injectable);
     const pending = patterns.filter((pattern) => pattern.status === "pending");
     const rejected = patterns.filter((pattern) => pattern.status === "rejected");
     const skillCandidates = patterns.filter((pattern) => pattern.decayedScore >= 12 && pattern.count >= 3);
-    const usage = readJson(usageSummaryPath, null);
-    const capabilities = readJson(capabilitiesPath, null);
+    const usage = readJson(p.usageSummaryPath, null);
+    const capabilities = readJson(p.capabilitiesPath, null);
     const modelAdvice = readJson(MODEL_ADVICE_FILE, null);
-    const proposals = listProposals(learnerDir, { limit: 30 });
+    const proposals = listProposals(p.learnerDir, { limit: 30 });
     const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
     const officialUtilityModel = describeOfficialUtilityModel();
     config.officialUtilityModelDisplay = officialUtilityModel.display;

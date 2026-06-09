@@ -22,6 +22,7 @@ import { PatternDetector } from "./lib/pattern-detector.js";
 import { createObserver } from "./lib/observer.js";
 import { snapshotSkill, pruneSkillBackups } from "./lib/skill-lifecycle.js";
 import { isProposalReviewApproved } from "./lib/review-queue.js";
+import { runPostFlushPipeline } from "./lib/pipeline.js";
 
 const DATA_DIR = learnerDir();
 const EXPERIENCE_LOG = path.join(DATA_DIR, "experience_log.jsonl");
@@ -670,15 +671,16 @@ export default definePlugin({
           });
           runtimeState.sessionActivityCount += 1;
         }
-        autoApprovePatterns(sessionPath);
-        detector.pruneMemory();
-        const allPatterns = detector.all();
-        persistPatterns();
-        // pruneDataFiles is on a 5-minute throttle and called from flushTurn;
-        // calling it here too creates wasteful concurrent invocations during
-        // usage bootstrap (up to 50).
-        refreshSkill(false, sessionPath, allPatterns);
-        maybeRunModelAdvisor("usage", sessionPath, allPatterns).catch(() => {});
+        runPostFlushPipeline({
+          detector,
+          autoApprovePatterns,
+          persistPatterns,
+          refreshSkill,
+          maybeRunModelAdvisor,
+          reason: "usage",
+          sessionPath,
+          ctx,
+        });
       } catch (err) {
         ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
       }
