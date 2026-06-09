@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.0
+
+学习治理链路（Review Queue + Diff Preview + Validation Gate）：
+
+- **新增 `lib/review-queue.js`**：proposal 创建后自动进入 review queue，记录来源 pattern、风险、diffPreview、validation 状态；新增 review_panel / list_reviews / approve_review / reject_review 控制入口
+- **新增 `lib/diff-preview.js`**：在 apply 前预览 skill_patch / config_patch / code_patch 的变更；code_patch 仅显示计划，不自动改代码
+- **新增 `lib/validation-gate.js`**：proposal apply 前必须通过验证门禁；skill_patch 检查头部与 token budget，config_patch 检查 payload，code_patch 明确阻止自动 apply
+- **新增 `lib/event-log.js`**：append-only `event_log.jsonl` 审计流，记录 proposal/review/skill 状态变化，便于追踪与回放
+- **新增 `lib/skill-registry.js`**：记录 SKILL.md 的 active 状态、来源 proposal、来源 pattern 和最近 validation
+- **新增 `lib/tool-repair.js`**：对 file_not_found / path_error / permission_denied / command_not_found / syntax_error / auth_error / network_error / model_error 等生成结构化 repairPlan；error pattern 和 search 结果会携带 repairPlan
+- **语义缓存收口**：`semanticCacheMaxEntries` 默认 1000，防止 `embeddings_cache.json` 长期无限增长
+- **Doctor 增强**：增加 review_backlog、validation_blocked_reviews、event_log_missing 等治理检查
+- **新增 `tests/review-governance.test.js`、`tests/tool-repair.test.js`**；测试总数 227 → 235
+
 ## 1.3.0
 
 可选语义检索 + RRF 融合（计划 §7.6）：

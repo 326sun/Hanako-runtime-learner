@@ -171,6 +171,7 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
     scope: normalizeScope(p.scope || p.context),
     desc: p.desc,
     fix: p.fix || null,
+    repairPlan: p.repairPlan || null,
     context: p.context ? { taskType: p.context.taskType, categories: p.context.categories } : null,
     evidencePreview: previewEvidence(p),
     gateReason: gate.reason,

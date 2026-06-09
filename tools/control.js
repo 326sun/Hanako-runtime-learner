@@ -5,6 +5,10 @@ import { defineTool } from "../lib/hana-runtime-compat.js";
 import { sanitizeAdvice } from "../lib/helpers.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { applyProposal, listProposals, readProposal, rejectProposal } from "../lib/proposals.js";
+import { previewProposalDiff } from "../lib/diff-preview.js";
+import { validateProposal } from "../lib/validation-gate.js";
+import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
+import { readEvents, appendEvent } from "../lib/event-log.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -51,7 +55,7 @@ const tool = defineTool({
     properties: {
       action: {
         type: "string",
-        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "doctor", "diagnose_bus"],
+        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "review_panel", "preview_proposal", "validate_proposal", "approve_review", "reject_review", "list_reviews", "list_events", "doctor", "diagnose_bus"],
         description: "Control action to run.",
       },
       id: { type: "string", description: "Pattern id for approve/reject." },
@@ -59,6 +63,7 @@ const tool = defineTool({
       reason: { type: "string", description: "Optional reason for proposal rejection." },
       status: { type: "string", description: "Optional proposal status filter: pending, applied, or rejected." },
       format: { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." },
+      limit: { type: "number", description: "Maximum number of events/reviews to return for list actions." },
       autoInjectHighConfidence: { type: "boolean", description: "Whether high-confidence pending patterns can be injected automatically." },
       autoApproveHighConfidence: { type: "boolean", description: "Whether high-confidence pending patterns are automatically approved (no manual review needed)." },
       minInjectScore: { type: "number", description: "Minimum decayed score for automatic injection." },
@@ -85,6 +90,7 @@ const tool = defineTool({
       semanticEmbeddingBaseUrl: { type: "string", description: "OpenAI-compatible base URL for the embeddings endpoint." },
       semanticEmbeddingApiKey: { type: "string", description: "API key for the embeddings endpoint." },
       semanticEmbeddingModel: { type: "string", description: "Embedding model id." },
+      semanticCacheMaxEntries: { type: "number", description: "Maximum entries to keep in embeddings_cache.json." },
     },
     required: ["action"],
   },
@@ -113,6 +119,11 @@ const tool = defineTool({
           applied: listProposals(p.learnerDir, { status: "applied" }).length,
           rejected: listProposals(p.learnerDir, { status: "rejected" }).length,
           dir: p.proposalsDir,
+        },
+        reviews: {
+          queued: listReviews(p.learnerDir, { status: "queued" }).length,
+          blocked: listReviews(p.learnerDir, { status: "blocked" }).length,
+          approved: listReviews(p.learnerDir, { status: "approved" }).length,
         },
         dataDir: p.learnerDir,
       }, null, 2);
@@ -194,6 +205,49 @@ const tool = defineTool({
       return JSON.stringify(proposal, null, 2);
     }
 
+    if (action === "preview_proposal") {
+      if (!input.proposalId && !input.id) throw new Error("proposalId is required");
+      const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
+      if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
+      const preview = previewProposalDiff(proposal, { configPath: p.configPath });
+      enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
+      appendEvent(p.learnerDir, { type: "proposal.previewed", entityType: "proposal", entityId: proposal.id, summary: `Previewed proposal: ${proposal.id}` });
+      return JSON.stringify(preview, null, 2);
+    }
+
+    if (action === "validate_proposal") {
+      if (!input.proposalId && !input.id) throw new Error("proposalId is required");
+      const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
+      if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
+      const validation = validateProposal(proposal, { config, doctorReport: runDoctorFromDisk(p.learnerDir) });
+      const review = enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
+      if (review) updateReviewStatus(p.learnerDir, review.id, validation.ok ? "queued" : "blocked", { validation });
+      appendEvent(p.learnerDir, { type: "proposal.validated", entityType: "proposal", entityId: proposal.id, summary: `Validated proposal: ${proposal.id}`, data: { ok: validation.ok } });
+      return JSON.stringify(validation, null, 2);
+    }
+
+    if (action === "review_panel") {
+      const report = runDoctorFromDisk(p.learnerDir);
+      return JSON.stringify(reviewPanel(p.learnerDir, { proposals: listProposals(p.learnerDir, { limit: 100 }), doctorReport: report }), null, 2);
+    }
+
+    if (action === "list_reviews") {
+      return JSON.stringify(listReviews(p.learnerDir, { status: input.status || null, limit: 50 }), null, 2);
+    }
+
+    if (action === "approve_review" || action === "reject_review") {
+      const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
+      if (!reviewId) throw new Error("id or proposalId is required");
+      const review = readReview(p.learnerDir, reviewId);
+      if (!review) throw new Error(`review not found: ${reviewId}`);
+      const next = updateReviewStatus(p.learnerDir, reviewId, action === "approve_review" ? "approved" : "rejected", { reason: input.reason || "" });
+      return JSON.stringify({ ok: true, review: next }, null, 2);
+    }
+
+    if (action === "list_events") {
+      return JSON.stringify({ ok: true, events: readEvents(p.learnerDir, { limit: input.limit || 50, entityId: input.id || null }) }, null, 2);
+    }
+
     if (action === "apply_proposal") {
       if (!input.proposalId && !input.id) throw new Error("proposalId is required");
       const applied = applyProposal(p.learnerDir, input.proposalId || input.id, { configPath: p.configPath });
@@ -247,6 +301,7 @@ const tool = defineTool({
       if (!latest) throw new Error("no skill history snapshot available");
       fs.mkdirSync(path.dirname(p.skillPath), { recursive: true });
       fs.copyFileSync(path.join(p.historyDir, latest), p.skillPath);
+      appendEvent(p.learnerDir, { type: "skill.rolled_back", entityType: "skill", entityId: p.skillPath, summary: `Rolled back SKILL.md to ${latest}` });
       return JSON.stringify({ ok: true, restored: latest, skillPath: p.skillPath }, null, 2);
     }
 

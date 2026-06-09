@@ -11,6 +11,8 @@ import {
 } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { listProposals } from "../lib/proposals.js";
+import { listReviews } from "../lib/review-queue.js";
+import { eventSummary } from "../lib/event-log.js";
 import { normalizeScope } from "../lib/scope.js";
 import { factConflicts } from "../lib/temporal.js";
 import { fingerprintPatterns, readMemFSIndex } from "../lib/memfs.js";
@@ -44,9 +46,11 @@ const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
  * @param {Array}  opts.proposals  proposal records ({status,...})
  * @param {Array}  opts.facts      fact records (v1.1; default [])
  * @param {Array}  opts.logs       [{ name, oldestMs }] oldest entry per log file
+ * @param {Array}  opts.reviews    review queue records
+ * @param {object} opts.events     event summary
  * @param {number} opts.now
  */
-export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS } = {}) {
+export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS } = {}) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
   const decorated = decoratePatterns(patterns, cfg);
   const issues = [];
@@ -189,6 +193,29 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       "self_learning_control action=regenerate_memfs");
   }
 
+
+  // 12) review_queue — learning changes should be triaged through review.
+  const activeReviews = reviews.filter((r) => ["queued", "blocked", "approved"].includes(r.status));
+  const blockedReviews = reviews.filter((r) => r.status === "blocked");
+  if (activeReviews.length >= 20) {
+    add("warning", "review_backlog",
+      `${activeReviews.length} review item(s) are waiting or blocked.`,
+      "Use self_learning_control action=review_panel, then preview/validate/apply or reject items.");
+  }
+  if (blockedReviews.length) {
+    add("high", "validation_blocked_reviews",
+      `${blockedReviews.length} review item(s) are blocked by validation failures.`,
+      "Run self_learning_control action=validate_proposal for details, then fix or reject the proposal.",
+      { ids: blockedReviews.map((r) => r.id).slice(0, 8) });
+  }
+
+  // 13) event_log_missing — v1.4 governance expects an append-only audit trail.
+  if (events && events.count === 0 && (proposals.length || reviews.length || decorated.length)) {
+    add("info", "event_log_missing",
+      "No append-only governance events were found yet.",
+      "Events will be written as new proposals/reviews/skill changes occur.");
+  }
+
   // ── Score & status ──
   let score = 100;
   for (const i of issues) score -= SEVERITY_PENALTY[i.severity] ?? 3;
@@ -210,6 +237,8 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       injectable: injectable.length,
       pendingPreferences: pendingPrefs.length,
       pendingProposals: pendingProposals.length,
+      pendingReviews: activeReviews.length,
+      blockedReviews: blockedReviews.length,
       concreteProjects: projectSet.size,
     },
     issues,
@@ -247,8 +276,10 @@ export function runDoctorFromDisk(learnerDir = resolveLearnerDir()) {
   const logs = [
     ["experience_log.jsonl"], ["error_log.jsonl"], ["turns.jsonl"], ["activity_log.jsonl"],
   ].map(([name]) => ({ name, oldestMs: oldestLogMs(path.join(learnerDir, name)) }));
+  const reviews = listReviews(learnerDir, { limit: 500 });
+  const events = eventSummary(learnerDir);
   const memfsIndex = readMemFSIndex(learnerDir);
-  return diagnose({ patterns, config, proposals, facts, logs, memfsIndex });
+  return diagnose({ patterns, config, proposals, facts, logs, reviews, events, memfsIndex });
 }
 
 export function formatReport(report) {
@@ -256,7 +287,7 @@ export function formatReport(report) {
   const lines = [
     `# Self-Learning Doctor — ${icon} ${report.label} (score ${report.score}/100)`,
     "",
-    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals}`,
+    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals} · pendingReviews=${report.summary.pendingReviews || 0}`,
     "",
   ];
   if (!report.issues.length) {

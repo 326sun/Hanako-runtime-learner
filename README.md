@@ -4,11 +4,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.3.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-1.4.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-227%2F227-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-235%2F235-success" alt="tests">
 </p>
 
 ---
@@ -17,7 +17,7 @@
 
 Hanako 插件。本地观察你的交互习惯——重复的工作流、反复触发的错误、明确的纠正——从中提取可复用的经验，自动注入到 Agent 的后续会话中。
 
-v0.8.1 在管道完整性的基础上进行了两轮深层逻辑修复——剪枝后序列缓存未清理导致的忘却失效、工作流 taskType 累积重复、人工承认未清除 autoApproved 标记等 13 处修正，管道的自我一致性得到实质性加固。
+v1.4.0 在 v1.3 记忆基础设施之上补齐学习治理链路：Review Queue、Diff Preview、Validation Gate、append-only Event Log、Skill Registry 与 Tool-call Repair，让学习结果在上线前可审核、可预览、可验证、可追溯。
 
 ---
 
@@ -50,6 +50,7 @@ hanako-runtime-learner_self_learning_stats
 | **证据与时间事实** | **v1.1** | pattern 附带脱敏 `evidence` 证据链、`facts.json` 时间事实（validFrom/validTo/supersedes）、旧事实被覆盖后不再召回、`episodes.jsonl` 情节流 |
 | **MemFS 视图** | **v1.2** | 长期记忆生成可读/可审计的 Markdown 文件树、`regenerate_memfs` 重建、doctor 检测视图过期 |
 | **语义检索（可选）** | **v1.3** | 可选 embedding（默认关闭、带磁盘缓存）、RRF 融合 BM25+语义+关系+记忆强度、关闭时退化为纯本地 BM25 |
+| **学习治理** | **v1.4** | Review Queue、Diff Preview、Validation Gate、append-only Event Log、Skill Registry、Tool-call Repair |
 
 ---
 
@@ -151,19 +152,19 @@ CJK 感知分段：遍历每个字符，CJK 统一汉字/日文假名/韩文 →
 
 | 工具 | 用途 |
 |---|---|
-| `self_learning_search` | 作用域感知检索：CJK-aware BM25 + 准入 Gate + 关系/记忆强度重排 + 官方记忆桥（详见「检索与作用域」） |
+| `self_learning_search` | 作用域感知检索：CJK-aware BM25 + 准入 Gate + 关系/记忆强度重排 + 官方记忆桥；错误记忆会返回 repairPlan（详见「检索与作用域」） |
 | `self_learning_doctor` | 只读健康检查：输出 Good / Warning / Critical + 问题清单与修复建议（详见「健康检查」） |
 | `self_learning_activity` | 查看近 N 天学习活动时间线 |
 | `self_learning_stats` | 统计：turns / errors / patterns / 配置 |
 | `self_learning_report` | 结构化学习报告（含待处理提案） |
-| `self_learning_control` | 审批 pattern、管理 proposal、修改配置、运行模型顾问、健康检查（`doctor`）、重建 MemFS（`regenerate_memfs`） |
+| `self_learning_control` | 审批 pattern、管理 proposal、review queue、diff preview、validation gate、事件查看、健康检查与 MemFS 重建 |
 | `self_learning_open_dir` | 文件管理器中打开 `~/.hanako/self-learning/` |
 
 ---
 
 ## 配置
 
-完整 24 项，开箱默认即可用。
+完整配置开箱默认即可用；语义检索、模型顾问和主动对话通知均默认关闭。
 
 **注入与审批**
 
@@ -190,6 +191,10 @@ CJK 感知分段：遍历每个字符，CJK 统一汉字/日文假名/韩文 →
 | 键 | 默认 | 说明 |
 |---|---|---|
 | `semanticSearchEnabled` | `false` | 启用 RRF 语义融合检索（开启会外发记忆文本） |
+| `semanticEmbeddingBaseUrl` | `` | OpenAI 兼容 embedding Base URL |
+| `semanticEmbeddingApiKey` | `` | embedding API Key |
+| `semanticEmbeddingModel` | `` | embedding 模型名称 |
+| `semanticCacheMaxEntries` | `1000` | `embeddings_cache.json` 条目上限，防止长期运行无限增长 |
 
 ---
 
@@ -282,6 +287,29 @@ doctor 会通过指纹检测 memfs 是否落后于 patterns/facts（`memfs_stale
 
 ---
 
+## 学习治理 · Review / Diff / Validation（v1.4）
+
+v1.4 开始，学习结果进入可审计治理链：
+
+```text
+Proposal → Review Queue → Diff Preview → Validation Gate → Apply / Reject → Event Log → Rollback
+```
+
+新增控制动作：
+
+| action | 用途 |
+|---|---|
+| `review_panel` | 汇总待审核 / 阻塞 / 已批准学习项与 doctor 建议 |
+| `preview_proposal` | 应用前查看 `skill_patch` / `config_patch` / `code_patch` 改动预览 |
+| `validate_proposal` | 运行只读 Validation Gate；失败则阻止 apply |
+| `approve_review` / `reject_review` | 审核或拒绝 review item |
+| `list_reviews` | 查看 review queue |
+| `list_events` | 查看 append-only `event_log.jsonl` 审计事件 |
+
+边界：`code_patch` 永远不会被插件自动写代码；它只生成计划、review 记录和验证要求，仍需人工或 coding agent 执行。
+
+---
+
 ## 语义检索 · 可选（v1.3）
 
 默认**纯本地 BM25**。当你显式开启 `semanticSearchEnabled` 并配置 OpenAI 兼容 embedding 端点后，检索改用 **RRF（Reciprocal Rank Fusion）** 融合四路排序：
@@ -293,8 +321,8 @@ BM25 排名  +  语义(cosine)排名  +  关系排名  +  记忆强度排名
 ```
 
 - **关闭时零依赖、零外发**，行为与之前完全一致（检索评估集不变）。
-- 向量按内容哈希缓存到本地 `embeddings_cache.json`；端点失败/超时自动退化为 BM25。
-- 高级调优键（仅 `DEFAULT_CONFIG`）：`semanticTopK`、`rrfK`。
+- 向量按内容哈希缓存到本地 `embeddings_cache.json`，默认最多保留 `semanticCacheMaxEntries=1000` 条；端点失败/超时自动退化为 BM25。
+- 高级调优键（仅 `DEFAULT_CONFIG`）：`semanticTopK`、`rrfK`。语义检索只对 BM25 候选集做 RRF 重排，不绕过 BM25 和 Memory Gate 做全量语义召回。
 
 > 设计取舍：语义作为 RRF 的一路而非主召回——这样既提升相关召回，又因 RRF 的位次共识特性不放大误召回（计划 §7.6 验收：False Admission Rate 不上升）。
 
@@ -377,7 +405,7 @@ hanako-runtime-learner/
 │   ├── official-utility-model.js  # 小模型端点解析
 │   └── hana-runtime-compat.js  # Pi 框架兼容层
 ├── tools/                      # 7 个独立工具
-├── tests/                      # 128 项测试
+├── tests/                      # 235 项测试
 ├── skills/                     # SKILL.md 注入
 └── manifest.json
 ```
