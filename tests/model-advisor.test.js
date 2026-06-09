@@ -7,6 +7,7 @@ import os from "os";
 // Redirect the learner data dir into a temp home BEFORE the module under test is
 // imported (it resolves its state-file paths at load time via hanakoHome()).
 const tmpHome = path.join(os.tmpdir(), `learner-advisor-test-${process.pid}-${Date.now()}`);
+const savedHanaHome = process.env.HANA_HOME;
 process.env.HANA_HOME = tmpHome;
 const learnerDir = () => path.join(tmpHome, "self-learning");
 
@@ -22,6 +23,8 @@ describe("model advisor", () => {
   after(() => {
     globalThis.fetch = originalFetch;
     fs.rmSync(tmpHome, { recursive: true, force: true });
+    if (savedHanaHome === undefined) delete process.env.HANA_HOME;
+    else process.env.HANA_HOME = savedHanaHome;
   });
 
   describe("normalizeBaseUrl", () => {
