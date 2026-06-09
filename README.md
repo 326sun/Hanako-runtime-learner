@@ -4,11 +4,11 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.4.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-1.5.0-blue" alt="version">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-235%2F235-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-237%2F237-success" alt="tests">
 </p>
 
 ---
@@ -17,7 +17,7 @@
 
 Hanako 插件。本地观察你的交互习惯——重复的工作流、反复触发的错误、明确的纠正——从中提取可复用的经验，自动注入到 Agent 的后续会话中。
 
-v1.4.0 在 v1.3 记忆基础设施之上补齐学习治理链路：Review Queue、Diff Preview、Validation Gate、append-only Event Log、Skill Registry 与 Tool-call Repair，让学习结果在上线前可审核、可预览、可验证、可追溯。
+v1.5.0 在 v1.4 学习治理链路之上增加严格审核模式与事件回放能力：可选 `requireReviewForAutoApply` 阻止低风险 auto-apply 在未批准 Review 前上线，`apply_review` 将审核队列变成可执行入口，`event_summary` 可从 append-only 事件流回放实体状态。
 
 ---
 
@@ -51,6 +51,7 @@ hanako-runtime-learner_self_learning_stats
 | **MemFS 视图** | **v1.2** | 长期记忆生成可读/可审计的 Markdown 文件树、`regenerate_memfs` 重建、doctor 检测视图过期 |
 | **语义检索（可选）** | **v1.3** | 可选 embedding（默认关闭、带磁盘缓存）、RRF 融合 BM25+语义+关系+记忆强度、关闭时退化为纯本地 BM25 |
 | **学习治理** | **v1.4** | Review Queue、Diff Preview、Validation Gate、append-only Event Log、Skill Registry、Tool-call Repair |
+| **严格审核与回放** | **v1.5** | `requireReviewForAutoApply` 严格审核模式、`apply_review` 审核后应用、`event_summary` 事件回放状态 |
 
 ---
 
@@ -176,6 +177,7 @@ CJK 感知分段：遍历每个字符，CJK 统一汉字/日文假名/韩文 →
 | `minInjectCount` | `2` | 注入最少触发次数 |
 | `decayHalfLifeDays` | `30` | 分数半衰期（天） |
 | `includePendingPreferences` | `false` | 是否允许**未审核**的偏好提示参与注入。默认关闭：未审核纠正只保留为可检索状态，需经审批或反复强化越过置信阈值后才注入。高级单用户可设为 `true` 以更激进地复用一次性纠正。 |
+| `requireReviewForAutoApply` | `false` | 严格审核模式。默认关闭以保持低风险 `skill_patch` 自动应用；开启后，auto-apply proposal 只进入 Review Queue，必须 `approve_review` 后再 `apply_review` / `apply_proposal`。 |
 
 **模型顾问**（默认关闭，开启后跟随 Hanako 小模型）
 
@@ -305,6 +307,8 @@ Proposal → Review Queue → Diff Preview → Validation Gate → Apply / Rejec
 | `approve_review` / `reject_review` | 审核或拒绝 review item |
 | `list_reviews` | 查看 review queue |
 | `list_events` | 查看 append-only `event_log.jsonl` 审计事件 |
+| `event_summary` | 从事件流回放 proposal/review/skill 等实体的最新状态 |
+| `apply_review` | 对已批准 review 执行对应 proposal 的应用，严格审核模式下推荐使用 |
 
 边界：`code_patch` 永远不会被插件自动写代码；它只生成计划、review 记录和验证要求，仍需人工或 coding agent 执行。
 

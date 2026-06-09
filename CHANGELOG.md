@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+
+严格审核模式与事件回放收口：
+
+- **新增 `requireReviewForAutoApply` 配置**：默认关闭以保持现有自动刷新体验；开启后，低风险 `skill_patch` 不再直接 auto-apply，而是进入 Review Queue，必须先批准 review。
+- **`applyProposal` 支持 `requireReview` 门禁**：需要审核时，未批准的 review 会阻止 proposal 应用；`code_patch` 仍始终禁止自动应用。
+- **`self_learning_control` 新增 `apply_review`**：把 Review Queue 从“只读审核列表”升级为可执行入口，只有 `approved` review 才能应用对应 proposal。
+- **`self_learning_control` 新增 `event_summary`**：基于 append-only `event_log.jsonl` 回放 proposal/review/skill 等实体最新状态。
+- **`lib/event-log.js` 新增 `replayEventState`**：从事件流重建实体状态摘要，为后续 doctor 深度一致性检查和 GUI 面板打基础。
+- README / manifest / package 版本更新到 `1.5.0`，配置表增加严格审核模式说明。
+
 ## 1.4.0
 
 学习治理链路（Review Queue + Diff Preview + Validation Gate）：

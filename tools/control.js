@@ -8,7 +8,7 @@ import { applyProposal, listProposals, readProposal, rejectProposal } from "../l
 import { previewProposalDiff } from "../lib/diff-preview.js";
 import { validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
-import { readEvents, appendEvent } from "../lib/event-log.js";
+import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -55,7 +55,7 @@ const tool = defineTool({
     properties: {
       action: {
         type: "string",
-        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "review_panel", "preview_proposal", "validate_proposal", "approve_review", "reject_review", "list_reviews", "list_events", "doctor", "diagnose_bus"],
+        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "review_panel", "preview_proposal", "validate_proposal", "approve_review", "reject_review", "apply_review", "list_reviews", "list_events", "event_summary", "doctor", "diagnose_bus"],
         description: "Control action to run.",
       },
       id: { type: "string", description: "Pattern id for approve/reject." },
@@ -86,6 +86,7 @@ const tool = defineTool({
       workStatusEnabled: { type: "boolean", description: "Whether to send a short status message when self-learning work completes." },
       workStatusText: { type: "string", description: "Status message prefix." },
       proposalChatNotificationsEnabled: { type: "boolean", description: "Whether to send chat messages when new high-risk improvement proposals are created." },
+      requireReviewForAutoApply: { type: "boolean", description: "Strict governance mode: queue auto-apply proposals until their review is approved." },
       semanticSearchEnabled: { type: "boolean", description: "Enable semantic retrieval (RRF over BM25 + embeddings). Sends memory text to your embedding endpoint when on." },
       semanticEmbeddingBaseUrl: { type: "string", description: "OpenAI-compatible base URL for the embeddings endpoint." },
       semanticEmbeddingApiKey: { type: "string", description: "API key for the embeddings endpoint." },
@@ -244,8 +245,23 @@ const tool = defineTool({
       return JSON.stringify({ ok: true, review: next }, null, 2);
     }
 
+    if (action === "apply_review") {
+      const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
+      if (!reviewId) throw new Error("id or proposalId is required");
+      const review = readReview(p.learnerDir, reviewId);
+      if (!review) throw new Error(`review not found: ${reviewId}`);
+      if (review.status !== "approved") throw new Error(`review must be approved before apply: ${reviewId}`);
+      const applied = applyProposal(p.learnerDir, review.proposalId, { configPath: p.configPath, requireReview: true });
+      return JSON.stringify({ ok: true, reviewId, proposal: applied }, null, 2);
+    }
+
     if (action === "list_events") {
       return JSON.stringify({ ok: true, events: readEvents(p.learnerDir, { limit: input.limit || 50, entityId: input.id || null }) }, null, 2);
+    }
+
+    if (action === "event_summary") {
+      const events = readEvents(p.learnerDir, { limit: input.limit || 5000, entityId: input.id || null });
+      return JSON.stringify({ ok: true, summary: replayEventState(events) }, null, 2);
     }
 
     if (action === "apply_proposal") {

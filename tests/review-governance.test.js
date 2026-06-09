@@ -7,7 +7,7 @@ import { buildSkillPatchProposal, applyProposal, rejectProposal } from "../lib/p
 import { previewProposalDiff } from "../lib/diff-preview.js";
 import { validateProposal } from "../lib/validation-gate.js";
 import { listReviews, reviewIdForProposal, updateReviewStatus, reviewPanel } from "../lib/review-queue.js";
-import { readEvents } from "../lib/event-log.js";
+import { readEvents, replayEventState } from "../lib/event-log.js";
 import { loadSkillRegistry } from "../lib/skill-registry.js";
 
 const tmpDir = path.join(os.tmpdir(), `learner-review-test-${Date.now()}`);
@@ -64,6 +64,35 @@ describe("review governance", () => {
     const reviews = listReviews(tmpDir, { status: "rejected" });
     assert.equal(reviews.length, 1);
     assert.ok(readEvents(tmpDir, { limit: 20 }).some((evt) => evt.type === "proposal.rejected"));
+  });
+
+
+  it("strict review mode blocks apply until the proposal review is approved", () => {
+    const skillPath = path.join(tmpDir, "strict", "SKILL.md");
+    const content = "# Runtime Self-Learning\n\nStrict review gated content.\n";
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath, content });
+
+    assert.throws(
+      () => applyProposal(tmpDir, proposal.id, { requireReview: true }),
+      /review approval required/
+    );
+
+    updateReviewStatus(tmpDir, reviewIdForProposal(proposal), "approved");
+    const applied = applyProposal(tmpDir, proposal.id, { requireReview: true });
+    assert.equal(applied.status, "applied");
+    assert.equal(fs.readFileSync(skillPath, "utf-8"), content);
+  });
+
+  it("event replay reconstructs proposal and review state", () => {
+    const skillPath = path.join(tmpDir, "events", "SKILL.md");
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath, content: "# Runtime Self-Learning\n\nEvent replay.\n" });
+    updateReviewStatus(tmpDir, reviewIdForProposal(proposal), "approved");
+    applyProposal(tmpDir, proposal.id, { requireReview: true });
+
+    const replay = replayEventState(readEvents(tmpDir, { limit: 100 }));
+    assert.equal(replay.byType["proposal.applied"] >= 1, true);
+    assert.equal(replay.entities[`proposal:${proposal.id}`].status, "applied");
+    assert.equal(replay.entities[`review:${reviewIdForProposal(proposal)}`].status, "applied");
   });
 
   it("reviewPanel summarizes queued and blocked items", () => {

@@ -21,6 +21,7 @@ import { PatternDetector } from "./lib/pattern-detector.js";
 import { createObserver } from "./lib/observer.js";
 import { usageDedupKey, normalizeSeenIds } from "./lib/usage.js";
 import { snapshotSkill, pruneSkillBackups } from "./lib/skill-lifecycle.js";
+import { isProposalReviewApproved } from "./lib/review-queue.js";
 
 const DATA_DIR = learnerDir();
 const EXPERIENCE_LOG = path.join(DATA_DIR, "experience_log.jsonl");
@@ -514,8 +515,15 @@ export default definePlugin({
           triggerPatternIds,
         });
         if (proposal.autoApply && proposal.status !== "applied") {
-          applyProposal(DATA_DIR, proposal.id, { configPath: CONFIG_FILE });
-          pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
+          if (config.requireReviewForAutoApply && !isProposalReviewApproved(DATA_DIR, proposal.id)) {
+            ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
+          } else {
+            applyProposal(DATA_DIR, proposal.id, {
+              configPath: CONFIG_FILE,
+              requireReview: !!config.requireReviewForAutoApply,
+            });
+            pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
+          }
         }
       }
       maybeProposeCodeImprovements(allPatterns, sessionPath);
