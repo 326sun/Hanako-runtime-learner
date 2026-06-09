@@ -16,7 +16,7 @@ import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { runModelAdvisor } from "./lib/model-advisor.js";
 import { applyProposal, buildCodePatchProposal, buildSkillPatchProposal } from "./lib/proposals.js";
 import { usageModelKey, usageTotalTokens, summarizeUsageEntry, updateUsageSummary, snapshotHostCapabilities, USAGE_SUMMARY_FILE } from "./lib/usage-pipeline.js";
-import { normalizeToolName, safeText, toolCategory, shortHash, preferencePatternId, stableKey, isUsageFailure, TASK_SIGS, ERR_PATTERNS, CORRECTION_STRONG, CORRECTION_WEAK, classifyTask, classifyError, extractCorrectionFromUserText, sanitizeAdvice, usageDedupKey, normalizeSeenIds } from "./lib/helpers.js";
+import { normalizeToolName, safeText, toolCategory, shortHash, preferencePatternId, stableKey, isUsageFailure, TASK_SIGS, ERR_PATTERNS, CORRECTION_STRONG, CORRECTION_WEAK, classifyTask, classifyError, extractCorrectionFromUserText, sanitizeAdvice, usageDedupKey, normalizeSeenIds, absorbDiskPatternState } from "./lib/helpers.js";
 import { SessionTurn } from "./lib/session-turn.js";
 import { PatternDetector } from "./lib/pattern-detector.js";
 import { createObserver } from "./lib/observer.js";
@@ -77,7 +77,11 @@ function loadConfig() {
       const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
       return { ...DEFAULT_CONFIG, ...parsed };
     }
-  } catch {}
+  } catch {
+    // Corrupt config.json: move it aside instead of silently overwriting, so a
+    // user's recoverable settings aren't destroyed by a transient parse failure.
+    try { fs.renameSync(CONFIG_FILE, `${CONFIG_FILE}.corrupt.${Date.now()}.bak`); } catch {}
+  }
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2), "utf-8");
   return { ...DEFAULT_CONFIG };
 }
@@ -248,36 +252,16 @@ export default definePlugin({
         _patternsMtime = mtime;
         const disk = readJson(PATTERNS_FILE, []);
         if (!disk.length) return;
+        // Reconcile each disk pattern into its in-memory twin. The per-pattern
+        // merge rules (manual approve/reject, durable promotion, autoApproved
+        // clearing, and a newer advisor-distilled fix from control.js's manual
+        // run_model_advisor) live in absorbDiskPatternState so they are unit
+        // tested independently of the plugin lifecycle.
         for (const p of disk) {
           if (!p.id) continue;
-          if (p.status !== "approved" && p.status !== "rejected") continue;
           const stored = detector.patterns.get(p.id);
           if (!stored) continue;
-          let changed = false;
-          if (stored.status !== p.status) {
-            stored.status = p.status;
-            if (p.reviewedAt) stored.reviewedAt = p.reviewedAt;
-            changed = true;
-          }
-          // Absorb a manual durable promotion: control.js sets knowledgeTier
-          // "durable" when a user approves a preference. Syncing only status
-          // would let the plugin's in-memory "core" value overwrite it on the
-          // next persist, silently demoting the preference back to a decaying
-          // one. Only ever upgrade to durable here — never downgrade — so an
-          // in-memory promotion is never clobbered either.
-          if (p.knowledgeTier === "durable" && stored.knowledgeTier !== "durable") {
-            stored.knowledgeTier = "durable";
-            changed = true;
-          }
-          // A manual approval on disk (status approved, autoApproved cleared)
-          // outranks a prior in-memory machine approval. Clear the flag so the
-          // next persist doesn't write the stale autoApproved back and re-subject
-          // a user-blessed pattern to the forgetting curve.
-          if (p.status === "approved" && !p.autoApproved && stored.autoApproved) {
-            delete stored.autoApproved;
-            changed = true;
-          }
-          if (changed) detector.invalidate();
+          if (absorbDiskPatternState(stored, p)) detector.invalidate();
         }
       } catch {}
     };

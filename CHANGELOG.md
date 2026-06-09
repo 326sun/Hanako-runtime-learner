@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.7.1
+
+代码审查后的一致性与健壮性修复（无行为破坏，纯增量）：
+
+- **修复手动 advisor 蒸馏被覆盖**：`syncDiskStatus` 现在通过新的 `absorbDiskPatternState()` 吸收 control.js 写入的更新的 advisor `fix`（按 `advisorUpdatedAt` 时间戳，绝不覆盖用户已批准 pattern 的文案）。此前 `control.js action=run_model_advisor` 合并的建议会被运行中插件的下一次内存态持久化清掉。
+- **损坏的 config.json 不再被静默覆盖**：解析失败时先重命名为 `config.json.corrupt.<ts>.bak` 再写默认值，保留用户可恢复的设置。
+- **`event_log` 头哈希改为尾部读取**：`appendEvent` 不再每次整文件读取求上一条哈希，改为读 8 KiB 尾部（超大事件回退整读），追加从 O(n) 降为 O(1)。
+- **整洁度**：`estimateTokens` 抽出共享的 `estimateTokensRaw()`，消除 `buildSkillMdFromPatterns` 内重复的 CJK 区间表；`PatternDetector.all()` 复用 `decoratePatterns()`，两处装饰逻辑不再各写一份；观察者仅为已处理事件类型创建 `SessionTurn`。
+- 新增 `tests/disk-sync.test.js` 及 common/event-log 测试；测试总数 264 → 278。
+
 ## 1.7.0
 
 治理收口、Runtime E2E 与审计增强：

@@ -76,4 +76,29 @@ describe("event log hash chain", () => {
       else process.env.HANA_HOME = oldHome;
     }
   });
+
+  it("keeps the chain intact across many appends (tail-read finds the head)", () => {
+    const dir = path.join(tmpDir, "many-appends");
+    for (let i = 0; i < 200; i++) {
+      appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: `p${i}`, summary: `event ${i}` });
+    }
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.events, 200);
+    assert.equal(result.brokenAt, null);
+  });
+
+  it("chains correctly when the last event exceeds the tail window (full-read fallback)", () => {
+    const dir = path.join(tmpDir, "large-event");
+    appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "first", summary: "small" });
+    // A single event larger than the 8 KiB tail window forces lastEventHash to
+    // fall back to a full read on the following append.
+    appendEvent(dir, { type: "proposal.updated", entityType: "proposal", entityId: "huge", summary: "x".repeat(20000) });
+    appendEvent(dir, { type: "proposal.applied", entityType: "proposal", entityId: "after", summary: "small again" });
+
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.events, 3);
+    assert.equal(result.brokenAt, null);
+  });
 });

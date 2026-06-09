@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.7.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-1.7.1-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-264%2F264-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-278%2F278-success" alt="tests">
 </p>
 
 观察你的交互，从中提取可复用的经验，自动注入到 Hanako Agent 的后续会话中。重复的工作流、反复触发的错误、明确的纠正——全部本地处理，默认不外发任何数据。
@@ -22,7 +22,7 @@ cd Hanako-runtime-learner
 npm run install-plugin
 
 # 固定版本
-git clone --branch v1.7.0 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v1.7.1 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm run install-plugin
 ```
@@ -142,7 +142,7 @@ BM25 倒排索引 → 准入 Gate → 关系 / 记忆强度重排 → 可选语�
 
 ```powershell
 npm run check    # 源文件语法检查
-npm test         # 264 项测试
+npm test         # 278 项测试
 ```
 
 项目结构与完整调用拓扑见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。

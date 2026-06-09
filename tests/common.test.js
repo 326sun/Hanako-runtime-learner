@@ -15,10 +15,31 @@ import {
   decoratePatterns,
   buildSkillMdFromPatterns,
   countJsonl,
+  estimateTokens,
+  estimateTokensRaw,
 } from "../lib/common.js";
 import fs from "fs";
 import path from "path";
 import os from "os";
+
+describe("estimateTokensRaw / estimateTokens", () => {
+  it("estimateTokens is the ceil of the raw estimate", () => {
+    for (const text of ["", "hello world", "排版论文", "mixed 中文 and english 123", "a"]) {
+      assert.equal(estimateTokens(text), Math.ceil(estimateTokensRaw(text)));
+    }
+  });
+
+  it("weights CJK heavier than ASCII", () => {
+    // 4 CJK chars (~1.8 each) clearly outweigh 4 ASCII chars (~0.25 each).
+    assert.ok(estimateTokensRaw("论文排版") > estimateTokensRaw("abcd"));
+  });
+
+  it("returns 0 for empty / nullish input", () => {
+    assert.equal(estimateTokensRaw(""), 0);
+    assert.equal(estimateTokensRaw(null), 0);
+    assert.equal(estimateTokensRaw(undefined), 0);
+  });
+});
 
 describe("ageDays", () => {
   it("returns 0 for a pattern just seen", () => {
