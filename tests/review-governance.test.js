@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { buildSkillPatchProposal, applyProposal, rejectProposal } from "../lib/proposals.js";
+import { buildCodePatchProposal, buildSkillPatchProposal, applyProposal, rejectProposal } from "../lib/proposals.js";
 import { previewProposalDiff } from "../lib/proposals.js";
 import { validateProposal } from "../lib/validation-gate.js";
 import { listReviews, reviewIdForProposal, updateReviewStatus, reviewPanel } from "../lib/review-queue.js";
 import { readEvents, replayEventState } from "../lib/event-log.js";
 import { loadSkillRegistry } from "../lib/skill-lifecycle.js";
+import { DEFAULT_CONFIG, writeJson } from "../lib/common.js";
+import { execute as executeControl } from "../tools/control.js";
 
 const tmpDir = path.join(os.tmpdir(), `learner-review-test-${Date.now()}`);
 
@@ -101,5 +103,113 @@ describe("review governance", () => {
     const panel = reviewPanel(tmpDir, { proposals: [proposal], doctorReport: { status: "good", suggestedActions: [] } });
     assert.equal(panel.ok, true);
     assert.equal(panel.counts.pendingReviews >= 1, true);
+  });
+
+  it("control apply_proposal respects strict review settings", async () => {
+    const home = path.join(tmpDir, "home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    writeJson(path.join(learnerDir, "config.json"), { ...DEFAULT_CONFIG, governanceProfile: "balanced", requireReviewForAutoApply: true });
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath,
+      content: "# Runtime Self-Learning\n\nStrict control apply.\n",
+    });
+
+    await assert.rejects(
+      () => executeControl({ action: "apply_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }),
+      /review approval required/
+    );
+
+    updateReviewStatus(learnerDir, reviewIdForProposal(proposal), "approved");
+    const result = JSON.parse(await executeControl({ action: "apply_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(result.proposal.status, "applied");
+    assert.equal(fs.readFileSync(skillPath, "utf-8"), "# Runtime Self-Learning\n\nStrict control apply.\n");
+  });
+
+  it("control apply_proposal allows balanced low-risk proposals when strict review is off", async () => {
+    const home = path.join(tmpDir, "home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    writeJson(path.join(learnerDir, "config.json"), { ...DEFAULT_CONFIG, governanceProfile: "balanced", requireReviewForAutoApply: false });
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath,
+      content: "# Runtime Self-Learning\n\nBalanced control apply.\n",
+    });
+
+    const result = JSON.parse(await executeControl({ action: "apply_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(result.proposal.status, "applied");
+    assert.equal(fs.readFileSync(skillPath, "utf-8"), "# Runtime Self-Learning\n\nBalanced control apply.\n");
+  });
+
+  it("control apply_proposal is blocked in conservative profile even after approval", async () => {
+    const home = path.join(tmpDir, "home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    writeJson(path.join(learnerDir, "config.json"), { ...DEFAULT_CONFIG, governanceProfile: "conservative", requireReviewForAutoApply: true });
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath,
+      content: "# Runtime Self-Learning\n\nConservative control apply.\n",
+    });
+    updateReviewStatus(learnerDir, reviewIdForProposal(proposal), "approved");
+
+    await assert.rejects(
+      () => executeControl({ action: "apply_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }),
+      /conservative profile requires review-first/
+    );
+
+    const result = JSON.parse(await executeControl({ action: "apply_review", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(result.proposal.status, "applied");
+    assert.equal(fs.readFileSync(skillPath, "utf-8"), "# Runtime Self-Learning\n\nConservative control apply.\n");
+  });
+
+  it("control apply_proposal still blocks code_patch proposals", async () => {
+    const home = path.join(tmpDir, "home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    writeJson(path.join(learnerDir, "config.json"), { ...DEFAULT_CONFIG, governanceProfile: "balanced", requireReviewForAutoApply: false });
+    const proposal = buildCodePatchProposal({
+      learnerDir,
+      pattern: { id: "error:control_code_patch", type: "error", count: 3, desc: "Repeated failure.", fix: "Inspect manually." },
+    });
+
+    await assert.rejects(
+      () => executeControl({ action: "apply_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }),
+      /code_patch proposals cannot be auto-applied/
+    );
+  });
+
+  it("control proposal review actions include actionable next steps", async () => {
+    const home = path.join(tmpDir, "home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    writeJson(path.join(learnerDir, "config.json"), { ...DEFAULT_CONFIG, governanceProfile: "balanced", requireReviewForAutoApply: true });
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath,
+      content: "# Runtime Self-Learning\n\nNext action hint.\n",
+    });
+
+    const preview = JSON.parse(await executeControl({ action: "preview_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(preview.nextAction, "validate_proposal, then approve_review or reject_review");
+
+    const validation = JSON.parse(await executeControl({ action: "validate_proposal", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(validation.ok, true);
+    assert.equal(validation.nextAction, "approve_review then apply_review");
+
+    const panel = JSON.parse(await executeControl({ action: "review_panel" }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.ok(panel.recommendedNextActions.some((action) => action.includes("preview queued reviews")));
+
+    const approved = JSON.parse(await executeControl({ action: "approve_review", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(approved.nextAction, "apply_review");
+
+    const applied = JSON.parse(await executeControl({ action: "apply_review", proposalId: proposal.id }, { pluginDir: path.join(tmpDir, "plugin") }));
+    assert.equal(applied.nextAction, "verify_event_log or export_audit_bundle");
   });
 });

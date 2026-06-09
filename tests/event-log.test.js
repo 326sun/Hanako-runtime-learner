@@ -1,0 +1,79 @@
+import { describe, it, after } from "node:test";
+import assert from "node:assert/strict";
+import fs from "fs";
+import os from "os";
+import path from "path";
+
+import { appendEvent, eventLogPath, verifyEventLog } from "../lib/event-log.js";
+import { execute as executeControl } from "../tools/control.js";
+
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "event-log-test-"));
+
+describe("event log hash chain", () => {
+  after(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("appends events with a verifiable hash chain", () => {
+    const dir = path.join(tmpDir, "valid");
+    const first = appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p1", summary: "created", date: "2026-06-09T00:00:00.000Z" });
+    const second = appendEvent(dir, { type: "review.queued", entityType: "review", entityId: "r1", summary: "queued", date: "2026-06-09T00:00:01.000Z" });
+
+    assert.equal(first.prevHash, "");
+    assert.equal(second.prevHash, first.hash);
+
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.events, 2);
+    assert.equal(result.rootHash, "");
+    assert.equal(result.headHash, second.hash);
+    assert.equal(result.brokenAt, null);
+  });
+
+  it("detects tampered event payloads", () => {
+    const dir = path.join(tmpDir, "tampered");
+    appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p1", summary: "created" });
+    appendEvent(dir, { type: "review.queued", entityType: "review", entityId: "r1", summary: "queued" });
+
+    const file = eventLogPath(dir);
+    const lines = fs.readFileSync(file, "utf-8").trim().split("\n");
+    const tampered = JSON.parse(lines[1]);
+    tampered.summary = "silently changed";
+    lines[1] = JSON.stringify(tampered);
+    fs.writeFileSync(file, `${lines.join("\n")}\n`, "utf-8");
+
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, false);
+    assert.equal(result.brokenAt, 1);
+    assert.equal(result.reason, "hash mismatch");
+  });
+
+  it("detects legacy or malformed rows without hashes", () => {
+    const dir = path.join(tmpDir, "legacy");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(eventLogPath(dir), `${JSON.stringify({ id: "old", type: "legacy" })}\n`, "utf-8");
+
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, false);
+    assert.equal(result.brokenAt, 0);
+    assert.equal(result.reason, "missing hash");
+  });
+
+  it("exposes verification through self_learning_control", async () => {
+    const oldHome = process.env.HANA_HOME;
+    const home = path.join(tmpDir, "control-home");
+    process.env.HANA_HOME = home;
+    try {
+      const learnerDir = path.join(home, "self-learning");
+      appendEvent(learnerDir, { type: "policy.applied", entityType: "config", entityId: "governanceProfile", summary: "Applied policy" });
+
+      const result = JSON.parse(await executeControl({ action: "verify_event_log" }));
+      assert.equal(result.ok, true);
+      assert.equal(result.events, 1);
+      assert.equal(result.brokenAt, null);
+    } finally {
+      if (oldHome == null) delete process.env.HANA_HOME;
+      else process.env.HANA_HOME = oldHome;
+    }
+  });
+});

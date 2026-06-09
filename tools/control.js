@@ -8,7 +8,7 @@ import { applyProposal, listProposals, readProposal, rejectProposal } from "../l
 import { previewProposalDiff } from "../lib/proposals.js";
 import { validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
-import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
+import { readEvents, appendEvent, replayEventState, verifyEventLog } from "../lib/event-log.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -45,6 +45,23 @@ function regenerateSkill(pathsValue, patterns, config) {
   );
 }
 
+function validationNextAction(validation) {
+  return validation?.ok
+    ? "approve_review then apply_review"
+    : "fix proposal or reject_proposal";
+}
+
+function reviewPanelNextActions(panel = {}) {
+  const actions = [];
+  const blocked = panel.counts?.blockedReviews || 0;
+  const pending = panel.counts?.pendingReviews || 0;
+  if (blocked > 0) actions.push("validate blocked reviews, then fix or reject them");
+  if (pending > 0) actions.push("preview queued reviews, then approve_review or reject_review");
+  if (panel.counts?.pendingProposals > 0) actions.push("validate_proposal for pending proposals not yet reviewed");
+  if (!actions.length) actions.push("no review action needed");
+  return actions;
+}
+
 const tool = defineTool({
   name: "self_learning_control",
   description: "Review and control the runtime self-learning engine: list patterns, approve/reject hints, update injection config, or roll back the generated skill.",
@@ -53,7 +70,7 @@ const tool = defineTool({
     properties: {
       action: {
         type: "string",
-        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "review_panel", "preview_proposal", "validate_proposal", "approve_review", "reject_review", "apply_review", "list_reviews", "list_events", "event_summary", "doctor", "list_policy_profiles", "set_policy_profile", "export_audit_bundle", "diagnose_bus"],
+        enum: ["status", "list", "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs", "run_model_advisor", "list_proposals", "show_proposal", "apply_proposal", "reject_proposal", "review_panel", "preview_proposal", "validate_proposal", "approve_review", "reject_review", "apply_review", "list_reviews", "list_events", "event_summary", "verify_event_log", "doctor", "list_policy_profiles", "set_policy_profile", "export_audit_bundle", "diagnose_bus"],
         description: "Control action to run.",
       },
       id: { type: "string", description: "Pattern id for approve/reject." },
@@ -218,7 +235,7 @@ const tool = defineTool({
       const preview = previewProposalDiff(proposal, { configPath: p.configPath });
       enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
       appendEvent(p.learnerDir, { type: "proposal.previewed", entityType: "proposal", entityId: proposal.id, summary: `Previewed proposal: ${proposal.id}` });
-      return JSON.stringify(preview, null, 2);
+      return JSON.stringify({ ...preview, nextAction: "validate_proposal, then approve_review or reject_review" }, null, 2);
     }
 
     if (action === "validate_proposal") {
@@ -229,12 +246,13 @@ const tool = defineTool({
       const review = enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
       if (review) updateReviewStatus(p.learnerDir, review.id, validation.ok ? "queued" : "blocked", { validation });
       appendEvent(p.learnerDir, { type: "proposal.validated", entityType: "proposal", entityId: proposal.id, summary: `Validated proposal: ${proposal.id}`, data: { ok: validation.ok } });
-      return JSON.stringify(validation, null, 2);
+      return JSON.stringify({ ...validation, nextAction: validationNextAction(validation) }, null, 2);
     }
 
     if (action === "review_panel") {
       const report = runDoctorFromDisk(p.learnerDir);
-      return JSON.stringify(reviewPanel(p.learnerDir, { proposals: listProposals(p.learnerDir, { limit: 100 }), doctorReport: report }), null, 2);
+      const panel = reviewPanel(p.learnerDir, { proposals: listProposals(p.learnerDir, { limit: 100 }), doctorReport: report });
+      return JSON.stringify({ ...panel, recommendedNextActions: reviewPanelNextActions(panel) }, null, 2);
     }
 
     if (action === "list_reviews") {
@@ -247,7 +265,11 @@ const tool = defineTool({
       const review = readReview(p.learnerDir, reviewId);
       if (!review) throw new Error(`review not found: ${reviewId}`);
       const next = updateReviewStatus(p.learnerDir, reviewId, action === "approve_review" ? "approved" : "rejected", { reason: input.reason || "" });
-      return JSON.stringify({ ok: true, review: next }, null, 2);
+      return JSON.stringify({
+        ok: true,
+        review: next,
+        nextAction: action === "approve_review" ? "apply_review" : "reject_proposal or review_panel",
+      }, null, 2);
     }
 
     if (action === "apply_review") {
@@ -257,7 +279,7 @@ const tool = defineTool({
       if (!review) throw new Error(`review not found: ${reviewId}`);
       if (review.status !== "approved") throw new Error(`review must be approved before apply: ${reviewId}`);
       const applied = applyProposal(p.learnerDir, review.proposalId, { configPath: p.configPath, requireReview: true });
-      return JSON.stringify({ ok: true, reviewId, proposal: applied }, null, 2);
+      return JSON.stringify({ ok: true, reviewId, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
     }
 
     if (action === "list_events") {
@@ -269,16 +291,30 @@ const tool = defineTool({
       return JSON.stringify({ ok: true, summary: replayEventState(events) }, null, 2);
     }
 
+    if (action === "verify_event_log") {
+      const verification = verifyEventLog(p.learnerDir);
+      return JSON.stringify({
+        ...verification,
+        nextAction: verification.ok ? "export_audit_bundle or continue" : "inspect event_log.jsonl and restore from trusted backup",
+      }, null, 2);
+    }
+
     if (action === "apply_proposal") {
       if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-      const applied = applyProposal(p.learnerDir, input.proposalId || input.id, { configPath: p.configPath });
-      return JSON.stringify({ ok: true, proposal: applied }, null, 2);
+      if (config.governanceProfile === "conservative") {
+        throw new Error("conservative profile requires review-first flow: approve_review then apply_review");
+      }
+      const applied = applyProposal(p.learnerDir, input.proposalId || input.id, {
+        configPath: p.configPath,
+        requireReview: !!config.requireReviewForAutoApply,
+      });
+      return JSON.stringify({ ok: true, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
     }
 
     if (action === "reject_proposal") {
       if (!input.proposalId && !input.id) throw new Error("proposalId is required");
       const rejected = rejectProposal(p.learnerDir, input.proposalId || input.id, input.reason || "");
-      return JSON.stringify({ ok: true, proposal: rejected }, null, 2);
+      return JSON.stringify({ ok: true, proposal: rejected, nextAction: "review_panel" }, null, 2);
     }
 
     if (action === "run_model_advisor") {
@@ -355,7 +391,7 @@ const tool = defineTool({
         data: { profile: result.profile, changed: result.changed },
       });
       regenerateSkill(p, patterns, result.config);
-      return JSON.stringify({ ok: true, profile: result.profile, changed: result.changed, config: result.config }, null, 2);
+      return JSON.stringify({ ok: true, profile: result.profile, changed: result.changed, config: result.config, nextAction: "doctor" }, null, 2);
     }
 
     if (action === "export_audit_bundle") {
@@ -384,7 +420,7 @@ const tool = defineTool({
         summary: "Exported local audit bundle",
         data: { dir: written.dir, doctorStatus: doctorReport.status },
       });
-      return JSON.stringify({ ok: true, ...written, summary: bundle.summary }, null, 2);
+      return JSON.stringify({ ok: true, ...written, summary: bundle.summary, nextAction: "review audit-report.md" }, null, 2);
     }
 
     if (action === "diagnose_bus") {

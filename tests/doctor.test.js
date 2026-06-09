@@ -3,6 +3,8 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import { DEFAULT_CONFIG } from "../lib/common.js";
+import { applyPolicyProfile } from "../lib/policy-profiles.js";
 import { diagnose, formatReport } from "../tools/doctor.js";
 
 const NOW = Date.parse("2026-06-09T12:00:00Z");
@@ -98,6 +100,43 @@ describe("doctor · pending preferences", () => {
   });
 });
 
+describe("doctor · policy consistency", () => {
+  it("flags conservative profile when requireReviewForAutoApply is false", () => {
+    const conservative = applyPolicyProfile(DEFAULT_CONFIG, "conservative").config;
+    const r = diagnose({
+      config: { ...conservative, requireReviewForAutoApply: false },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "policy_inconsistent");
+    assert.equal(issue?.severity, "high");
+    assert.ok(issue.mismatches.some((m) => m.key === "requireReviewForAutoApply"));
+    assert.equal(r.priorityActions[0].priority, "P0");
+    assert.match(r.priorityActions[0].action, /set_policy_profile/);
+  });
+
+  it("flags conservative profile when semanticSearchEnabled is true", () => {
+    const conservative = applyPolicyProfile(DEFAULT_CONFIG, "conservative").config;
+    const r = diagnose({
+      config: { ...conservative, semanticSearchEnabled: true },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "policy_inconsistent");
+    assert.equal(issue?.severity, "high");
+    assert.ok(issue.mismatches.some((m) => m.key === "semanticSearchEnabled"));
+  });
+
+  it("does not flag balanced default policy config", () => {
+    const r = diagnose({ config: DEFAULT_CONFIG, now: NOW });
+    assert.ok(!types(r).includes("policy_inconsistent"));
+  });
+
+  it("does not flag autonomous default policy config", () => {
+    const autonomous = applyPolicyProfile(DEFAULT_CONFIG, "autonomous").config;
+    const r = diagnose({ config: autonomous, now: NOW });
+    assert.ok(!types(r).includes("policy_inconsistent"));
+  });
+});
+
 describe("doctor · proposal_backlog", () => {
   const mk = (n) => Array.from({ length: n }, (_, i) => ({ id: `prop${i}`, status: "pending" }));
   it("warns at ≥10 pending proposals", () => {
@@ -190,5 +229,6 @@ describe("doctor · formatReport", () => {
     assert.match(text, /Self-Learning Doctor/);
     assert.match(text, /Read-only diagnostic/);
     assert.match(text, /duplicate_patterns/);
+    assert.match(text, /Priority actions/);
   });
 });

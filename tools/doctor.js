@@ -17,8 +17,11 @@ import { eventSummary } from "../lib/event-log.js";
 import { normalizeScope } from "../lib/scope.js";
 import { factConflicts } from "../lib/temporal.js";
 import { fingerprintPatterns, readMemFSIndex } from "../lib/memfs.js";
+import { POLICY_PROFILES } from "../lib/policy-profiles.js";
 
 const SEVERITY_PENALTY = { critical: 20, high: 15, warning: 8, info: 3 };
+const SEVERITY_PRIORITY = { critical: "P0", high: "P0", warning: "P1", info: "P2" };
+const SEVERITY_RANK = { critical: 0, high: 1, warning: 2, info: 3 };
 const RETENTION_DAYS = 30;
 
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -44,7 +47,32 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
   const add = (severity, type, message, suggestion, extra = {}) =>
     issues.push({ severity, type, message, suggestion, ...extra });
 
-  // 1) duplicate_patterns — same desc+fix surviving as separate records.
+  // 1) policy_inconsistent — profile name and key governance switches diverge.
+  const profileName = String(cfg.governanceProfile || "balanced").trim().toLowerCase();
+  const profile = POLICY_PROFILES[profileName];
+  if (!profile) {
+    add("high", "policy_inconsistent",
+      `Unknown governanceProfile: ${cfg.governanceProfile}`,
+      "Run self_learning_control action=list_policy_profiles, then set a known governanceProfile.",
+      { profile: cfg.governanceProfile || null, available: Object.keys(POLICY_PROFILES) });
+  } else {
+    const mismatches = [];
+    for (const [key, expected] of Object.entries(profile.values)) {
+      if (key === "governanceProfile") continue;
+      if (cfg[key] !== expected) mismatches.push({ key, expected, actual: cfg[key] });
+    }
+    if (mismatches.length) {
+      const first = mismatches[0];
+      add("high", "policy_inconsistent",
+        mismatches.length === 1
+          ? `${profile.name} profile is active but ${first.key}=${JSON.stringify(first.actual)}.`
+          : `${profile.name} profile is active but ${mismatches.length} key settings differ.`,
+        `Run self_learning_control action=set_policy_profile governanceProfile=${profile.name}.`,
+        { profile: profile.name, mismatches });
+    }
+  }
+
+  // 2) duplicate_patterns — same desc+fix surviving as separate records.
   const dupGroups = new Map();
   for (const p of decorated) {
     if (p.status === "rejected") continue;
@@ -61,7 +89,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { groups: dups.map((ids) => ids.slice(0, 6)) });
   }
 
-  // 2) conflicting_facts — same subject+predicate (per project) with >1 active
+  // 3) conflicting_facts — same subject+predicate (per project) with >1 active
   //    object. Reuses the temporal layer so the rule matches retrieval.
   const conflicts = factConflicts(facts, now);
   if (conflicts.length) {
@@ -71,7 +99,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { keys: conflicts.map((c) => c.key).slice(0, 6) });
   }
 
-  // 3) stale_auto_approved — machine-approved but never adopted and well aged.
+  // 4) stale_auto_approved — machine-approved but never adopted and well aged.
   const halfLife = Math.max(1, Number(cfg.decayHalfLifeDays || 30));
   const stale = decorated.filter((p) =>
     p.autoApproved && !p.lastAdoptedAt && ageDays(p) > 2 * halfLife);
@@ -82,7 +110,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { ids: stale.map((p) => p.id).slice(0, 8) });
   }
 
-  // 4) pending_preferences — unreviewed corrections, dangerous when opted-in.
+  // 5) pending_preferences — unreviewed corrections, dangerous when opted-in.
   const pendingPrefs = decorated.filter((p) => p.type === "preference" && p.status === "pending");
   if (cfg.includePendingPreferences && pendingPrefs.length) {
     add("high", "pending_preference_injection",
@@ -95,7 +123,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       "Periodically approve/reject via self_learning_control list type=preference status=pending.");
   }
 
-  // 5) proposal_backlog
+  // 6) proposal_backlog
   const pendingProposals = proposals.filter((pr) => pr.status === "pending");
   if (pendingProposals.length >= 25) {
     add("critical", "proposal_backlog",
@@ -107,7 +135,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       "Triage with self_learning_control list_proposals.");
   }
 
-  // 6) skill_budget — untrimmed injectable hints exceed the SKILL.md budget,
+  // 7) skill_budget — untrimmed injectable hints exceed the SKILL.md budget,
   //    meaning low-value hints are being dropped each refresh.
   const injectable = decorated.filter((p) => p.injectable);
   const hintText = injectable.map((p) => `- ${p.desc} ${p.fix || ""}`).join("\n");
@@ -120,7 +148,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { injectable: injectable.length });
   }
 
-  // 7) privacy_retention — log entries older than the retention promise.
+  // 8) privacy_retention — log entries older than the retention promise.
   const cutoff = now - retentionDays * 86_400_000;
   const overdue = logs.filter((l) => Number.isFinite(l.oldestMs) && l.oldestMs < cutoff);
   if (overdue.length) {
@@ -130,7 +158,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { files: overdue.map((l) => l.name) });
   }
 
-  // 8) scope_leakage — injectable patterns spanning multiple concrete projects.
+  // 9) scope_leakage — injectable patterns spanning multiple concrete projects.
   const concrete = injectable
     .map((p) => normalizeScope(p.scope || p.context).project)
     .filter((proj) => proj && proj !== "general");
@@ -142,7 +170,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { projects: [...projectSet].slice(0, 8) });
   }
 
-  // 9) orphan_relations — relation edges pointing at non-existent patterns.
+  // 10) orphan_relations — relation edges pointing at non-existent patterns.
   const ids = new Set(decorated.map((p) => p.id));
   const orphans = [];
   for (const p of decorated) {
@@ -157,7 +185,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { edges: orphans.slice(0, 8) });
   }
 
-  // 10) evidence_missing — only meaningful once any pattern carries evidence
+  // 11) evidence_missing — only meaningful once any pattern carries evidence
   //     (the evidence field lands in v1.1; skip entirely before then).
   const evidenceInUse = decorated.some((p) => Array.isArray(p.evidence) && p.evidence.length);
   if (evidenceInUse) {
@@ -172,7 +200,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
     }
   }
 
-  // 11) memfs_stale — the human-readable view no longer matches live memory.
+  // 12) memfs_stale — the human-readable view no longer matches live memory.
   //     Only meaningful once MemFS has been generated (index present).
   if (memfsIndex && memfsIndex.fingerprint && memfsIndex.fingerprint !== fingerprintPatterns(patterns, facts)) {
     add("info", "memfs_stale",
@@ -181,7 +209,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
   }
 
 
-  // 12) review_queue — learning changes should be triaged through review.
+  // 13) review_queue — learning changes should be triaged through review.
   const activeReviews = reviews.filter((r) => ["queued", "blocked", "approved"].includes(r.status));
   const blockedReviews = reviews.filter((r) => r.status === "blocked");
   if (activeReviews.length >= 20) {
@@ -196,7 +224,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { ids: blockedReviews.map((r) => r.id).slice(0, 8) });
   }
 
-  // 13) event_log_missing — v1.4 governance expects an append-only audit trail.
+  // 14) event_log_missing — v1.4 governance expects an append-only audit trail.
   if (events && events.count === 0 && (proposals.length || reviews.length || decorated.length)) {
     add("info", "event_log_missing",
       "No append-only governance events were found yet.",
@@ -214,6 +242,17 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
   else { status = "good"; label = "Good"; }
 
   const suggestedActions = [...new Set(issues.map((i) => i.suggestion).filter(Boolean))];
+  const priorityActions = [];
+  const seenPriorityActions = new Set();
+  for (const issue of [...issues].sort((a, b) => (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9))) {
+    if (!issue.suggestion || seenPriorityActions.has(issue.suggestion)) continue;
+    seenPriorityActions.add(issue.suggestion);
+    priorityActions.push({
+      priority: SEVERITY_PRIORITY[issue.severity] || "P3",
+      action: issue.suggestion,
+      reason: `${issue.severity}: ${issue.type}`,
+    });
+  }
 
   return {
     status,
@@ -230,6 +269,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
     },
     issues,
     suggestedActions,
+    priorityActions,
     generatedAt: new Date(now).toISOString(),
   };
 }
@@ -289,6 +329,10 @@ export function formatReport(report) {
       lines.push("", "## Suggested actions");
       for (const a of report.suggestedActions) lines.push(`- ${a}`);
     }
+    if (report.priorityActions?.length) {
+      lines.push("", "## Priority actions");
+      for (const a of report.priorityActions) lines.push(`- [${a.priority}] ${a.action} (${a.reason})`);
+    }
   }
   lines.push("", "> Read-only diagnostic — no files were modified.");
   return lines.join("\n");
@@ -296,7 +340,7 @@ export function formatReport(report) {
 
 const tool = defineTool({
   name: "self_learning_doctor",
-  description: "Read-only health check of the self-learning memory: duplicate/conflicting/expired memories, unreviewed preferences, proposal backlog, SKILL.md budget, scope leakage, orphan relations, missing evidence. Reports Good/Warning/Critical with fixes. Modifies nothing.",
+  description: "Read-only health check of the self-learning memory: policy consistency, duplicate/conflicting/expired memories, unreviewed preferences, proposal backlog, SKILL.md budget, scope leakage, orphan relations, missing evidence. Reports Good/Warning/Critical with fixes. Modifies nothing.",
   parameters: {
     type: "object",
     properties: {

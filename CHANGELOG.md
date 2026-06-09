@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.7.0
+
+治理收口、Runtime E2E 与审计增强：
+
+- **`apply_proposal` 治理收口**：`self_learning_control action=apply_proposal` 现在尊重 `requireReviewForAutoApply`；`conservative` 策略下禁止旁路，必须走 `approve_review → apply_review`。
+- **`config_patch` Validation Gate 强化**：新增 `validateConfigPatch()`，执行 DEFAULT_CONFIG key 白名单、类型校验、数值范围校验、高风险配置 warning，以及 conservative profile 下的外部服务/审核开关 blocking。
+- **config patch 应用语义修正**：`config_patch` 现在按 patch 合并当前配置，而不是用 proposal payload 替换整个 `config.json`。
+- **Doctor policy consistency**：新增 `policy_inconsistent` 诊断，发现 `governanceProfile` 与关键治理开关不一致时给出 high 级建议。
+- **Runtime E2E fixture**：新增 `tests/fixtures/fake-hanako-runtime.js` 与 `tests/runtime-e2e.test.js`，覆盖重复工作流、用户纠正、重复工具错误生成 code_patch、conservative 严格审核链路。
+- **Error proposal 行为修正**：机器 `autoApproved` 的 error/usage pattern 仍会生成 high-risk `code_patch` proposal；只有人工 approved 的 pattern 才抑制重复提案。
+- **Event Log hash chain**：`appendEvent()` 为每条事件写入 `prevHash` / `hash`；新增 `hashEvent()`、`verifyEventLog()` 与 `self_learning_control action=verify_event_log`，可检测 payload 篡改、断链和 legacy 无 hash 行。
+- **Control UX 增强**：关键 `self_learning_control` action 返回 `nextAction` / `recommendedNextActions`；Doctor 输出新增按严重度排序的 `priorityActions`。
+- **README 发布准备**：新增 CI badge、推荐安全配置、治理操作示例，并同步版本与测试数。
+- 新增 `tests/config-validation.test.js`、`tests/event-log.test.js`、`tests/runtime-e2e.test.js`；测试总数 241 → 264。
+
 ## 1.6.1
 
 系统审计修复（8 项）+ 模块合并（3 个碎片模块消除）：

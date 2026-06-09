@@ -4,11 +4,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-1.6.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-1.7.0-blue" alt="version">
+  <img src="https://github.com/326sun/hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-241%2F241-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-264%2F264-success" alt="tests">
 </p>
 
 ---
@@ -22,7 +23,7 @@ cd hanako-runtime-learner
 npm run install-plugin
 
 # 固定版本安装
-git clone --branch v1.6.1 https://github.com/326sun/hanako-runtime-learner.git
+git clone --branch v1.7.0 https://github.com/326sun/hanako-runtime-learner.git
 cd hanako-runtime-learner
 npm run install-plugin
 ```
@@ -65,7 +66,7 @@ flowchart LR
 | `self_learning_stats` | 统计总览：turns / patterns / proposals / 配置 |
 | `self_learning_report` | 结构化学习报告（含待处理提案） |
 | `self_learning_activity` | 近 N 天学习活动时间线 |
-| `self_learning_control` | 审批、proposal 管理、review queue、diff preview、策略切换、审计导出 |
+| `self_learning_control` | 审批、proposal 管理、review queue、diff preview、策略切换、事件链验证、审计导出 |
 | `self_learning_open_dir` | 打开数据目录 |
 
 ---
@@ -131,9 +132,58 @@ Proposal → Review Queue → Diff Preview → Validation Gate → Apply / Rejec
 
 - **Proposal 两级风险**：`skill_patch`（低风险，可自动应用）与 `code_patch`（高风险，永不自动写代码）
 - **Review Queue**：proposal 创建后自动入队，记录来源 pattern、diff 预览、validation 状态
-- **Doctor 健康检查**：13 项诊断（重复/冲突/过期记忆、提案堆积、作用域泄漏、孤儿关系等），输出 Good/Warning/Critical
+- **Validation Gate**：`config_patch` 经过 key 白名单、类型、范围和高风险配置检查；`code_patch` 始终禁止自动应用
+- **Event Log**：`event_log.jsonl` 是本地 append-only 事件流；新增 hash chain，可用 `verify_event_log` 检查连续性
+- **Doctor 健康检查**：14 项诊断（策略一致性、重复/冲突/过期记忆、提案堆积、作用域泄漏、孤儿关系等），输出 Good/Warning/Critical
 - **策略配置档**：`conservative`（审核优先）/ `balanced`（默认）/ `autonomous`（单用户快速路径），一键切换
 - **审计包导出**：脱敏 JSON + Markdown，汇总 doctor、scope 分布、proposal/review 状态
+
+---
+
+## 推荐安全配置
+
+个人本地默认：
+
+```text
+self_learning_control action=set_policy_profile governanceProfile=balanced
+```
+
+高安全审核模式：
+
+```text
+self_learning_control action=set_policy_profile governanceProfile=conservative
+```
+
+单用户快速模式：
+
+```text
+self_learning_control action=set_policy_profile governanceProfile=autonomous
+```
+
+## 治理操作示例
+
+```text
+# 查看待审核项
+self_learning_control action=review_panel
+
+# 预览 proposal diff
+self_learning_control action=preview_proposal proposalId=...
+
+# 验证 proposal
+self_learning_control action=validate_proposal proposalId=...
+
+# 批准 review
+self_learning_control action=approve_review proposalId=...
+
+# 应用已批准 review
+self_learning_control action=apply_review proposalId=...
+
+# 验证本地事件日志 hash chain
+self_learning_control action=verify_event_log
+
+# 导出审计包
+self_learning_control action=export_audit_bundle
+```
 
 ---
 
@@ -153,7 +203,7 @@ Proposal → Review Queue → Diff Preview → Validation Gate → Apply / Rejec
 
 ```powershell
 npm run check    # 源文件语法检查
-npm test         # 241 项测试
+npm test         # 264 项测试
 ```
 
 项目结构与完整调用拓扑见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
