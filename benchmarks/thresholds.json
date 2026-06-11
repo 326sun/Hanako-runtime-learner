@@ -1,0 +1,11 @@
+{
+  "thresholds": {
+    "task_success_rate": 0.001,
+    "auto_execution_success_rate": 0.001,
+    "rollback_success_rate": 0.001,
+    "repair_success_rate": 0.001,
+    "false_auto_apply_rate": 0.001,
+    "manual_escalation_rate": 0.05,
+    "latency_overhead": 250
+  }
+}

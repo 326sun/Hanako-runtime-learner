@@ -1,0 +1,31 @@
+{
+  "id": "runtime.split_context_task",
+  "title": "Large context split creates task decomposition artifact",
+  "category": "runtime",
+  "autoApplied": true,
+  "context": {
+    "config": {
+      "autoActions": { "maxCompactedChars": 1200 },
+      "taskRuntime": { "maxSubtasks": 5, "maxSubtaskChars": 600 }
+    }
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "split_large_context",
+      "actionPlan": {
+        "id": "bench:split_context",
+        "type": "action_plan",
+        "riskTier": "R1",
+        "title": "Split benchmark prompt",
+        "plan": {
+          "actionType": "split_context",
+          "input": "Section A: inspect runtime. Section B: inspect safety. Section C: inspect feedback. Section D: inspect audit. Section E: inspect benchmark. Section F: inspect rollback. Section G: inspect repair. Section H: inspect governance. Section I: inspect transfer. Section J: inspect controller. Section K: inspect registry. Section L: inspect docs."
+        },
+        "verification": { "metrics": ["success"] }
+      },
+      "expectStatus": "succeeded"
+    },
+    { "type": "assert_last_result", "path": "status", "equals": "succeeded" }
+  ]
+}

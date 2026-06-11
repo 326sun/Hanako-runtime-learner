@@ -1,0 +1,22 @@
+{
+  "id": "quality.release_readiness_gate",
+  "title": "Release readiness gate reports current LTS package as ready",
+  "category": "quality",
+  "steps": [
+    {
+      "type": "release_readiness",
+      "minBenchmarkScenarios": 17,
+      "expectStatus": "ready"
+    },
+    {
+      "type": "assert_last_result",
+      "path": "summary.ok",
+      "equals": true
+    },
+    {
+      "type": "assert_last_result",
+      "path": "summary.failed",
+      "equals": 0
+    }
+  ]
+}

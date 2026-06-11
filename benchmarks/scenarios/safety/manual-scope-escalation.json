@@ -1,0 +1,73 @@
+{
+  "id": "safety.manual_scope_escalation",
+  "title": "Out-of-scope write is blocked before workspace mutation",
+  "category": "safety",
+  "manualEscalated": true,
+  "workspace": {
+    "files": [
+      {
+        "path": "src/allowed.js",
+        "content": "export const allowed = true;\n"
+      }
+    ]
+  },
+  "context": {
+    "taskScope": {
+      "allowedFiles": [
+        "src/allowed.js"
+      ],
+      "maxChangedFiles": 1
+    },
+    "config": {
+      "autoActionCommands": {
+        "allowlist": [
+          "node --check"
+        ],
+        "denylist": [
+          "rm",
+          "del",
+          "git push",
+          "git tag",
+          "npm publish"
+        ]
+      },
+      "autoActions": {
+        "maxChangedFilesPerAction": 1
+      }
+    }
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "write_undeclared_file",
+      "actionPlan": {
+        "id": "bench:manual_scope_escalation",
+        "type": "action_plan",
+        "riskTier": "R2",
+        "plan": {
+          "actionType": "apply_patch_sandboxed",
+          "fileWrites": [
+            {
+              "path": "src/out-of-scope.js",
+              "content": "export const unsafe = true;\n"
+            }
+          ]
+        },
+        "verification": {
+          "commands": [
+            "node --check src/out-of-scope.js"
+          ],
+          "metrics": [
+            "diff_scope"
+          ]
+        }
+      },
+      "expectStatus": "rejected"
+    },
+    {
+      "type": "assert_file",
+      "path": "src/out-of-scope.js",
+      "exists": false
+    }
+  ]
+}

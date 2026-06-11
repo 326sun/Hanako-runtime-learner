@@ -1,0 +1,42 @@
+{
+  "id": "plugin.verify_command_success",
+  "title": "Plugin action executes verify.js and declared verification command",
+  "category": "plugin",
+  "autoApplied": true,
+  "workspace": {
+    "files": [
+      {
+        "path": "actions/verified_action/action.json",
+        "content": "{\n  \"name\": \"verified_action\",\n  \"riskTier\": \"R1\",\n  \"autoExecutable\": true,\n  \"permissions\": { \"filesystem\": \"read\" },\n  \"verification\": { \"required\": true, \"commands\": [\"node --check index.js\"] }\n}\n"
+      },
+      {
+        "path": "actions/verified_action/execute.js",
+        "content": "export async function execute() { return { status: 'succeeded', value: 42 }; }\n"
+      },
+      {
+        "path": "actions/verified_action/verify.js",
+        "content": "export async function verify(_plan, context) { return { status: context.output.value === 42 ? 'succeeded' : 'failed', message: 'value checked' }; }\n"
+      },
+      { "path": "index.js", "content": "const ok = true;\n" }
+    ]
+  },
+  "context": {
+    "actionsDir": "$WORKSPACE/actions",
+    "allowPluginCodeExecution": true
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "verified_plugin_action",
+      "actionPlan": {
+        "id": "bench:plugin_verify_command_success",
+        "type": "action_plan",
+        "riskTier": "R1",
+        "plan": { "actionType": "verified_action" },
+        "verification": { "metrics": ["success"] }
+      },
+      "expectStatus": "succeeded"
+    },
+    { "type": "assert_last_result", "path": "verification.verified", "equals": true }
+  ]
+}

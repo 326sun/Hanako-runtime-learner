@@ -1,0 +1,65 @@
+{
+  "id": "controller.repair_branch",
+  "title": "Agent controller routes failed verification into explicit repair branch",
+  "category": "controller",
+  "workspace": {
+    "files": [
+      { "path": "src/repair-target.mjs", "content": "export const value = 1;\n" }
+    ]
+  },
+  "context": {
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] },
+      "autoActions": { "autoRepairEnabled": false }
+    },
+    "taskScope": { "allowedFiles": ["src/repair-target.mjs"], "maxChangedFiles": 1 },
+    "actionPlan": {
+      "id": "bench:controller_needs_repair",
+      "type": "action_plan",
+      "riskTier": "R2",
+      "plan": {
+        "actionType": "apply_patch_sandboxed",
+        "fileWrites": [
+          { "path": "src/repair-target.mjs", "content": "export const broken = ;\n" }
+        ]
+      },
+      "verification": { "commands": ["node --check src/repair-target.mjs"], "metrics": ["verification_commands_pass"] }
+    },
+    "repairActionPlan": {
+      "id": "bench:controller_repair_branch",
+      "type": "action_plan",
+      "riskTier": "R2",
+      "plan": {
+        "actionType": "apply_patch_sandboxed",
+        "fileWrites": [
+          { "path": "src/repair-target.mjs", "content": "export const repaired = 2;\n" }
+        ]
+      },
+      "verification": { "commands": ["node --check src/repair-target.mjs"], "metrics": ["verification_commands_pass"] }
+    }
+  },
+  "steps": [
+    {
+      "type": "run_agent_controller",
+      "name": "controller_routes_to_repair",
+      "input": {
+        "title": "controller repair branch benchmark",
+        "nodes": [
+          { "id": "observe", "type": "ObserveNode" },
+          { "id": "plan", "type": "PlanNode" },
+          { "id": "policy", "type": "PolicyNode" },
+          { "id": "scope", "type": "ScopeNode" },
+          { "id": "execute", "type": "ExecuteNode" },
+          { "id": "verify_initial", "type": "VerifyNode" },
+          { "id": "repair", "type": "RepairNode" },
+          { "id": "verify_after_repair", "type": "VerifyNode" },
+          { "id": "feedback", "type": "FeedbackNode" },
+          { "id": "finalize", "type": "FinalizeNode" }
+        ]
+      },
+      "expectStatus": "completed"
+    },
+    { "type": "assert_last_result", "path": "state.state", "equals": "completed" },
+    { "type": "assert_file", "path": "src/repair-target.mjs", "contains": "export const repaired = 2;" }
+  ]
+}

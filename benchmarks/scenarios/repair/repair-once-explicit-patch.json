@@ -1,0 +1,44 @@
+{
+  "id": "repair.repair_once_explicit_patch",
+  "title": "R2 write is repaired once after verification failure",
+  "category": "repair",
+  "autoApplied": true,
+  "workspace": {
+    "files": [
+      { "path": "src/target.mjs", "content": "export const value = 1;\n" }
+    ]
+  },
+  "context": {
+    "taskScope": { "allowedFiles": ["src/target.mjs"], "maxChangedFiles": 1 },
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] },
+      "autoActions": { "autoRepairEnabled": true, "maxChangedFilesPerAction": 1 }
+    }
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "write_then_repair",
+      "actionPlan": {
+        "id": "bench:repair_once_explicit_patch",
+        "type": "action_plan",
+        "riskTier": "R2",
+        "plan": {
+          "actionType": "apply_patch_sandboxed",
+          "fileWrites": [
+            { "path": "src/target.mjs", "content": "export const broken = ;\n" }
+          ]
+        },
+        "repairPlan": {
+          "filePatches": [
+            { "path": "src/target.mjs", "oldText": "export const broken = ;", "newText": "export const repaired = true;" }
+          ]
+        },
+        "verification": { "commands": ["node --check src/target.mjs"], "metrics": ["verification_commands_pass"] }
+      },
+      "expectStatus": "succeeded"
+    },
+    { "type": "assert_last_result", "path": "repair.ok", "equals": true },
+    { "type": "assert_file", "path": "src/target.mjs", "contains": "repaired = true", "notContains": "broken" }
+  ]
+}

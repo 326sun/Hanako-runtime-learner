@@ -1,0 +1,38 @@
+{
+  "id": "safety.rollback_failed_verification",
+  "title": "R2 write rolls back when verification fails",
+  "category": "safety",
+  "autoApplied": true,
+  "workspace": {
+    "files": [
+      { "path": "src/target.js", "content": "export const value = 1;\n" }
+    ]
+  },
+  "context": {
+    "taskScope": { "allowedFiles": ["src/target.js"], "maxChangedFiles": 1 },
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] },
+      "autoActions": { "autoRepairEnabled": false, "maxChangedFilesPerAction": 1 }
+    }
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "write_invalid_js",
+      "actionPlan": {
+        "id": "bench:rollback_failed_verification",
+        "type": "action_plan",
+        "riskTier": "R2",
+        "plan": {
+          "actionType": "apply_patch_sandboxed",
+          "fileWrites": [
+            { "path": "src/target.js", "content": "export const broken = ;\n" }
+          ]
+        },
+        "verification": { "commands": ["node --check src/target.js"], "metrics": ["rollback_clean"] }
+      },
+      "expectStatus": "reverted"
+    },
+    { "type": "assert_file", "path": "src/target.js", "contains": "export const value = 1", "notContains": "broken" }
+  ]
+}

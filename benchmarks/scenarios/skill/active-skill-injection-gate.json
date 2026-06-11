@@ -1,0 +1,32 @@
+{
+  "id": "skill.active_skill_injection_gate",
+  "title": "Active skill registry only reaches SKILL.md through explicit injection gate",
+  "category": "skill",
+  "workspace": {
+    "files": [
+      {
+        "path": ".hanako/active_skills.json",
+        "content": "{\n  \"schemaVersion\": 1,\n  \"skills\": [\n    {\"id\": \"skill:valid\", \"status\": \"active\", \"rule\": \"Before import repair, check local exports first.\", \"evidence\": {\"successCount\": 8, \"regressionCount\": 0}},\n    {\"id\": \"skill:regressed\", \"status\": \"active\", \"rule\": \"Do not inject regressed skill.\", \"evidence\": {\"successCount\": 8, \"regressionCount\": 1}},\n    {\"id\": \"skill:staged\", \"status\": \"staged\", \"rule\": \"Do not inject staged skill.\", \"evidence\": {\"successCount\": 20, \"regressionCount\": 0}}\n  ]\n}\n"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "type": "render_skill",
+      "name": "render_with_gate",
+      "learnerDir": "$WORKSPACE/.hanako",
+      "config": {
+        "activeSkillsInjectionEnabled": true,
+        "activeSkillsInjectionMaxCount": 3,
+        "activeSkillsInjectionMinSuccess": 7,
+        "activeSkillsInjectionMaxRegression": 0
+      },
+      "patterns": [],
+      "outputPath": "skill-preview.md"
+    },
+    { "type": "assert_file", "path": "skill-preview.md", "contains": "Active Validated Skills" },
+    { "type": "assert_file", "path": "skill-preview.md", "contains": "Before import repair" },
+    { "type": "assert_file", "path": "skill-preview.md", "notContains": "Do not inject regressed skill" },
+    { "type": "assert_file", "path": "skill-preview.md", "notContains": "Do not inject staged skill" }
+  ]
+}

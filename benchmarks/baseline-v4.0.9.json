@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "version": "4.0.9-lts",
+  "description": "Baseline metrics for the built-in benchmark corpus. Keep conservative; update only after reviewing benchmark-report.md.",
+  "metrics": {
+    "task_success_rate": 1,
+    "auto_execution_success_rate": 1,
+    "rollback_success_rate": 1,
+    "repair_success_rate": null,
+    "false_auto_apply_rate": 0,
+    "manual_escalation_rate": 0.2,
+    "token_overhead": null,
+    "latency_overhead": null,
+    "skill_effectiveness": null
+  }
+}

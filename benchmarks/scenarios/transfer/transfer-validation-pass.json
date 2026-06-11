@@ -1,0 +1,41 @@
+{
+  "id": "transfer.validation_pass",
+  "title": "Transferred memory must pass target validation before promotion eligibility",
+  "category": "transfer",
+  "workspace": {
+    "files": [
+      { "path": "index.js", "content": "export const ok = true;\n" }
+    ]
+  },
+  "context": {
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] }
+    },
+    "targetProfile": {
+      "projectId": "project:target-benchmark",
+      "name": "target-benchmark",
+      "language": "javascript",
+      "framework": "node",
+      "testCommands": [],
+      "checkCommands": ["node --check index.js"]
+    }
+  },
+  "steps": [
+    {
+      "type": "transfer_validate",
+      "name": "validate_transfer_candidate",
+      "candidate": {
+        "id": "transfer_candidate:benchmark_valid",
+        "rule": "Check exports before repair in JavaScript modules.",
+        "confidence": 0.4,
+        "riskTier": "R2",
+        "targetProjectId": "project:target-benchmark",
+        "transfer": { "requiresRevalidation": true, "cannotWriteSkillDirectly": true, "cannotAutoPromote": true },
+        "validation": { "required": true, "commands": ["node --check index.js"] }
+      },
+      "expectStatus": "validated"
+    },
+    { "type": "assert_last_result", "path": "record.manualPromotionEligible", "equals": true },
+    { "type": "assert_last_result", "path": "record.autoPromotionBlocked", "equals": true }
+  ]
+}

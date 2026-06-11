@@ -1,0 +1,66 @@
+{
+  "id": "skill.promotion_e2e_loop",
+  "title": "Reflexion clusters become staged and active skills only after feedback evidence",
+  "category": "skill",
+  "workspace": {
+    "files": [
+      {
+        "path": ".hanako/reflexion_memory.jsonl",
+        "content": "{\"schemaVersion\":1,\"id\":\"reflexion:bench:1\",\"taskType\":\"code_patch\",\"triggerType\":\"verification_failed\",\"actionType\":\"apply_patch_sandboxed\",\"failure\":{\"errorType\":\"import_missing\",\"evidence\":[\"Cannot find module './x.js'\"]},\"rootCause\":\"new module not exported\",\"futureStrategy\":{\"beforePatch\":[\"check index exports\"],\"afterPatch\":[\"run tests\"]},\"scope\":{},\"confidence\":0.8,\"status\":\"memory_only\",\"createdAt\":\"2026-01-01T00:00:00.000Z\"}\n{\"schemaVersion\":1,\"id\":\"reflexion:bench:2\",\"taskType\":\"code_patch\",\"triggerType\":\"verification_failed\",\"actionType\":\"apply_patch_sandboxed\",\"failure\":{\"errorType\":\"import_missing\",\"evidence\":[\"Cannot find module './y.js'\"]},\"rootCause\":\"new module not exported\",\"futureStrategy\":{\"beforePatch\":[\"check index exports\"],\"afterPatch\":[\"run tests\"]},\"scope\":{},\"confidence\":0.8,\"status\":\"memory_only\",\"createdAt\":\"2026-01-01T00:01:00.000Z\"}\n{\"schemaVersion\":1,\"id\":\"reflexion:bench:3\",\"taskType\":\"code_patch\",\"triggerType\":\"verification_failed\",\"actionType\":\"apply_patch_sandboxed\",\"failure\":{\"errorType\":\"import_missing\",\"evidence\":[\"Cannot find module './z.js'\"]},\"rootCause\":\"new module not exported\",\"futureStrategy\":{\"beforePatch\":[\"check index exports\"],\"afterPatch\":[\"run tests\"]},\"scope\":{},\"confidence\":0.8,\"status\":\"memory_only\",\"createdAt\":\"2026-01-01T00:02:00.000Z\"}\n"
+      },
+      {
+        "path": ".hanako/action_feedback.jsonl",
+        "content": "{\"schemaVersion\":1,\"createdAt\":\"2026-01-01T01:00:00.000Z\",\"actionId\":\"fb:bench:1\",\"actionType\":\"apply_patch_sandboxed\",\"taskType\":\"code_patch\",\"errorType\":\"import_missing\",\"effective\":true,\"confidence\":0.9}\n{\"schemaVersion\":1,\"createdAt\":\"2026-01-01T01:01:00.000Z\",\"actionId\":\"fb:bench:2\",\"actionType\":\"apply_patch_sandboxed\",\"taskType\":\"code_patch\",\"errorType\":\"import_missing\",\"effective\":true,\"confidence\":0.9}\n{\"schemaVersion\":1,\"createdAt\":\"2026-01-01T01:02:00.000Z\",\"actionId\":\"fb:bench:3\",\"actionType\":\"apply_patch_sandboxed\",\"taskType\":\"code_patch\",\"errorType\":\"import_missing\",\"effective\":true,\"confidence\":0.9}\n"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "type": "run_skill_promotion_loop",
+      "name": "promote_from_reflexion_feedback",
+      "learnerDir": "$WORKSPACE/.hanako",
+      "options": {
+        "promotionThreshold": 3,
+        "minSuccess": 2,
+        "activeSuccess": 3
+      },
+      "expectStatus": "completed"
+    },
+    {
+      "type": "assert_last_result",
+      "path": "counts.promotableClusters",
+      "equals": 1
+    },
+    {
+      "type": "run_skill_promotion_loop",
+      "name": "activate_after_staged_candidate",
+      "learnerDir": "$WORKSPACE/.hanako",
+      "options": {
+        "promotionThreshold": 3,
+        "minSuccess": 2,
+        "activeSuccess": 3
+      },
+      "expectStatus": "completed"
+    },
+    {
+      "type": "assert_last_result",
+      "path": "counts.active",
+      "equals": 1
+    },
+    {
+      "type": "assert_last_result",
+      "path": "autoSkillFileWriteBlocked",
+      "equals": true
+    },
+    {
+      "type": "assert_file",
+      "path": ".hanako/active_skills.json",
+      "contains": "skill_candidate"
+    },
+    {
+      "type": "assert_file",
+      "path": ".hanako/SKILL.md",
+      "exists": false
+    }
+  ]
+}

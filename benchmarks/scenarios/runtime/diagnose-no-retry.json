@@ -1,0 +1,22 @@
+{
+  "id": "runtime.diagnose_no_retry",
+  "title": "R1 no-retry diagnosis produces structured output",
+  "category": "runtime",
+  "autoApplied": true,
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "diagnose",
+      "actionPlan": {
+        "id": "bench:diagnose_no_retry",
+        "type": "action_plan",
+        "riskTier": "R1",
+        "reason": "The failure is deterministic and should not be retried blindly.",
+        "plan": { "actionType": "no_retry_diagnose", "steps": ["diagnose deterministic failure"] },
+        "verification": { "metrics": ["diagnosisGenerated"] }
+      },
+      "expectStatus": "succeeded"
+    },
+    { "type": "assert_last_result", "path": "status", "equals": "succeeded" }
+  ]
+}

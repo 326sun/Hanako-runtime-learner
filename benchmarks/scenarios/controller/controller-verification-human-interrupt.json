@@ -1,0 +1,38 @@
+{
+  "id": "controller.verification_human_interrupt",
+  "title": "Agent controller pauses on failed verification instead of continuing silently",
+  "category": "controller",
+  "workspace": {
+    "files": [
+      { "path": "src/controller.mjs", "content": "export const value = 1;\n" }
+    ]
+  },
+  "context": {
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] },
+      "autoActions": { "autoRepairEnabled": false }
+    },
+    "taskScope": { "allowedFiles": ["src/controller.mjs"], "maxChangedFiles": 1 },
+    "actionPlan": {
+      "id": "bench:controller_verification_human_interrupt",
+      "type": "action_plan",
+      "riskTier": "R2",
+      "plan": {
+        "actionType": "apply_patch_sandboxed",
+        "fileWrites": [
+          { "path": "src/controller.mjs", "content": "export const broken = ;\n" }
+        ]
+      },
+      "verification": { "commands": ["node --check src/controller.mjs"], "metrics": ["verification_commands_pass"] }
+    }
+  },
+  "steps": [
+    {
+      "type": "run_agent_controller",
+      "name": "controller_pauses_after_reverted_verification",
+      "input": { "title": "controller benchmark unsafe write" },
+      "expectStatus": "waiting_for_human"
+    },
+    { "type": "assert_last_result", "path": "state.state", "equals": "waiting_for_human" }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "id": "quality.node_check_ok",
+  "title": "Allowed node --check command succeeds on fixture source",
+  "category": "quality",
+  "workspace": {
+    "files": [
+      { "path": "src/ok.js", "content": "export function ok() { return true; }\n" }
+    ]
+  },
+  "context": {
+    "config": {
+      "autoActionCommands": { "allowlist": ["node --check"], "denylist": ["rm", "del", "git push", "git tag", "npm publish"] }
+    }
+  },
+  "steps": [
+    { "type": "run_command", "name": "node_check", "command": "node --check src/ok.js", "expectExitCode": 0 }
+  ]
+}

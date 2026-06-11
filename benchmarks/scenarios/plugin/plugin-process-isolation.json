@@ -1,0 +1,45 @@
+{
+  "id": "plugin.process_isolation",
+  "title": "Plugin package code runs in an isolated child process with sanitized env",
+  "category": "plugin",
+  "autoApplied": true,
+  "workspace": {
+    "files": [
+      {
+        "path": "actions/isolated_action/action.json",
+        "content": "{\n  \"name\": \"isolated_action\",\n  \"riskTier\": \"R1\",\n  \"autoExecutable\": true,\n  \"permissions\": { \"filesystem\": \"read\" },\n  \"verification\": { \"required\": true }\n}\n"
+      },
+      {
+        "path": "actions/isolated_action/execute.js",
+        "content": "export async function execute() { return { status: 'succeeded', pid: process.pid, hanakoChild: process.env.HANAKO_PLUGIN_CHILD || null, nodeOptions: process.env.NODE_OPTIONS || null, cwd: process.cwd() }; }\n"
+      },
+      {
+        "path": "actions/isolated_action/verify.js",
+        "content": "export async function verify() { return { status: 'succeeded' }; }\n"
+      }
+    ]
+  },
+  "context": {
+    "actionsDir": "$WORKSPACE/actions",
+    "allowPluginCodeExecution": true,
+    "pluginIsolation": { "timeoutMs": 5000, "maxOutputBytes": 65536 }
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "isolated_plugin_action",
+      "actionPlan": {
+        "id": "bench:plugin_process_isolation",
+        "type": "action_plan",
+        "riskTier": "R1",
+        "plan": { "actionType": "isolated_action" },
+        "verification": { "metrics": ["success"] }
+      },
+      "expectStatus": "succeeded"
+    },
+    { "type": "assert_last_result", "path": "pluginProcess.execute.isolated", "equals": true },
+    { "type": "assert_last_result", "path": "output.hanakoChild", "equals": "1" },
+    { "type": "assert_last_result", "path": "output.nodeOptions", "equals": null },
+    { "type": "assert_last_result", "path": "pluginProcess.execute.cwd", "exists": true }
+  ]
+}

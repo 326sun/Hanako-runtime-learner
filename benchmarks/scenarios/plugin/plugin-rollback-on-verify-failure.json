@@ -1,0 +1,45 @@
+{
+  "id": "plugin.rollback_on_verify_failure",
+  "title": "Plugin verification failure triggers plugin rollback handler",
+  "category": "plugin",
+  "autoApplied": true,
+  "workspace": {
+    "files": [
+      {
+        "path": "actions/write_then_fail/action.json",
+        "content": "{\n  \"name\": \"write_then_fail\",\n  \"riskTier\": \"R2\",\n  \"autoExecutable\": true,\n  \"permissions\": { \"filesystem\": \"workspace_write\" },\n  \"verification\": { \"required\": true },\n  \"rollback\": { \"required\": true, \"strategy\": \"plugin_rollback\" }\n}\n"
+      },
+      {
+        "path": "actions/write_then_fail/execute.js",
+        "content": "import fs from 'fs';\nimport path from 'path';\nexport async function execute(_plan, context) { fs.writeFileSync(path.join(context.workspaceRoot, 'target.txt'), 'bad', 'utf-8'); return { status: 'succeeded' }; }\n"
+      },
+      {
+        "path": "actions/write_then_fail/verify.js",
+        "content": "export async function verify() { return { status: 'failed', error: 'forced verification failure' }; }\n"
+      },
+      {
+        "path": "actions/write_then_fail/rollback.js",
+        "content": "import fs from 'fs';\nimport path from 'path';\nexport async function rollback(_plan, context) { fs.writeFileSync(path.join(context.workspaceRoot, 'target.txt'), 'rolled back', 'utf-8'); return { status: 'succeeded' }; }\n"
+      }
+    ]
+  },
+  "context": {
+    "actionsDir": "$WORKSPACE/actions",
+    "allowPluginCodeExecution": true
+  },
+  "steps": [
+    {
+      "type": "execute_action",
+      "name": "plugin_write_then_fail",
+      "actionPlan": {
+        "id": "bench:plugin_rollback_on_verify_failure",
+        "type": "action_plan",
+        "riskTier": "R2",
+        "plan": { "actionType": "write_then_fail" }
+      },
+      "expectStatus": "reverted"
+    },
+    { "type": "assert_last_result", "path": "rollback.ok", "equals": true },
+    { "type": "assert_file", "path": "target.txt", "contains": "rolled back" }
+  ]
+}

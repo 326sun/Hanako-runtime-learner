@@ -1,0 +1,52 @@
+{
+  "id": "audit.dashboard_surface",
+  "title": "Audit dashboard consolidates benchmark and learning evidence",
+  "category": "audit",
+  "autoApplied": false,
+  "workspace": {
+    "files": [
+      {
+        "path": ".hanako/benchmark-runs/run-1/benchmark-report.json",
+        "content": "{\n  \"schemaVersion\": 1,\n  \"generatedAt\": \"2026-06-10T00:00:00.000Z\",\n  \"ok\": true,\n  \"metrics\": {\n    \"task_success_rate\": 1,\n    \"auto_execution_success_rate\": 1,\n    \"rollback_success_rate\": 1,\n    \"repair_success_rate\": 1,\n    \"false_auto_apply_rate\": 0,\n    \"manual_escalation_rate\": 0.1\n  },\n  \"regressions\": [],\n  \"corpus\": { \"selectedScenarioCount\": 14 },\n  \"runs\": [\n    { \"scenarioId\": \"controller.repair_branch\", \"category\": \"controller\", \"ok\": true, \"status\": \"succeeded\" },\n    { \"scenarioId\": \"skill.promotion_e2e_loop\", \"category\": \"skill\", \"ok\": true, \"status\": \"succeeded\" }\n  ]\n}\n"
+      },
+      {
+        "path": ".hanako/skill_candidates.json",
+        "content": "{\n  \"schemaVersion\": 1,\n  \"candidates\": [\n    { \"id\": \"skill:bench\", \"status\": \"staged\", \"rule\": \"Check exports before import repair\", \"evidence\": { \"successCount\": 5, \"regressionCount\": 0 } }\n  ]\n}\n"
+      },
+      {
+        "path": ".hanako/active_skills.json",
+        "content": "{\n  \"schemaVersion\": 1,\n  \"skills\": [\n    { \"id\": \"skill:active\", \"status\": \"active\", \"rule\": \"Run node --check after patch\", \"evidence\": { \"successCount\": 7, \"regressionCount\": 0 } }\n  ]\n}\n"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "type": "generate_audit_dashboard",
+      "learnerDir": "$WORKSPACE/.hanako",
+      "name": "benchmark",
+      "version": "benchmark"
+    },
+    {
+      "type": "assert_last_result",
+      "path": "status",
+      "equals": "generated"
+    },
+    {
+      "type": "assert_last_result",
+      "path": "summary.benchmarkAvailable",
+      "equals": true
+    },
+    {
+      "type": "assert_file",
+      "path": ".hanako/audit-dashboard/benchmark/dashboard.md",
+      "exists": true,
+      "contains": "Runtime Learner Audit Dashboard"
+    },
+    {
+      "type": "assert_file",
+      "path": ".hanako/audit-dashboard/benchmark/dashboard.md",
+      "exists": true,
+      "contains": "SKILL.md auto-write: blocked by default"
+    }
+  ]
+}
