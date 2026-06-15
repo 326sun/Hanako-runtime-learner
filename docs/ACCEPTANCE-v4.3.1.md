@@ -15,7 +15,7 @@ npm run release:check: Score 100
 After:
 
 ```
-package version: 4.3.1-lts
+package version: 4.3.1
 npm run check: passed
 npm test: 496 passed
 npm run benchmark: passed, 17 scenarios

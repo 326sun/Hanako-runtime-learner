@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.3.1--lts-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-4.3.1-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
@@ -62,7 +62,7 @@ cd Hanako-runtime-learner
 npm run install-plugin
 
 # 固定版本
-git clone --branch v4.3.1-lts https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v4.3.1 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm run install-plugin
 ```

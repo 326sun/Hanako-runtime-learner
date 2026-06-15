@@ -46,8 +46,8 @@ Core architecture and automation boundaries are frozen. Future v4.x releases are
 
 | Type | Allowed content | Example |
 |---|---|---|
-| patch (`4.3.x-lts`) | Bug fix, docs, tests, benchmark | `4.3.1-lts` |
-| minor (`4.x.0-lts`) | Adapters, non-core enhancements | `4.4.0-lts` (not recommended short-term) |
+| patch (`4.3.x`) | Bug fix, docs, tests, benchmark | `4.3.1` |
+| minor (`4.x.0`) | Adapters, non-core enhancements | `4.4.0` (not recommended short-term) |
 | major (`5.0.0`) | Architecture change or permission boundary change | Not planned |
 
 ## API freeze
