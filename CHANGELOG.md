@@ -1,6 +1,6 @@
 # Changelog
 
-## 4.3.1 LTS
+## 4.3.1
 
 - **Fix: settings panel auto-close**. Removed `dataDirPath` runtime display field and its `ctx.config.update()` call in `onload`. The config update was triggering a settings panel re-render that dismissed the panel before changes could be saved. The `dataDirPath` property was purely cosmetic (showing the data directory path in plugin settings).
 - **Fix: semantic search credential merge**. `tools/search.js` now calls `mergeCredentials()` after reading `config.json`, so the encrypted `semanticEmbeddingApiKey` is properly decrypted before the embedding API call. Previously the search tool read the raw config which contained only a placeholder after credentials migration, causing silent semantic search degradation to BM25-only.
