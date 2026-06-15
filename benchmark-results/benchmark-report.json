@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-06-11T06:18:03.268Z",
+  "generatedAt": "2026-06-11T08:27:40.790Z",
   "runs": [
     {
       "scenarioId": "audit.dashboard_surface",
@@ -15,14 +15,14 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 6,
+      "durationMs": 7,
       "stepResults": [
         {
           "ok": true,
           "status": "generated",
-          "dir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-bLTj98\\.hanako\\audit-dashboard\\benchmark",
-          "jsonPath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-bLTj98\\.hanako\\audit-dashboard\\benchmark\\dashboard.json",
-          "mdPath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-bLTj98\\.hanako\\audit-dashboard\\benchmark\\dashboard.md",
+          "dir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-5xh4l8\\.hanako\\audit-dashboard\\benchmark",
+          "jsonPath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-5xh4l8\\.hanako\\audit-dashboard\\benchmark\\dashboard.json",
+          "mdPath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-audit.dashboard_surface-5xh4l8\\.hanako\\audit-dashboard\\benchmark\\dashboard.md",
           "summary": {
             "benchmarkAvailable": true,
             "benchmarkOk": true,
@@ -86,14 +86,14 @@
       "rollbackOk": true,
       "repairAttempted": true,
       "repairOk": true,
-      "durationMs": 88,
+      "durationMs": 85,
       "stepResults": [
         {
           "ok": true,
           "state": {
             "schemaVersion": 1,
             "taskId": "task:e006b07b0464",
-            "runId": "agent_run:30c9b7a17798",
+            "runId": "agent_run:285ace9c49f3",
             "state": "completed",
             "currentNode": "finalize",
             "graph": {
@@ -118,7 +118,7 @@
                       "files": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.560Z"
+                  "updatedAt": "2026-06-11T08:27:40.090Z"
                 },
                 {
                   "id": "plan",
@@ -156,7 +156,7 @@
                       }
                     ]
                   },
-                  "updatedAt": "2026-06-11T06:18:02.560Z"
+                  "updatedAt": "2026-06-11T08:27:40.090Z"
                 },
                 {
                   "id": "policy",
@@ -189,7 +189,7 @@
                       ]
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.561Z"
+                  "updatedAt": "2026-06-11T08:27:40.091Z"
                 },
                 {
                   "id": "scope",
@@ -224,7 +224,7 @@
                       "requiresTestsUpdate": false
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.562Z"
+                  "updatedAt": "2026-06-11T08:27:40.091Z"
                 },
                 {
                   "id": "execute",
@@ -242,7 +242,7 @@
                     "logs": [],
                     "artifacts": [],
                     "errors": [],
-                    "transactionId": "txn:1781158682563:65edf3f9",
+                    "transactionId": "txn:1781166460092:65edf3f9",
                     "changedFiles": [],
                     "applied": {
                       "writeResults": [
@@ -257,13 +257,13 @@
                         "command": "node --check src/repair-target.mjs",
                         "status": "failed",
                         "stdout": "",
-                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.repair_branch-MFY4CN\\src\\repair-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.repair_branch-6qoCdc\\src\\repair-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                         "exitCode": 1,
                         "error": "command exited with code 1"
                       }
                     ],
                     "error": "verification command failed",
-                    "durationMs": 42,
+                    "durationMs": 41,
                     "verification": {
                       "verified": false,
                       "checks": [
@@ -290,7 +290,7 @@
                       "changedFiles": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.607Z"
+                  "updatedAt": "2026-06-11T08:27:40.135Z"
                 },
                 {
                   "id": "verify_initial",
@@ -328,7 +328,7 @@
                     "error": "verification failed"
                   },
                   "recoveryTarget": "repair",
-                  "updatedAt": "2026-06-11T06:18:02.607Z"
+                  "updatedAt": "2026-06-11T08:27:40.135Z"
                 },
                 {
                   "id": "repair",
@@ -353,7 +353,7 @@
                       "logs": [],
                       "artifacts": [],
                       "errors": [],
-                      "transactionId": "txn:1781158682607:3416c35d",
+                      "transactionId": "txn:1781166460135:3416c35d",
                       "changedFiles": [
                         "src\\repair-target.mjs"
                       ],
@@ -375,7 +375,7 @@
                           "error": null
                         }
                       ],
-                      "durationMs": 38,
+                      "durationMs": 36,
                       "verification": {
                         "verified": true,
                         "checks": [
@@ -420,7 +420,7 @@
                       "confidence": 0.86
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.645Z"
+                  "updatedAt": "2026-06-11T08:27:40.172Z"
                 },
                 {
                   "id": "verify_after_repair",
@@ -456,7 +456,7 @@
                     },
                     "sourceNode": "repair"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.646Z"
+                  "updatedAt": "2026-06-11T08:27:40.172Z"
                 },
                 {
                   "id": "feedback",
@@ -471,7 +471,7 @@
                     "status": "succeeded",
                     "note": "FeedbackNode recorded"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.646Z"
+                  "updatedAt": "2026-06-11T08:27:40.172Z"
                 },
                 {
                   "id": "finalize",
@@ -486,91 +486,91 @@
                     "status": "succeeded",
                     "note": "finalized"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.646Z"
+                  "updatedAt": "2026-06-11T08:27:40.172Z"
                 }
               ],
-              "createdAt": "2026-06-11T06:18:02.560Z"
+              "createdAt": "2026-06-11T08:27:40.089Z"
             },
             "history": [
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.089Z",
                 "from": null,
                 "to": "created",
                 "node": null,
                 "reason": "created"
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.089Z",
                 "from": "created",
                 "to": "observing",
                 "node": "observe",
                 "reason": "enter ObserveNode"
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "from": "observing",
                 "to": "planning",
                 "node": "observe",
                 "reason": "advance to PlanNode"
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "from": "planning",
                 "to": "policy_checking",
                 "node": "plan",
                 "reason": "advance to PolicyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.091Z",
                 "from": "policy_checking",
                 "to": "scope_checking",
                 "node": "policy",
                 "reason": "advance to ScopeNode"
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.091Z",
                 "from": "scope_checking",
                 "to": "executing",
                 "node": "scope",
                 "reason": "advance to ExecuteNode"
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "from": "executing",
                 "to": "verifying",
                 "node": "execute",
                 "reason": "advance to VerifyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "from": "verifying",
                 "to": "repairing",
                 "node": "verify_initial",
                 "reason": "VerifyNode routed to RepairNode"
               },
               {
-                "at": "2026-06-11T06:18:02.645Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "from": "repairing",
                 "to": "verifying",
                 "node": "repair",
                 "reason": "advance to VerifyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "from": "verifying",
                 "to": "learning",
                 "node": "verify_after_repair",
                 "reason": "advance to FeedbackNode"
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "from": "learning",
                 "to": "learning",
                 "node": "feedback",
                 "reason": "advance to FinalizeNode"
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "from": "learning",
                 "to": "completed",
                 "node": "finalize",
@@ -579,7 +579,7 @@
             ],
             "artifacts": [
               {
-                "createdAt": "2026-06-11T06:18:02.560Z",
+                "createdAt": "2026-06-11T08:27:40.090Z",
                 "kind": "node_result",
                 "node": "observe",
                 "nodeType": "ObserveNode",
@@ -593,7 +593,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.560Z",
+                "createdAt": "2026-06-11T08:27:40.090Z",
                 "kind": "node_result",
                 "node": "plan",
                 "nodeType": "PlanNode",
@@ -626,7 +626,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.561Z",
+                "createdAt": "2026-06-11T08:27:40.091Z",
                 "kind": "node_result",
                 "node": "policy",
                 "nodeType": "PolicyNode",
@@ -654,7 +654,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.562Z",
+                "createdAt": "2026-06-11T08:27:40.091Z",
                 "kind": "node_result",
                 "node": "scope",
                 "nodeType": "ScopeNode",
@@ -684,7 +684,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.607Z",
+                "createdAt": "2026-06-11T08:27:40.135Z",
                 "kind": "node_result",
                 "node": "execute",
                 "nodeType": "ExecuteNode",
@@ -695,7 +695,7 @@
                   "logs": [],
                   "artifacts": [],
                   "errors": [],
-                  "transactionId": "txn:1781158682563:65edf3f9",
+                  "transactionId": "txn:1781166460092:65edf3f9",
                   "changedFiles": [],
                   "applied": {
                     "writeResults": [
@@ -710,13 +710,13 @@
                       "command": "node --check src/repair-target.mjs",
                       "status": "failed",
                       "stdout": "",
-                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.repair_branch-MFY4CN\\src\\repair-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.repair_branch-6qoCdc\\src\\repair-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                       "exitCode": 1,
                       "error": "command exited with code 1"
                     }
                   ],
                   "error": "verification command failed",
-                  "durationMs": 42,
+                  "durationMs": 41,
                   "verification": {
                     "verified": false,
                     "checks": [
@@ -745,7 +745,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.607Z",
+                "createdAt": "2026-06-11T08:27:40.135Z",
                 "kind": "node_result",
                 "node": "verify_initial",
                 "nodeType": "VerifyNode",
@@ -777,7 +777,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.645Z",
+                "createdAt": "2026-06-11T08:27:40.172Z",
                 "kind": "node_result",
                 "node": "repair",
                 "nodeType": "RepairNode",
@@ -795,7 +795,7 @@
                     "logs": [],
                     "artifacts": [],
                     "errors": [],
-                    "transactionId": "txn:1781158682607:3416c35d",
+                    "transactionId": "txn:1781166460135:3416c35d",
                     "changedFiles": [
                       "src\\repair-target.mjs"
                     ],
@@ -817,7 +817,7 @@
                         "error": null
                       }
                     ],
-                    "durationMs": 38,
+                    "durationMs": 36,
                     "verification": {
                       "verified": true,
                       "checks": [
@@ -864,7 +864,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.646Z",
+                "createdAt": "2026-06-11T08:27:40.172Z",
                 "kind": "node_result",
                 "node": "verify_after_repair",
                 "nodeType": "VerifyNode",
@@ -895,7 +895,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.646Z",
+                "createdAt": "2026-06-11T08:27:40.172Z",
                 "kind": "node_result",
                 "node": "feedback",
                 "nodeType": "FeedbackNode",
@@ -905,7 +905,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.646Z",
+                "createdAt": "2026-06-11T08:27:40.172Z",
                 "kind": "node_result",
                 "node": "finalize",
                 "nodeType": "FinalizeNode",
@@ -920,17 +920,17 @@
             "risk": {
               "riskTier": "R2"
             },
-            "createdAt": "2026-06-11T06:18:02.560Z",
-            "updatedAt": "2026-06-11T06:18:02.646Z"
+            "createdAt": "2026-06-11T08:27:40.089Z",
+            "updatedAt": "2026-06-11T08:27:40.172Z"
           },
           "trace": {
             "schemaVersion": 1,
-            "traceId": "audit:task:e006b07b0464:1781158682560",
+            "traceId": "audit:task:e006b07b0464:1781166460089",
             "taskId": "task:e006b07b0464",
-            "runId": "agent_run:30c9b7a17798",
+            "runId": "agent_run:285ace9c49f3",
             "events": [
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.089Z",
                 "type": "state.created",
                 "node": null,
                 "state": "created",
@@ -938,7 +938,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.089Z",
                 "type": "node.start",
                 "node": "observe",
                 "state": "observing",
@@ -946,7 +946,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "type": "node.completed",
                 "node": "observe",
                 "state": "observing",
@@ -956,7 +956,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "type": "node.start",
                 "node": "plan",
                 "state": "planning",
@@ -964,7 +964,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.560Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "type": "node.completed",
                 "node": "plan",
                 "state": "planning",
@@ -974,7 +974,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.561Z",
+                "at": "2026-06-11T08:27:40.090Z",
                 "type": "node.start",
                 "node": "policy",
                 "state": "policy_checking",
@@ -982,7 +982,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.091Z",
                 "type": "node.completed",
                 "node": "policy",
                 "state": "policy_checking",
@@ -992,7 +992,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.091Z",
                 "type": "node.start",
                 "node": "scope",
                 "state": "scope_checking",
@@ -1000,7 +1000,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.091Z",
                 "type": "node.completed",
                 "node": "scope",
                 "state": "scope_checking",
@@ -1010,7 +1010,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.562Z",
+                "at": "2026-06-11T08:27:40.092Z",
                 "type": "node.start",
                 "node": "execute",
                 "state": "executing",
@@ -1018,7 +1018,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "type": "node.completed",
                 "node": "execute",
                 "state": "executing",
@@ -1028,7 +1028,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "type": "node.start",
                 "node": "verify_initial",
                 "state": "verifying",
@@ -1036,7 +1036,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "type": "node.recovery_branch",
                 "node": "verify_initial",
                 "state": "repairing",
@@ -1068,7 +1068,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.607Z",
+                "at": "2026-06-11T08:27:40.135Z",
                 "type": "node.start",
                 "node": "repair",
                 "state": "repairing",
@@ -1076,7 +1076,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.645Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.completed",
                 "node": "repair",
                 "state": "repairing",
@@ -1086,7 +1086,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.start",
                 "node": "verify_after_repair",
                 "state": "verifying",
@@ -1094,7 +1094,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.completed",
                 "node": "verify_after_repair",
                 "state": "verifying",
@@ -1104,7 +1104,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.start",
                 "node": "feedback",
                 "state": "learning",
@@ -1112,7 +1112,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.completed",
                 "node": "feedback",
                 "state": "learning",
@@ -1122,7 +1122,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.start",
                 "node": "finalize",
                 "state": "learning",
@@ -1130,7 +1130,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "node.completed",
                 "node": "finalize",
                 "state": "learning",
@@ -1140,7 +1140,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.646Z",
+                "at": "2026-06-11T08:27:40.172Z",
                 "type": "state.completed",
                 "node": "finalize",
                 "state": "completed",
@@ -1148,8 +1148,8 @@
                 "data": {}
               }
             ],
-            "createdAt": "2026-06-11T06:18:02.560Z",
-            "updatedAt": "2026-06-11T06:18:02.646Z"
+            "createdAt": "2026-06-11T08:27:40.089Z",
+            "updatedAt": "2026-06-11T08:27:40.172Z"
           },
           "status": "completed",
           "type": "run_agent_controller",
@@ -1181,14 +1181,14 @@
       "rollbackOk": true,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 43,
+      "durationMs": 40,
       "stepResults": [
         {
           "ok": true,
           "state": {
             "schemaVersion": 1,
             "taskId": "task:b932bd6c5854",
-            "runId": "agent_run:f1ed0f05c995",
+            "runId": "agent_run:ad62fff0a579",
             "state": "completed",
             "currentNode": "finalize",
             "graph": {
@@ -1213,7 +1213,7 @@
                       "files": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.647Z"
+                  "updatedAt": "2026-06-11T08:27:40.173Z"
                 },
                 {
                   "id": "plan",
@@ -1252,7 +1252,7 @@
                       }
                     ]
                   },
-                  "updatedAt": "2026-06-11T06:18:02.647Z"
+                  "updatedAt": "2026-06-11T08:27:40.173Z"
                 },
                 {
                   "id": "policy",
@@ -1285,7 +1285,7 @@
                       ]
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.648Z"
+                  "updatedAt": "2026-06-11T08:27:40.174Z"
                 },
                 {
                   "id": "scope",
@@ -1320,7 +1320,7 @@
                       "requiresTestsUpdate": false
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.648Z"
+                  "updatedAt": "2026-06-11T08:27:40.174Z"
                 },
                 {
                   "id": "execute",
@@ -1338,7 +1338,7 @@
                     "logs": [],
                     "artifacts": [],
                     "errors": [],
-                    "transactionId": "txn:1781158682648:92b7d810",
+                    "transactionId": "txn:1781166460174:92b7d810",
                     "changedFiles": [],
                     "applied": {
                       "writeResults": [
@@ -1353,13 +1353,13 @@
                         "command": "node --check src/rollback-target.mjs",
                         "status": "failed",
                         "stdout": "",
-                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.rollback_branch-gOWGg8\\src\\rollback-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.rollback_branch-4S6nNm\\src\\rollback-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                         "exitCode": 1,
                         "error": "command exited with code 1"
                       }
                     ],
                     "error": "verification command failed",
-                    "durationMs": 39,
+                    "durationMs": 37,
                     "verification": {
                       "verified": false,
                       "checks": [
@@ -1391,7 +1391,7 @@
                       "changedFiles": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.689Z"
+                  "updatedAt": "2026-06-11T08:27:40.212Z"
                 },
                 {
                   "id": "verify",
@@ -1434,7 +1434,7 @@
                     "error": "verification failed"
                   },
                   "recoveryTarget": "rollback",
-                  "updatedAt": "2026-06-11T06:18:02.689Z"
+                  "updatedAt": "2026-06-11T08:27:40.212Z"
                 },
                 {
                   "id": "rollback",
@@ -1479,7 +1479,7 @@
                     },
                     "sourceNode": "execute"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.689Z"
+                  "updatedAt": "2026-06-11T08:27:40.213Z"
                 },
                 {
                   "id": "feedback",
@@ -1494,7 +1494,7 @@
                     "status": "succeeded",
                     "note": "FeedbackNode recorded"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.689Z"
+                  "updatedAt": "2026-06-11T08:27:40.213Z"
                 },
                 {
                   "id": "finalize",
@@ -1509,84 +1509,84 @@
                     "status": "succeeded",
                     "note": "finalized"
                   },
-                  "updatedAt": "2026-06-11T06:18:02.689Z"
+                  "updatedAt": "2026-06-11T08:27:40.213Z"
                 }
               ],
-              "createdAt": "2026-06-11T06:18:02.647Z"
+              "createdAt": "2026-06-11T08:27:40.173Z"
             },
             "history": [
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "from": null,
                 "to": "created",
                 "node": null,
                 "reason": "created"
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "from": "created",
                 "to": "observing",
                 "node": "observe",
                 "reason": "enter ObserveNode"
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "from": "observing",
                 "to": "planning",
                 "node": "observe",
                 "reason": "advance to PlanNode"
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "from": "planning",
                 "to": "policy_checking",
                 "node": "plan",
                 "reason": "advance to PolicyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "from": "policy_checking",
                 "to": "scope_checking",
                 "node": "policy",
                 "reason": "advance to ScopeNode"
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "from": "scope_checking",
                 "to": "executing",
                 "node": "scope",
                 "reason": "advance to ExecuteNode"
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "from": "executing",
                 "to": "verifying",
                 "node": "execute",
                 "reason": "advance to VerifyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "from": "verifying",
                 "to": "rolling_back",
                 "node": "verify",
                 "reason": "VerifyNode routed to RollbackNode"
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "from": "rolling_back",
                 "to": "learning",
                 "node": "rollback",
                 "reason": "advance to FeedbackNode"
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "from": "learning",
                 "to": "learning",
                 "node": "feedback",
                 "reason": "advance to FinalizeNode"
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "from": "learning",
                 "to": "completed",
                 "node": "finalize",
@@ -1595,7 +1595,7 @@
             ],
             "artifacts": [
               {
-                "createdAt": "2026-06-11T06:18:02.647Z",
+                "createdAt": "2026-06-11T08:27:40.173Z",
                 "kind": "node_result",
                 "node": "observe",
                 "nodeType": "ObserveNode",
@@ -1609,7 +1609,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.647Z",
+                "createdAt": "2026-06-11T08:27:40.173Z",
                 "kind": "node_result",
                 "node": "plan",
                 "nodeType": "PlanNode",
@@ -1643,7 +1643,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.648Z",
+                "createdAt": "2026-06-11T08:27:40.174Z",
                 "kind": "node_result",
                 "node": "policy",
                 "nodeType": "PolicyNode",
@@ -1671,7 +1671,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.648Z",
+                "createdAt": "2026-06-11T08:27:40.174Z",
                 "kind": "node_result",
                 "node": "scope",
                 "nodeType": "ScopeNode",
@@ -1701,7 +1701,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.689Z",
+                "createdAt": "2026-06-11T08:27:40.212Z",
                 "kind": "node_result",
                 "node": "execute",
                 "nodeType": "ExecuteNode",
@@ -1712,7 +1712,7 @@
                   "logs": [],
                   "artifacts": [],
                   "errors": [],
-                  "transactionId": "txn:1781158682648:92b7d810",
+                  "transactionId": "txn:1781166460174:92b7d810",
                   "changedFiles": [],
                   "applied": {
                     "writeResults": [
@@ -1727,13 +1727,13 @@
                       "command": "node --check src/rollback-target.mjs",
                       "status": "failed",
                       "stdout": "",
-                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.rollback_branch-gOWGg8\\src\\rollback-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.rollback_branch-4S6nNm\\src\\rollback-target.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                       "exitCode": 1,
                       "error": "command exited with code 1"
                     }
                   ],
                   "error": "verification command failed",
-                  "durationMs": 39,
+                  "durationMs": 37,
                   "verification": {
                     "verified": false,
                     "checks": [
@@ -1767,7 +1767,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.689Z",
+                "createdAt": "2026-06-11T08:27:40.212Z",
                 "kind": "node_result",
                 "node": "verify",
                 "nodeType": "VerifyNode",
@@ -1804,7 +1804,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.689Z",
+                "createdAt": "2026-06-11T08:27:40.213Z",
                 "kind": "node_result",
                 "node": "rollback",
                 "nodeType": "RollbackNode",
@@ -1844,7 +1844,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.689Z",
+                "createdAt": "2026-06-11T08:27:40.213Z",
                 "kind": "node_result",
                 "node": "feedback",
                 "nodeType": "FeedbackNode",
@@ -1854,7 +1854,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.689Z",
+                "createdAt": "2026-06-11T08:27:40.213Z",
                 "kind": "node_result",
                 "node": "finalize",
                 "nodeType": "FinalizeNode",
@@ -1869,17 +1869,17 @@
             "risk": {
               "riskTier": "R2"
             },
-            "createdAt": "2026-06-11T06:18:02.647Z",
-            "updatedAt": "2026-06-11T06:18:02.689Z"
+            "createdAt": "2026-06-11T08:27:40.173Z",
+            "updatedAt": "2026-06-11T08:27:40.213Z"
           },
           "trace": {
             "schemaVersion": 1,
-            "traceId": "audit:task:b932bd6c5854:1781158682647",
+            "traceId": "audit:task:b932bd6c5854:1781166460173",
             "taskId": "task:b932bd6c5854",
-            "runId": "agent_run:f1ed0f05c995",
+            "runId": "agent_run:ad62fff0a579",
             "events": [
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "type": "state.created",
                 "node": null,
                 "state": "created",
@@ -1887,7 +1887,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "type": "node.start",
                 "node": "observe",
                 "state": "observing",
@@ -1895,7 +1895,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "type": "node.completed",
                 "node": "observe",
                 "state": "observing",
@@ -1905,7 +1905,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "type": "node.start",
                 "node": "plan",
                 "state": "planning",
@@ -1913,7 +1913,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.173Z",
                 "type": "node.completed",
                 "node": "plan",
                 "state": "planning",
@@ -1923,7 +1923,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.647Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "type": "node.start",
                 "node": "policy",
                 "state": "policy_checking",
@@ -1931,7 +1931,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "type": "node.completed",
                 "node": "policy",
                 "state": "policy_checking",
@@ -1941,7 +1941,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "type": "node.start",
                 "node": "scope",
                 "state": "scope_checking",
@@ -1949,7 +1949,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "type": "node.completed",
                 "node": "scope",
                 "state": "scope_checking",
@@ -1959,7 +1959,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.648Z",
+                "at": "2026-06-11T08:27:40.174Z",
                 "type": "node.start",
                 "node": "execute",
                 "state": "executing",
@@ -1967,7 +1967,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "type": "node.completed",
                 "node": "execute",
                 "state": "executing",
@@ -1977,7 +1977,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "type": "node.start",
                 "node": "verify",
                 "state": "verifying",
@@ -1985,7 +1985,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "type": "node.recovery_branch",
                 "node": "verify",
                 "state": "rolling_back",
@@ -2022,7 +2022,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.212Z",
                 "type": "node.start",
                 "node": "rollback",
                 "state": "rolling_back",
@@ -2030,7 +2030,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "node.completed",
                 "node": "rollback",
                 "state": "rolling_back",
@@ -2040,7 +2040,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "node.start",
                 "node": "feedback",
                 "state": "learning",
@@ -2048,7 +2048,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "node.completed",
                 "node": "feedback",
                 "state": "learning",
@@ -2058,7 +2058,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "node.start",
                 "node": "finalize",
                 "state": "learning",
@@ -2066,7 +2066,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "node.completed",
                 "node": "finalize",
                 "state": "learning",
@@ -2076,7 +2076,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.689Z",
+                "at": "2026-06-11T08:27:40.213Z",
                 "type": "state.completed",
                 "node": "finalize",
                 "state": "completed",
@@ -2084,8 +2084,8 @@
                 "data": {}
               }
             ],
-            "createdAt": "2026-06-11T06:18:02.647Z",
-            "updatedAt": "2026-06-11T06:18:02.689Z"
+            "createdAt": "2026-06-11T08:27:40.173Z",
+            "updatedAt": "2026-06-11T08:27:40.213Z"
           },
           "status": "completed",
           "type": "run_agent_controller",
@@ -2117,14 +2117,14 @@
       "rollbackOk": true,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 40,
+      "durationMs": 42,
       "stepResults": [
         {
           "ok": false,
           "state": {
             "schemaVersion": 1,
             "taskId": "task:35fc503854cd",
-            "runId": "agent_run:03f51cafc8f3",
+            "runId": "agent_run:02c44e6de381",
             "state": "waiting_for_human",
             "currentNode": "VerifyNode",
             "graph": {
@@ -2149,7 +2149,7 @@
                       "files": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.690Z"
+                  "updatedAt": "2026-06-11T08:27:40.214Z"
                 },
                 {
                   "id": "PlanNode",
@@ -2187,7 +2187,7 @@
                       }
                     ]
                   },
-                  "updatedAt": "2026-06-11T06:18:02.691Z"
+                  "updatedAt": "2026-06-11T08:27:40.214Z"
                 },
                 {
                   "id": "PolicyNode",
@@ -2220,7 +2220,7 @@
                       ]
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.691Z"
+                  "updatedAt": "2026-06-11T08:27:40.214Z"
                 },
                 {
                   "id": "ScopeNode",
@@ -2255,7 +2255,7 @@
                       "requiresTestsUpdate": false
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.691Z"
+                  "updatedAt": "2026-06-11T08:27:40.214Z"
                 },
                 {
                   "id": "ExecuteNode",
@@ -2273,7 +2273,7 @@
                     "logs": [],
                     "artifacts": [],
                     "errors": [],
-                    "transactionId": "txn:1781158682691:2f563147",
+                    "transactionId": "txn:1781166460215:2f563147",
                     "changedFiles": [],
                     "applied": {
                       "writeResults": [
@@ -2288,13 +2288,13 @@
                         "command": "node --check src/controller.mjs",
                         "status": "failed",
                         "stdout": "",
-                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.verification_human_interrupt-65cUd0\\src\\controller.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                        "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.verification_human_interrupt-tvRYs7\\src\\controller.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                         "exitCode": 1,
                         "error": "command exited with code 1"
                       }
                     ],
                     "error": "verification command failed",
-                    "durationMs": 36,
+                    "durationMs": 38,
                     "verification": {
                       "verified": false,
                       "checks": [
@@ -2321,7 +2321,7 @@
                       "changedFiles": []
                     }
                   },
-                  "updatedAt": "2026-06-11T06:18:02.729Z"
+                  "updatedAt": "2026-06-11T08:27:40.254Z"
                 },
                 {
                   "id": "VerifyNode",
@@ -2364,60 +2364,60 @@
                   "status": "pending"
                 }
               ],
-              "createdAt": "2026-06-11T06:18:02.690Z"
+              "createdAt": "2026-06-11T08:27:40.214Z"
             },
             "history": [
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": null,
                 "to": "created",
                 "node": null,
                 "reason": "created"
               },
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": "created",
                 "to": "observing",
                 "node": "ObserveNode",
                 "reason": "enter ObserveNode"
               },
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": "observing",
                 "to": "planning",
                 "node": "ObserveNode",
                 "reason": "advance to PlanNode"
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": "planning",
                 "to": "policy_checking",
                 "node": "PlanNode",
                 "reason": "advance to PolicyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": "policy_checking",
                 "to": "scope_checking",
                 "node": "PolicyNode",
                 "reason": "advance to ScopeNode"
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "from": "scope_checking",
                 "to": "executing",
                 "node": "ScopeNode",
                 "reason": "advance to ExecuteNode"
               },
               {
-                "at": "2026-06-11T06:18:02.729Z",
+                "at": "2026-06-11T08:27:40.254Z",
                 "from": "executing",
                 "to": "verifying",
                 "node": "ExecuteNode",
                 "reason": "advance to VerifyNode"
               },
               {
-                "at": "2026-06-11T06:18:02.729Z",
+                "at": "2026-06-11T08:27:40.255Z",
                 "from": "verifying",
                 "to": "waiting_for_human",
                 "node": "VerifyNode",
@@ -2426,7 +2426,7 @@
             ],
             "artifacts": [
               {
-                "createdAt": "2026-06-11T06:18:02.690Z",
+                "createdAt": "2026-06-11T08:27:40.214Z",
                 "kind": "node_result",
                 "node": "ObserveNode",
                 "nodeType": "ObserveNode",
@@ -2440,7 +2440,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.691Z",
+                "createdAt": "2026-06-11T08:27:40.214Z",
                 "kind": "node_result",
                 "node": "PlanNode",
                 "nodeType": "PlanNode",
@@ -2473,7 +2473,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.691Z",
+                "createdAt": "2026-06-11T08:27:40.214Z",
                 "kind": "node_result",
                 "node": "PolicyNode",
                 "nodeType": "PolicyNode",
@@ -2501,7 +2501,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.691Z",
+                "createdAt": "2026-06-11T08:27:40.214Z",
                 "kind": "node_result",
                 "node": "ScopeNode",
                 "nodeType": "ScopeNode",
@@ -2531,7 +2531,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.729Z",
+                "createdAt": "2026-06-11T08:27:40.254Z",
                 "kind": "node_result",
                 "node": "ExecuteNode",
                 "nodeType": "ExecuteNode",
@@ -2542,7 +2542,7 @@
                   "logs": [],
                   "artifacts": [],
                   "errors": [],
-                  "transactionId": "txn:1781158682691:2f563147",
+                  "transactionId": "txn:1781166460215:2f563147",
                   "changedFiles": [],
                   "applied": {
                     "writeResults": [
@@ -2557,13 +2557,13 @@
                       "command": "node --check src/controller.mjs",
                       "status": "failed",
                       "stdout": "",
-                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.verification_human_interrupt-65cUd0\\src\\controller.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
+                      "stderr": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-controller.verification_human_interrupt-tvRYs7\\src\\controller.mjs:1\r\nexport const broken = ;\r\n                      ^\r\n\r\nSyntaxError: Unexpected token ';'\r\n    at checkSyntax (node:internal/main/check_syntax:72:5)\r\n\r\nNode.js v24.15.0\r\n",
                       "exitCode": 1,
                       "error": "command exited with code 1"
                     }
                   ],
                   "error": "verification command failed",
-                  "durationMs": 36,
+                  "durationMs": 38,
                   "verification": {
                     "verified": false,
                     "checks": [
@@ -2592,7 +2592,7 @@
                 }
               },
               {
-                "createdAt": "2026-06-11T06:18:02.729Z",
+                "createdAt": "2026-06-11T08:27:40.255Z",
                 "kind": "node_result",
                 "node": "VerifyNode",
                 "nodeType": "VerifyNode",
@@ -2626,7 +2626,7 @@
             ],
             "approvalRequests": [
               {
-                "id": "approval:26f178725dd0",
+                "id": "approval:34ee0d8fd92a",
                 "taskId": "task:35fc503854cd",
                 "node": "VerifyNode",
                 "status": "pending",
@@ -2639,25 +2639,25 @@
                   "reject",
                   "cancel"
                 ],
-                "createdAt": "2026-06-11T06:18:02.729Z",
-                "updatedAt": "2026-06-11T06:18:02.729Z"
+                "createdAt": "2026-06-11T08:27:40.254Z",
+                "updatedAt": "2026-06-11T08:27:40.254Z"
               }
             ],
             "budget": {},
             "risk": {
               "riskTier": "R2"
             },
-            "createdAt": "2026-06-11T06:18:02.690Z",
-            "updatedAt": "2026-06-11T06:18:02.729Z"
+            "createdAt": "2026-06-11T08:27:40.214Z",
+            "updatedAt": "2026-06-11T08:27:40.255Z"
           },
           "trace": {
             "schemaVersion": 1,
-            "traceId": "audit:task:35fc503854cd:1781158682690",
+            "traceId": "audit:task:35fc503854cd:1781166460214",
             "taskId": "task:35fc503854cd",
-            "runId": "agent_run:03f51cafc8f3",
+            "runId": "agent_run:02c44e6de381",
             "events": [
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "state.created",
                 "node": null,
                 "state": "created",
@@ -2665,7 +2665,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.start",
                 "node": "ObserveNode",
                 "state": "observing",
@@ -2673,7 +2673,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.690Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.completed",
                 "node": "ObserveNode",
                 "state": "observing",
@@ -2683,7 +2683,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.start",
                 "node": "PlanNode",
                 "state": "planning",
@@ -2691,7 +2691,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.completed",
                 "node": "PlanNode",
                 "state": "planning",
@@ -2701,7 +2701,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.start",
                 "node": "PolicyNode",
                 "state": "policy_checking",
@@ -2709,7 +2709,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.completed",
                 "node": "PolicyNode",
                 "state": "policy_checking",
@@ -2719,7 +2719,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.start",
                 "node": "ScopeNode",
                 "state": "scope_checking",
@@ -2727,7 +2727,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.214Z",
                 "type": "node.completed",
                 "node": "ScopeNode",
                 "state": "scope_checking",
@@ -2737,7 +2737,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.691Z",
+                "at": "2026-06-11T08:27:40.215Z",
                 "type": "node.start",
                 "node": "ExecuteNode",
                 "state": "executing",
@@ -2745,7 +2745,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.729Z",
+                "at": "2026-06-11T08:27:40.254Z",
                 "type": "node.completed",
                 "node": "ExecuteNode",
                 "state": "executing",
@@ -2755,7 +2755,7 @@
                 }
               },
               {
-                "at": "2026-06-11T06:18:02.729Z",
+                "at": "2026-06-11T08:27:40.254Z",
                 "type": "node.start",
                 "node": "VerifyNode",
                 "state": "verifying",
@@ -2763,7 +2763,7 @@
                 "data": {}
               },
               {
-                "at": "2026-06-11T06:18:02.729Z",
+                "at": "2026-06-11T08:27:40.255Z",
                 "type": "human.interrupt",
                 "node": "VerifyNode",
                 "state": "waiting_for_human",
@@ -2772,12 +2772,12 @@
                   "reasons": [
                     "verification_failed"
                   ],
-                  "requestId": "approval:26f178725dd0"
+                  "requestId": "approval:34ee0d8fd92a"
                 }
               }
             ],
-            "createdAt": "2026-06-11T06:18:02.690Z",
-            "updatedAt": "2026-06-11T06:18:02.729Z"
+            "createdAt": "2026-06-11T08:27:40.214Z",
+            "updatedAt": "2026-06-11T08:27:40.255Z"
           },
           "status": "waiting_for_human",
           "type": "run_agent_controller",
@@ -2804,7 +2804,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 86,
+      "durationMs": 84,
       "stepResults": [
         {
           "actionId": "bench:plugin_process_isolation",
@@ -2846,12 +2846,12 @@
                 "required": false,
                 "strategy": null
               },
-              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5\\actions\\isolated_action",
-              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5\\actions\\isolated_action\\execute.js",
-              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5\\actions\\isolated_action\\verify.js",
+              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD\\actions\\isolated_action",
+              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD\\actions\\isolated_action\\execute.js",
+              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD\\actions\\isolated_action\\verify.js",
               "rollbackModulePath": null,
               "handler": null,
-              "registeredAt": "2026-06-11T06:18:02.732Z",
+              "registeredAt": "2026-06-11T08:27:40.258Z",
               "metadata": {}
             },
             "riskTier": "R1"
@@ -2864,7 +2864,7 @@
               "rejected": 0,
               "results": [
                 {
-                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5\\actions\\isolated_action",
+                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD\\actions\\isolated_action",
                   "ok": true,
                   "decision": "loaded",
                   "errors": [],
@@ -2881,31 +2881,31 @@
           },
           "output": {
             "status": "succeeded",
-            "pid": 8880,
+            "pid": 18864,
             "hanakoChild": "1",
             "nodeOptions": null,
-            "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5"
+            "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD"
           },
           "pluginProcess": {
             "execute": {
               "status": "succeeded",
               "result": {
                 "status": "succeeded",
-                "pid": 8880,
+                "pid": 18864,
                 "hanakoChild": "1",
                 "nodeOptions": null,
-                "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5"
+                "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD"
               },
               "exitCode": 0,
               "signal": null,
               "isolated": true,
-              "pid": 8880,
-              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5",
+              "pid": 18864,
+              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD",
               "stdout": "",
               "stderr": "",
               "stdoutTruncated": false,
               "stderrTruncated": false,
-              "durationMs": 41
+              "durationMs": 42
             }
           },
           "verification": {
@@ -2931,20 +2931,20 @@
                   "exitCode": 0,
                   "signal": null,
                   "isolated": true,
-                  "pid": 22064,
-                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5",
+                  "pid": 9988,
+                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD",
                   "stdout": "",
                   "stderr": "",
                   "stdoutTruncated": false,
                   "stderrTruncated": false,
-                  "durationMs": 41
+                  "durationMs": 38
                 }
               }
             ],
             "required": true
           },
           "rollback": null,
-          "durationMs": 85,
+          "durationMs": 82,
           "type": "execute_action",
           "name": "isolated_plugin_action"
         },
@@ -2968,7 +2968,7 @@
         },
         {
           "ok": true,
-          "actual": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-tEo7n5",
+          "actual": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.process_isolation-CRo8hD",
           "type": "assert_last_result",
           "name": "assert_last_result"
         }
@@ -2987,7 +2987,7 @@
       "rollbackOk": true,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 122,
+      "durationMs": 116,
       "stepResults": [
         {
           "actionId": "bench:plugin_rollback_on_verify_failure",
@@ -3029,12 +3029,12 @@
                 "required": true,
                 "strategy": "plugin_rollback"
               },
-              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ\\actions\\write_then_fail",
-              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ\\actions\\write_then_fail\\execute.js",
-              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ\\actions\\write_then_fail\\verify.js",
-              "rollbackModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ\\actions\\write_then_fail\\rollback.js",
+              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1\\actions\\write_then_fail",
+              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1\\actions\\write_then_fail\\execute.js",
+              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1\\actions\\write_then_fail\\verify.js",
+              "rollbackModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1\\actions\\write_then_fail\\rollback.js",
               "handler": null,
-              "registeredAt": "2026-06-11T06:18:02.818Z",
+              "registeredAt": "2026-06-11T08:27:40.341Z",
               "metadata": {}
             },
             "riskTier": "R2"
@@ -3047,7 +3047,7 @@
               "rejected": 0,
               "results": [
                 {
-                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ\\actions\\write_then_fail",
+                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1\\actions\\write_then_fail",
                   "ok": true,
                   "decision": "loaded",
                   "errors": [],
@@ -3074,13 +3074,13 @@
               "exitCode": 0,
               "signal": null,
               "isolated": true,
-              "pid": 7864,
-              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ",
+              "pid": 5252,
+              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1",
               "stdout": "",
               "stderr": "",
               "stdoutTruncated": false,
               "stderrTruncated": false,
-              "durationMs": 40
+              "durationMs": 38
             }
           },
           "error": "registered action verification failed",
@@ -3109,13 +3109,13 @@
                   "exitCode": 0,
                   "signal": null,
                   "isolated": true,
-                  "pid": 8044,
-                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ",
+                  "pid": 2520,
+                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1",
                   "stdout": "",
                   "stderr": "",
                   "stdoutTruncated": false,
                   "stderrTruncated": false,
-                  "durationMs": 37
+                  "durationMs": 36
                 }
               }
             ],
@@ -3136,16 +3136,16 @@
               "exitCode": 0,
               "signal": null,
               "isolated": true,
-              "pid": 19300,
-              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-jBkNYZ",
+              "pid": 10584,
+              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.rollback_on_verify_failure-L0f1C1",
               "stdout": "",
               "stderr": "",
               "stdoutTruncated": false,
               "stderrTruncated": false,
-              "durationMs": 42
+              "durationMs": 39
             }
           },
-          "durationMs": 119,
+          "durationMs": 114,
           "type": "execute_action",
           "name": "plugin_write_then_fail"
         },
@@ -3175,7 +3175,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 113,
+      "durationMs": 116,
       "stepResults": [
         {
           "actionId": "bench:plugin_verify_command_success",
@@ -3219,12 +3219,12 @@
                 "required": false,
                 "strategy": null
               },
-              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ\\actions\\verified_action",
-              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ\\actions\\verified_action\\execute.js",
-              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ\\actions\\verified_action\\verify.js",
+              "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH\\actions\\verified_action",
+              "executeModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH\\actions\\verified_action\\execute.js",
+              "verifyModulePath": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH\\actions\\verified_action\\verify.js",
               "rollbackModulePath": null,
               "handler": null,
-              "registeredAt": "2026-06-11T06:18:02.940Z",
+              "registeredAt": "2026-06-11T08:27:40.457Z",
               "metadata": {}
             },
             "riskTier": "R1"
@@ -3237,7 +3237,7 @@
               "rejected": 0,
               "results": [
                 {
-                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ\\actions\\verified_action",
+                  "packageDir": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH\\actions\\verified_action",
                   "ok": true,
                   "decision": "loaded",
                   "errors": [],
@@ -3266,8 +3266,8 @@
               "exitCode": 0,
               "signal": null,
               "isolated": true,
-              "pid": 9636,
-              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ",
+              "pid": 19128,
+              "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH",
               "stdout": "",
               "stderr": "",
               "stdoutTruncated": false,
@@ -3300,13 +3300,13 @@
                   "exitCode": 0,
                   "signal": null,
                   "isolated": true,
-                  "pid": 20492,
-                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-SW9fNQ",
+                  "pid": 2868,
+                  "cwd": "C:\\Users\\24089\\AppData\\Local\\Temp\\hanako-benchmark-plugin.verify_command_success-WwewiH",
                   "stdout": "",
                   "stderr": "",
                   "stdoutTruncated": false,
                   "stderrTruncated": false,
-                  "durationMs": 36
+                  "durationMs": 37
                 }
               },
               {
@@ -3327,7 +3327,7 @@
             "required": true
           },
           "rollback": null,
-          "durationMs": 111,
+          "durationMs": 114,
           "type": "execute_action",
           "name": "verified_plugin_action"
         },
@@ -3352,7 +3352,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 39,
+      "durationMs": 40,
       "stepResults": [
         {
           "status": "succeeded",
@@ -3379,20 +3379,20 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 2,
+      "durationMs": 3,
       "stepResults": [
         {
           "schemaVersion": 1,
-          "generatedAt": "2026-06-11T06:18:03.092Z",
+          "generatedAt": "2026-06-11T08:27:40.614Z",
           "projectRoot": "D:\\openhanako\\hanako-supplement\\self-evolve",
           "summary": {
             "status": "ready",
             "ok": true,
             "version": "4.3.0-lts",
             "score": 100,
-            "passed": 9,
+            "passed": 15,
             "failed": 0,
-            "total": 9,
+            "total": 15,
             "failedChecks": [],
             "nextAction": "release can proceed after npm run check, npm test, and npm run benchmark pass"
           },
@@ -3546,6 +3546,66 @@
                 "baseline": "benchmarks/baseline-v4.0.9.json",
                 "thresholds": "benchmarks/thresholds.json"
               }
+            },
+            {
+              "id": "readme.version_badge",
+              "ok": true,
+              "status": "passed",
+              "message": "README version badge matches package version: 4.3.0-lts",
+              "details": {
+                "expected": "4.3.0-lts",
+                "found": "4.3.0-lts"
+              }
+            },
+            {
+              "id": "readme.test_badge",
+              "ok": true,
+              "status": "passed",
+              "message": "README test badge matches: 496/496",
+              "details": {
+                "expected": 496,
+                "found": 496
+              }
+            },
+            {
+              "id": "readme.clone_branch",
+              "ok": true,
+              "status": "passed",
+              "message": "README fixed clone branch matches: v4.3.0-lts",
+              "details": {
+                "expected": "v4.3.0-lts",
+                "found": "v4.3.0-lts"
+              }
+            },
+            {
+              "id": "manifest.version",
+              "ok": true,
+              "status": "passed",
+              "message": "manifest version matches package.json: 4.3.0-lts",
+              "details": {
+                "expected": "4.3.0-lts",
+                "found": "4.3.0-lts"
+              }
+            },
+            {
+              "id": "docs.api_freeze_version",
+              "ok": true,
+              "status": "passed",
+              "message": "API_FREEZE.md references current version or major.minor: 4.3.0-lts",
+              "details": {
+                "expected": "4.3.0-lts",
+                "majorMinor": "4.3"
+              }
+            },
+            {
+              "id": "readme.test_count_text",
+              "ok": true,
+              "status": "passed",
+              "message": "README test count text matches: 496",
+              "details": {
+                "expected": 496,
+                "found": 496
+              }
             }
           ],
           "status": "ready",
@@ -3580,7 +3640,7 @@
       "rollbackOk": false,
       "repairAttempted": true,
       "repairOk": true,
-      "durationMs": 76,
+      "durationMs": 80,
       "stepResults": [
         {
           "actionId": "bench:repair_once_explicit_patch",
@@ -3589,7 +3649,7 @@
           "logs": [],
           "artifacts": [],
           "errors": [],
-          "transactionId": "txn:1781158683093:7b0daa0c",
+          "transactionId": "txn:1781166460615:7b0daa0c",
           "changedFiles": [
             "src\\target.mjs"
           ],
@@ -3611,7 +3671,7 @@
               "error": null
             }
           ],
-          "durationMs": 39,
+          "durationMs": 36,
           "verification": {
             "verified": true,
             "checks": [
@@ -3685,7 +3745,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 1,
+      "durationMs": 0,
       "stepResults": [
         {
           "actionId": "bench:diagnose_no_retry",
@@ -3736,7 +3796,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 0,
+      "durationMs": 1,
       "stepResults": [
         {
           "actionId": "bench:split_context",
@@ -3819,7 +3879,7 @@
                   "status": "pending"
                 }
               ],
-              "createdAt": "2026-06-11T06:18:03.169Z"
+              "createdAt": "2026-06-11T08:27:40.695Z"
             }
           },
           "before": {
@@ -3829,7 +3889,7 @@
             "chars": 340,
             "subtasks": 3
           },
-          "durationMs": 0,
+          "durationMs": 1,
           "verification": {
             "verified": true,
             "checks": [
@@ -3870,7 +3930,7 @@
       "rollbackOk": false,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 2,
+      "durationMs": 1,
       "stepResults": [
         {
           "actionId": "bench:manual_scope_escalation",
@@ -3915,7 +3975,7 @@
             "requiresDocsUpdate": false,
             "requiresTestsUpdate": false
           },
-          "durationMs": 0,
+          "durationMs": 1,
           "verification": {
             "verified": false,
             "checks": [
@@ -3960,7 +4020,7 @@
       "rollbackOk": true,
       "repairAttempted": false,
       "repairOk": false,
-      "durationMs": 42,
+      "durationMs": 39,
       "stepResults": [
         {
           "actionId": "bench:rollback_failed_verification",
@@ -3969,7 +4029,7 @@
           "logs": [],
           "artifacts": [],
           "errors": [],
-          "transactionId": "txn:1781158683172:34461105",
+          "transactionId": "txn:1781166460696:34461105",
           "changedFiles": [],
           "applied": {
             "writeResults": [
@@ -3989,7 +4049,7 @@
               "error": null
             }
           ],
-          "durationMs": 39,
+          "durationMs": 37,
           "verification": {
             "verified": false,
             "checks": [
@@ -4133,10 +4193,10 @@
               },
               "tokenCost": 0,
               "status": "staged",
-              "createdAt": "2026-06-11T06:18:03.215Z",
-              "updatedAt": "2026-06-11T06:18:03.215Z",
+              "createdAt": "2026-06-11T08:27:40.738Z",
+              "updatedAt": "2026-06-11T08:27:40.738Z",
               "decayed": false,
-              "stagedAt": "2026-06-11T06:18:03.215Z"
+              "stagedAt": "2026-06-11T08:27:40.738Z"
             }
           ],
           "activeSkills": [],
@@ -4217,11 +4277,11 @@
               },
               "tokenCost": 0,
               "status": "active",
-              "createdAt": "2026-06-11T06:18:03.215Z",
-              "updatedAt": "2026-06-11T06:18:03.223Z",
+              "createdAt": "2026-06-11T08:27:40.738Z",
+              "updatedAt": "2026-06-11T08:27:40.746Z",
               "decayed": false,
-              "stagedAt": "2026-06-11T06:18:03.215Z",
-              "activatedAt": "2026-06-11T06:18:03.223Z"
+              "stagedAt": "2026-06-11T08:27:40.738Z",
+              "activatedAt": "2026-06-11T08:27:40.746Z"
             }
           ],
           "activeSkills": [
@@ -4253,7 +4313,7 @@
               "tokenCost": 0,
               "status": "active",
               "source": "reflexion_cluster",
-              "activatedAt": "2026-06-11T06:18:03.223Z"
+              "activatedAt": "2026-06-11T08:27:40.746Z"
             }
           ],
           "events": [
@@ -4356,8 +4416,8 @@
             "latestValidationStatus": "passed",
             "manualPromotionEligible": true,
             "autoPromotionBlocked": true,
-            "createdAt": "2026-06-11T06:18:03.227Z",
-            "updatedAt": "2026-06-11T06:18:03.267Z"
+            "createdAt": "2026-06-11T08:27:40.749Z",
+            "updatedAt": "2026-06-11T08:27:40.789Z"
           },
           "type": "transfer_validate",
           "name": "validate_transfer_candidate"
@@ -4386,7 +4446,7 @@
     "false_auto_apply_rate": 0,
     "manual_escalation_rate": 0.11764705882352941,
     "token_overhead": null,
-    "latency_overhead": 42.05882352941177,
+    "latency_overhead": 41.705882352941174,
     "skill_effectiveness": null
   },
   "corpus": {

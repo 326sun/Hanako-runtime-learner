@@ -1,6 +1,6 @@
 # Benchmark Report
 
-Generated at: 2026-06-11T06:18:03.268Z
+Generated at: 2026-06-11T08:27:40.790Z
 Scenarios: 17
 Status: passed
 
@@ -16,7 +16,7 @@ Status: passed
 | false_auto_apply_rate | 0.0000 |
 | manual_escalation_rate | 0.1176 |
 | token_overhead | null |
-| latency_overhead | 42.0588 |
+| latency_overhead | 41.7059 |
 | skill_effectiveness | null |
 
 ## Scenario Results
