@@ -24,7 +24,7 @@ const manifestProps = manifest.contributes.configuration.properties;
 
 // Manifest keys that intentionally have no DEFAULT_CONFIG counterpart (pure
 // display fields written by the runtime, never read back as config).
-const MANIFEST_ONLY = new Set(["dataDirPath"]);
+const MANIFEST_ONLY = new Set([]);
 
 describe("config consistency · manifest ↔ DEFAULT_CONFIG", () => {
   it("every manifest default matches DEFAULT_CONFIG for shared keys", () => {

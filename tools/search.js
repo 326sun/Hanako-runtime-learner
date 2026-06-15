@@ -1,4 +1,5 @@
 import path from "path";
+import https from "https";
 import { readJson, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG, knowledgeTier } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
@@ -8,6 +9,7 @@ import { inferScope, normalizeScope } from "../lib/scope.js";
 import { previewEvidence } from "../lib/evidence.js";
 import { factMemoryItems } from "../lib/facts.js";
 import { resolveSemanticConfig, embedTexts, cosineSim, rrfScores } from "../lib/embeddings.js";
+import { mergeCredentials } from "../lib/credentials.js";
 
 const PATTERNS_FILE = path.join(resolveLearnerDir(), "patterns.json");
 const CONFIG_FILE = path.join(resolveLearnerDir(), "config.json");
@@ -224,10 +226,35 @@ const tool = defineTool({
     // of a corrected fact never resurfaces.
     const factItems = factMemoryItems(resolveLearnerDir());
     const allPatterns = [...patterns, ...factItems];
-    const config = readJson(CONFIG_FILE, DEFAULT_CONFIG);
+    const config = mergeCredentials(readJson(CONFIG_FILE, DEFAULT_CONFIG));
     const officialMemory = config.officialMemoryBridgeEnabled
       ? searchOfficialMemory(query, { limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)) })
       : [];
+
+    // Node.js HTTPS-based fetch for sandbox environments where global fetch
+    // may not be exposed or may fail (e.g. Hana plugin runtime).
+    const nodeFetch = (url, init = {}) => new Promise((resolve, reject) => {
+      const u = new URL(url);
+      const opts = {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: u.pathname + u.search,
+        method: init.method || "GET",
+        headers: init.headers || {},
+        timeout: 15000,
+      };
+      const req = https.request(opts, (res) => {
+        let data = "";
+        res.on("data", (c) => data += c);
+        res.on("end", () => {
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => JSON.parse(data), text: () => data });
+        });
+      });
+      req.on("error", reject);
+      req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+      if (init.body) req.write(init.body);
+      req.end();
+    });
 
     // Optional semantic pass (v1.3). Only when enabled + endpoint configured;
     // any failure (network/timeout) leaves `semantic` null → weighted BM25.
@@ -240,7 +267,7 @@ const tool = defineTool({
           limit: Math.max(limit, Number(config.semanticTopK) || 50),
         }).results;
         if (probe.length) {
-          const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config);
+          const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, { fetchImpl: nodeFetch });
           if (emb.ok && Array.isArray(emb.vectors[0])) {
             const qv = emb.vectors[0];
             semantic = new Map();

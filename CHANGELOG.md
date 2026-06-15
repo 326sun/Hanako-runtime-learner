@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.3.1 LTS
+
+- **Fix: settings panel auto-close**. Removed `dataDirPath` runtime display field and its `ctx.config.update()` call in `onload`. The config update was triggering a settings panel re-render that dismissed the panel before changes could be saved. The `dataDirPath` property was purely cosmetic (showing the data directory path in plugin settings).
+- **Fix: semantic search credential merge**. `tools/search.js` now calls `mergeCredentials()` after reading `config.json`, so the encrypted `semanticEmbeddingApiKey` is properly decrypted before the embedding API call. Previously the search tool read the raw config which contained only a placeholder after credentials migration, causing silent semantic search degradation to BM25-only.
+- **Fix: semantic search fetch in sandbox**. `tools/search.js` now uses Node.js native `https` module for embedding API calls instead of relying on global `fetch`. Hana's plugin sandbox may not expose `fetch`, causing `embedTexts` to return `{ok:false, reason:"no fetch"}` and silently fall back to BM25-only retrieval.
+- **Tests**: 496 passing; benchmark corpus 17/17.
+
 ## 4.3.0 LTS
 
 - **API Freeze finalized**: `docs/API_FREEZE.md` updated to v4.3.0; added Self-Learning Control API to frozen contracts; added v4.0–v4.3 version history table and updated LTS rules (10 rules including v4.1 security additions).

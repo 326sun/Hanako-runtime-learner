@@ -301,11 +301,6 @@ export default definePlugin({
     } catch (err) {
       ctx.log.warn(`runtime-learner: capability snapshot skipped: ${err.message}`);
     }
-    // Data directory display in settings (set once at startup)
-    const updateDataDirDisplay = () => {
-      try { ctx.config?.update?.({ dataDirPath: DATA_DIR }); } catch {}
-    };
-
     const autoApprovePatterns = (sessionPath = null, cachedAll = null) => {
       if (!config.autoApproveHighConfidence) return { count: 0, allPatterns: cachedAll || detector.all() };
       const allPatterns = cachedAll || detector.all();
@@ -427,7 +422,6 @@ export default definePlugin({
 
     ctx.log.info("runtime-learner: started three-layer self-learning runtime");
 
-    updateDataDirDisplay();
     } catch (err) {
       try { ctx.log.error(`runtime-learner: onload failed: ${err.message}`); } catch {}
     }
