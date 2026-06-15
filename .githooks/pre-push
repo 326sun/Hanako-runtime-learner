@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Pre-push gate. Mirrors the GitHub Actions CI job (npm run check + npm test)
+# so a broken release — e.g. a half-finished version rename where package.json
+# and the release-readiness artifacts disagree — is caught locally before it
+# reaches the remote and turns the CI red.
+#
+# release:check runs first because it prints a readable per-check table that
+# pinpoints exactly which release artifact is out of sync.
+#
+# Bypass in an emergency with:  git push --no-verify
+#
+set -e
+
+echo "[pre-push] release readiness gate (npm run release:check)..."
+npm run release:check
+
+echo "[pre-push] npm run check..."
+npm run check
+
+echo "[pre-push] npm test..."
+npm test
+
+echo "[pre-push] all checks passed — pushing."
