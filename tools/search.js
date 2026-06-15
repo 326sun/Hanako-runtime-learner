@@ -1,9 +1,9 @@
 import path from "path";
 import https from "https";
-import { readJson, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG, knowledgeTier } from "../lib/common.js";
+import { readJson, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG, knowledgeTier, mergeConfig } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
-import { MemoryIndex, tokenizeText, defaultDocText } from "../lib/memory-index.js";
+import { MemoryIndex, tokenizeText } from "../lib/memory-index.js";
 import { admitMemory } from "../lib/memory-gate.js";
 import { inferScope, normalizeScope } from "../lib/scope.js";
 import { previewEvidence } from "../lib/evidence.js";
@@ -13,6 +13,7 @@ import { mergeCredentials } from "../lib/credentials.js";
 
 const PATTERNS_FILE = path.join(resolveLearnerDir(), "patterns.json");
 const CONFIG_FILE = path.join(resolveLearnerDir(), "config.json");
+const hasOwn = Object.prototype.hasOwnProperty;
 
 // Cross-language synonym table for mixed CN/EN search expansion. Applied on top
 // of the index's CJK bigram tokenization to bridge terms that share no
@@ -40,23 +41,88 @@ const SYNONYMS = {
   "用量": ["usage", "消耗", "token"],
 };
 
+const SYNONYM_TOKEN_CACHE = new Map();
+
+function synonymTokensFor(key) {
+  const syns = SYNONYMS[key];
+  if (!syns) return null;
+  let cached = SYNONYM_TOKEN_CACHE.get(key);
+  if (cached) return cached;
+  cached = [];
+  for (const synonym of syns) {
+    for (const token of tokenizeText(synonym)) cached.push(token);
+  }
+  SYNONYM_TOKEN_CACHE.set(key, cached);
+  return cached;
+}
+
+function addSynonymTokens(expanded, key) {
+  const tokens = synonymTokensFor(key);
+  if (!tokens) return;
+  for (const token of tokens) expanded.add(token);
+}
+
 // Tokenize the query (CJK-aware) and fold in cross-language synonyms. We expand
 // on whitespace-split words first so multi-word EN phrases still hit the table.
 export function expandQueryTokens(query) {
-  const base = tokenizeText(query);
+  const raw = String(query || "").toLowerCase();
+  const base = tokenizeText(raw);
   const expanded = new Set(base);
-  const words = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
-  for (const w of [...words, ...base]) {
-    const syns = SYNONYMS[w];
-    if (syns) for (const s of syns) for (const t of tokenizeText(s)) expanded.add(t);
+  for (const word of raw.split(/\s+/)) {
+    if (word) addSynonymTokens(expanded, word);
   }
+  for (const token of base) addSynonymTokens(expanded, token);
   return [...expanded];
+}
+
+const round1 = (value) => Math.round(value * 10) / 10;
+const round3 = (value) => Math.round(value * 1000) / 1000;
+const round4 = (value) => Math.round(value * 10000) / 10000;
+
+function buildStrongTokenSet(tokens) {
+  const strong = new Set();
+  for (const token of tokens) {
+    if (token.length >= 2) strong.add(token);
+  }
+  return strong;
+}
+
+function buildIdMap(items) {
+  const byId = new Map();
+  for (const item of items) {
+    if (item?.id) byId.set(item.id, item);
+  }
+  return byId;
+}
+
+function filterPatterns(source, type, taskType) {
+  if (!type && !taskType) return source;
+  const out = [];
+  for (const pattern of source) {
+    if (type && pattern.type !== type) continue;
+    if (!matchesTaskFilter(pattern, taskType)) continue;
+    out.push(pattern);
+  }
+  return out;
+}
+
+function semanticMapFrom(semantic) {
+  if (semantic instanceof Map) return semantic;
+  if (!semantic || typeof semantic !== "object") return null;
+  const map = new Map();
+  for (const id in semantic) {
+    if (hasOwn.call(semantic, id)) map.set(id, semantic[id]);
+  }
+  return map;
 }
 
 function matchesTaskFilter(pattern, taskFilter) {
   if (!taskFilter) return true;
   const raw = pattern.scope?.taskType || pattern.context?.taskType || "";
-  return String(raw).split(",").map((item) => item.trim()).includes(taskFilter);
+  for (const item of String(raw).split(",")) {
+    if (item.trim() === taskFilter) return true;
+  }
+  return false;
 }
 
 function relationBoost(pattern, byId) {
@@ -90,34 +156,27 @@ function relationBoost(pattern, byId) {
  * @returns {{ results: Array, queryScope: object }}
  */
 export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = null, taskType = null, project = null, limit = 5, semantic = null } = {}) {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
-  const byId = new Map(allPatterns.map((p) => [p.id, p]));
+  const cfg = mergeConfig(config);
+  const source = Array.isArray(allPatterns) ? allPatterns : [];
   const tokens = expandQueryTokens(query);
   const queryScope = inferScope({ taskType, userText: query, project });
 
   // Pre-filter only on the user's explicit, hard filters (type / taskType).
-  const prefiltered = allPatterns.filter((p) => {
-    if (type && p.type !== type) return false;
-    if (!matchesTaskFilter(p, taskType)) return false;
-    return true;
-  });
+  const prefiltered = filterPatterns(source, type, taskType);
 
   if (!tokens.length) return { results: [], queryScope };
 
-  // 1) BM25 candidate generation.
+  // 1) BM25 candidate generation. Strong-token filtering happens inside the
+  // index so incidental single-CJK-character matches are dropped before rerank.
+  const strongQ = buildStrongTokenSet(tokens);
   const candidateLimit = Math.max(limit, Number(cfg.retrievalCandidateLimit || 20));
   const index = new MemoryIndex().rebuild(prefiltered);
-  const bm25Hits = index.search(tokens, { limit: candidateLimit });
+  const bm25Hits = index.search(tokens, { limit: candidateLimit, requireAnyToken: strongQ });
   if (!bm25Hits.length) return { results: [], queryScope };
 
   const topBm25 = bm25Hits[0].bm25 || 0;
   const relFloor = topBm25 * Number(cfg.minRetrievalRelative ?? 0.15);
-
-  // "Strong" query tokens: ASCII words (len ≥ 2) and CJK bigrams. A candidate
-  // matching ONLY single CJK unigrams is an incidental coincidence (e.g. "乱码"
-  // sharing 码 with "代码"), not a real hit — those are rejected for precision
-  // while bigram recall (排版 → 论文排版) is preserved.
-  const strongQ = new Set(tokens.filter((t) => t.length >= 2));
+  const byId = buildIdMap(source);
 
   // 2) Gate + 3) rerank.
   const scored = [];
@@ -125,12 +184,6 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
     // Low-confidence reject: weak textual tail relative to the best match.
     if (hit.bm25 < relFloor) continue;
     const p = hit.item;
-    if (strongQ.size) {
-      const docToks = new Set(tokenizeText(defaultDocText(p)));
-      let strong = false;
-      for (const t of strongQ) if (docToks.has(t)) { strong = true; break; }
-      if (!strong) continue;
-    }
     const gate = admitMemory(p, { scope: queryScope }, cfg);
     if (!gate.admitted) continue;
 
@@ -140,26 +193,32 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
     // Bonus for a concrete same-project match (general scopes get nothing extra).
     const scopeBonus = pScope.project !== "general" && pScope.project === queryScope.project ? 0.5 : 0;
     const breakdown = {
-      bm25: Number(hit.bm25.toFixed(3)),
-      relation: Number(relation.toFixed(3)),
-      memoryStrength: Number((Math.log1p(memStr) * 0.5).toFixed(3)),
-      scope: Number((scopeBonus - (gate.penalty || 0)).toFixed(3)),
+      bm25: round3(hit.bm25),
+      relation: round3(relation),
+      memoryStrength: round3(Math.log1p(memStr) * 0.5),
+      scope: round3(scopeBonus - (gate.penalty || 0)),
     };
     const composite = breakdown.bm25 + breakdown.relation + breakdown.memoryStrength + breakdown.scope;
-    scored.push({ p, gate, breakdown, composite: Number(composite.toFixed(3)), memStr });
+    scored.push({ p, gate, breakdown, composite: round3(composite), memStr });
   }
 
   // Optional semantic fusion (v1.3): when a semantic similarity map is supplied
   // (id → cosine), fuse BM25 / semantic / relation / memoryStrength rankings via
   // RRF. Without it, ranking stays the dependency-free weighted composite above,
   // so default behavior — and the retrieval eval — is unchanged.
-  const semMap = semantic instanceof Map ? semantic : (semantic ? new Map(Object.entries(semantic)) : null);
+  const semMap = semanticMapFrom(semantic);
   if (semMap && semMap.size > 0) {
-    const rankBy = (scoreOf, positiveOnly = false) => scored
-      .map((s) => ({ id: s.p.id, v: scoreOf(s) }))
-      .filter((x) => Number.isFinite(x.v) && (!positiveOnly || x.v > 0))
-      .sort((a, b) => b.v - a.v)
-      .map((x) => x.id);
+    const rankBy = (scoreOf, positiveOnly = false) => {
+      const ranked = [];
+      for (const s of scored) {
+        const v = scoreOf(s);
+        if (Number.isFinite(v) && (!positiveOnly || v > 0)) ranked.push({ id: s.p.id, v });
+      }
+      ranked.sort((a, b) => b.v - a.v);
+      const ids = new Array(ranked.length);
+      for (let i = 0; i < ranked.length; i++) ids[i] = ranked[i].id;
+      return ids;
+    };
     const lists = [
       rankBy((s) => s.breakdown.bm25),
       rankBy((s) => (semMap.has(s.p.id) ? semMap.get(s.p.id) : NaN)),
@@ -168,33 +227,38 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
     ];
     const fused = rrfScores(lists, { k: Number(cfg.rrfK) || 60 });
     for (const s of scored) {
-      s.breakdown.semantic = semMap.has(s.p.id) ? Number(semMap.get(s.p.id).toFixed(3)) : 0;
-      s.breakdown.fused = Number((fused.get(s.p.id) || 0).toFixed(4));
+      s.breakdown.semantic = semMap.has(s.p.id) ? round3(semMap.get(s.p.id)) : 0;
+      s.breakdown.fused = round4(fused.get(s.p.id) || 0);
       // scope term as a tiny tie-break so same-project / cross-task ordering holds.
-      s.composite = Number((s.breakdown.fused + s.breakdown.scope * 0.0001).toFixed(4));
+      s.composite = round4(s.breakdown.fused + s.breakdown.scope * 0.0001);
     }
   }
 
   scored.sort((a, b) => b.composite - a.composite);
 
-  const results = scored.slice(0, limit).map(({ p, gate, breakdown, composite, memStr }) => ({
-    id: p.id,
-    type: p.type,
-    knowledgeTier: knowledgeTier(p),
-    scope: normalizeScope(p.scope || p.context),
-    desc: p.desc,
-    fix: p.fix || null,
-    repairPlan: p.repairPlan || null,
-    context: p.context ? { taskType: p.context.taskType, categories: p.context.categories } : null,
-    evidencePreview: previewEvidence(p),
-    gateReason: gate.reason,
-    count: p.count,
-    score: p.score,
-    memoryStrength: Number(memStr.toFixed(1)),
-    status: p.status,
-    scoreBreakdown: breakdown,
-    _score: composite,
-  }));
+  const resultLimit = Math.min(limit, scored.length);
+  const results = new Array(resultLimit);
+  for (let i = 0; i < resultLimit; i++) {
+    const { p, gate, breakdown, composite, memStr } = scored[i];
+    results[i] = {
+      id: p.id,
+      type: p.type,
+      knowledgeTier: knowledgeTier(p),
+      scope: normalizeScope(p.scope || p.context),
+      desc: p.desc,
+      fix: p.fix || null,
+      repairPlan: p.repairPlan || null,
+      context: p.context ? { taskType: p.context.taskType, categories: p.context.categories } : null,
+      evidencePreview: previewEvidence(p),
+      gateReason: gate.reason,
+      count: p.count,
+      score: p.score,
+      memoryStrength: round1(memStr),
+      status: p.status,
+      scoreBreakdown: breakdown,
+      _score: composite,
+    };
+  }
 
   return { results, queryScope };
 }
@@ -226,7 +290,7 @@ const tool = defineTool({
     // of a corrected fact never resurfaces.
     const factItems = factMemoryItems(resolveLearnerDir());
     const allPatterns = [...patterns, ...factItems];
-    const config = mergeCredentials(readJson(CONFIG_FILE, DEFAULT_CONFIG));
+    const config = mergeCredentials(mergeConfig(readJson(CONFIG_FILE, {})));
     const officialMemory = config.officialMemoryBridgeEnabled
       ? searchOfficialMemory(query, { limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)) })
       : [];

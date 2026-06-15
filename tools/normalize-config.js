@@ -16,7 +16,7 @@
 import fs from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { learnerDir, DEFAULT_CONFIG } from "../lib/common.js";
+import { learnerDir, mergeConfig } from "../lib/common.js";
 import { resolveAdvisorConfig } from "../lib/model-advisor.js";
 
 function parseArgs(argv) {
@@ -49,7 +49,7 @@ function main() {
   const changes = [];
 
   if (config.modelAdvisorEnabled) {
-    const resolved = resolveAdvisorConfig({ ...DEFAULT_CONFIG, ...config });
+    const resolved = resolveAdvisorConfig(mergeConfig(config));
     if (!resolved.ok) {
       config.modelAdvisorEnabled = false;
       changes.push(`modelAdvisorEnabled: true -> false (no usable endpoint: ${resolved.reason})`);

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, buildSkillMdFromPatterns } from "../lib/common.js";
+import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, buildSkillMdFromPatterns, mergeConfig } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
@@ -63,6 +63,26 @@ function countByStatus(rows = [], field = "status") {
   return counts;
 }
 
+function summarizeDecoratedPatterns(patterns = []) {
+  const summary = { total: 0, injectable: 0, pending: 0, approved: 0, rejected: 0 };
+  for (const pattern of patterns) {
+    summary.total += 1;
+    if (pattern.injectable) summary.injectable += 1;
+    if (pattern.status === "pending") summary.pending += 1;
+    else if (pattern.status === "approved") summary.approved += 1;
+    else if (pattern.status === "rejected") summary.rejected += 1;
+  }
+  return summary;
+}
+
+function countWaitingAgentTasks(tasks = []) {
+  let waiting = 0;
+  for (const task of tasks) {
+    if (task.state === "waiting_for_human") waiting += 1;
+  }
+  return waiting;
+}
+
 function validationNextAction(validation) {
   return validation?.ok
     ? "approve_review then apply_review"
@@ -83,6 +103,7 @@ function reviewPanelNextActions(panel = {}) {
 const HANDLERS = {
   status(input, p, config, patterns) {
     const decorated = decoratePatterns(patterns, config);
+    const patternSummary = summarizeDecoratedPatterns(decorated);
     let history = [];
     try { history = fs.readdirSync(p.historyDir).filter((n) => n.endsWith("-SKILL.md")).sort(); } catch {}
     const proposalCounts = countByStatus(listProposals(p.learnerDir, { limit: 0 }));
@@ -91,15 +112,15 @@ const HANDLERS = {
     const transferCounts = countByStatus(listTransferCandidateRecords(p.learnerDir, { limit: 1000 }));
     return JSON.stringify({
       config: redactConfig(config),
-      patterns: decorated.length,
-      injectable: decorated.filter((x) => x.injectable).length,
-      pending: decorated.filter((x) => x.status === "pending").length,
-      approved: decorated.filter((x) => x.status === "approved").length,
-      rejected: decorated.filter((x) => x.status === "rejected").length,
+      patterns: patternSummary.total,
+      injectable: patternSummary.injectable,
+      pending: patternSummary.pending,
+      approved: patternSummary.approved,
+      rejected: patternSummary.rejected,
       historySnapshots: history.length,
       proposals: { pending: proposalCounts.pending || 0, applied: proposalCounts.applied || 0, rejected: proposalCounts.rejected || 0, dir: p.proposalsDir },
       reviews: { queued: reviewCounts.queued || 0, blocked: reviewCounts.blocked || 0, approved: reviewCounts.approved || 0 },
-      agentTasks: { total: agentTasks.length, waiting: agentTasks.filter((t) => t.state === "waiting_for_human").length },
+      agentTasks: { total: agentTasks.length, waiting: countWaitingAgentTasks(agentTasks) },
       transferCandidates: {
         total: Object.values(transferCounts).reduce((s, n) => s + n, 0),
         pending: transferCounts.transferred_candidate || 0, validated: transferCounts.validated || 0, failed: transferCounts.validation_failed || 0,
@@ -114,7 +135,7 @@ const HANDLERS = {
       id: pat.id, type: pat.type, desc: pat.desc, count: pat.count, score: pat.score,
       decayedScore: pat.decayedScore, status: pat.status, knowledgeTier: pat.knowledgeTier, injectable: pat.injectable,
       fix: pat.fix || null, lastSeen: pat.lastSeen, scope: pat.scope, context: pat.context ? { taskType: pat.context.taskType } : null,
-      evidencePreview: (pat.evidence || []).slice(0, 1).map((e) => e.quote).join(" ") || null,
+      evidencePreview: pat.evidence?.[0]?.quote || null,
     })), null, 2);
   },
 
@@ -155,7 +176,7 @@ const HANDLERS = {
       const failures = validation.checks.filter((c) => c.status === "fail").map((c) => c.name).join(", ");
       throw new Error(`config validation failed: ${failures}`);
     }
-    const next = { ...config, ...sanitisedPatch };
+    const next = mergeConfig(config, sanitisedPatch);
     writeJson(p.configPath, next);
     regenerateSkill(p, patterns, next);
     return JSON.stringify({ ok: true, config: redactConfig(next), validation }, null, 2);
@@ -460,14 +481,14 @@ const HANDLERS = {
     if (!Object.keys(fingerprint.scripts).length) {
       throw new Error("no scripts found in package.json at " + wsRoot);
     }
-    const next = {
-      ...config,
-      commands: {
-        ...(config.commands || {}),
+    const current = mergeConfig(config);
+    const next = mergeConfig(current, {
+      autoActionCommands: {
+        ...(current.autoActionCommands || {}),
         allowProjectScripts: true,
         projectScripts: { scriptsHash: fingerprint.scriptsHash },
       },
-    };
+    });
     writeJson(p.configPath, next);
     appendEvent(p.learnerDir, {
       type: "trust.project_scripts_approved",

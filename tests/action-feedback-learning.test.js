@@ -33,4 +33,19 @@ describe("action feedback and learning weights", () => {
     assert.equal(weights.retry_with_backoff.autoConfidenceBoost, 0.05);
     assert.ok(fs.existsSync(actionPolicyWeightsPath(tmpDir)));
   });
+
+  it("ignores unjudged recent feedback when checking suspension streaks", () => {
+    const rows = [
+      { actionId: "pending", effective: null, createdAt: "2026-01-06T00:00:00.000Z" },
+      { actionId: "f1", effective: false, createdAt: "2026-01-05T00:00:00.000Z" },
+      { actionId: "f2", effective: false, createdAt: "2026-01-04T00:00:00.000Z" },
+      { actionId: "f3", effective: false, createdAt: "2026-01-03T00:00:00.000Z" },
+    ];
+    for (const row of rows) {
+      recordActionFeedback(tmpDir, { ...row, actionType: "no_retry_diagnose", confidence: 0.8 });
+    }
+    const weights = updateActionPolicyWeights(tmpDir, { actionType: "no_retry_diagnose", limit: 4 });
+    assert.equal(weights.no_retry_diagnose.total, 3);
+    assert.equal(weights.no_retry_diagnose.autoSuspended, true);
+  });
 });

@@ -1,6 +1,6 @@
 # Design Goal Completion Matrix
 
-Status: v4.3.1 LTS — long-term maintainability governance. v4.x roadmap complete.
+Status: v4.3.2 LTS — long-term maintainability governance. v4.x roadmap complete.
 
 ## Completion summary
 
@@ -27,16 +27,18 @@ Status: v4.3.1 LTS — long-term maintainability governance. v4.x roadmap comple
 ```text
 npm run check
 npm test
+npm run perf
 npm run benchmark
 ```
 
-Expected v4.3.1 result:
+Expected v4.3.2 result:
 
 ```text
-package version: 4.3.1
+package version: 4.3.2
 npm run check: passed
-npm test: 496 passed
+npm test: 515 tests, 511 passed, 4 skipped
 npm run benchmark: passed, 17 scenarios
+npm run perf: passed, no threshold breaches
 ```
 
 ## Optional maintenance items after v4.3.0
@@ -53,7 +55,7 @@ These are not blockers for the v4.0 LTS final candidate. They belong to v4.1+ ma
 
 ## Final judgment
 
-v4.3.1 satisfies the planned LTS definition:
+v4.3.2 satisfies the planned LTS definition:
 
 ```text
 safe bounded automation

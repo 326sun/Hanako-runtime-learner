@@ -1,4 +1,4 @@
-// Tests for lib/rank-fusion.js — Reciprocal Rank Fusion.
+// Tests for the Reciprocal Rank Fusion helpers in lib/embeddings.js.
 
 import { describe, it } from "node:test";
 import assert from "node:assert";

@@ -11,6 +11,7 @@ import {
   decayedScore,
   knowledgeTier,
   memoryStrength,
+  scoreSignals,
   isInjectable,
   decoratePatterns,
   buildSkillMdFromPatterns,
@@ -153,6 +154,22 @@ describe("memoryStrength", () => {
   });
 });
 
+describe("scoreSignals", () => {
+  const config = { ...DEFAULT_CONFIG, decayHalfLifeDays: 30 };
+
+  it("matches decayedScore and memoryStrength from one combined calculation", () => {
+    const now = Date.now();
+    const pattern = {
+      lastSeen: new Date(now - 14 * 86_400_000).toISOString(),
+      score: 12,
+      count: 4,
+    };
+    const signals = scoreSignals(pattern, config, now);
+    assert.equal(signals.decayedScore, decayedScore(pattern, config, now));
+    assert.equal(signals.memoryStrength, memoryStrength(pattern, config, now));
+  });
+});
+
 describe("isInjectable", () => {
   const config = { ...DEFAULT_CONFIG, autoInjectHighConfidence: true, minInjectScore: 8, minInjectCount: 2 };
 
@@ -202,6 +219,16 @@ describe("isInjectable", () => {
   it("null pattern returns false", () => {
     assert.equal(isInjectable(null, config), false);
     assert.equal(isInjectable(undefined, config), false);
+  });
+
+  it("uses a caller-provided precomputed decayedScore when given (third arg)", () => {
+    // Raw decayedScore sits just under the inject floor (7.996 < 8) but the
+    // rounded score decoratePatterns computes (8.00) clears it. The precomputed
+    // arg lets decoratePatterns reuse its rounded score instead of re-deriving,
+    // which is how the two paths stay behaviourally identical after dedup.
+    const pattern = { status: "pending", score: 7.996, count: 5, lastSeen: new Date().toISOString() };
+    assert.equal(isInjectable(pattern, config), false, "raw-score path stays below the floor");
+    assert.equal(isInjectable(pattern, config, 8.0), true, "precomputed rounded score clears the floor");
   });
 });
 
@@ -326,6 +353,32 @@ describe("buildSkillMdFromPatterns", () => {
     // Budget is a soft cap; the trimmed result must be far below the untrimmed size.
     const untrimmed = buildSkillMdFromPatterns(patterns, { ...config, maxSkillTokens: 100000 }, { turnCount: 15 });
     assert.ok(md.length < untrimmed.length, "trimmed output is smaller than untrimmed");
+  });
+
+  it("bounds the per-turn injected token footprint regardless of store size", () => {
+    // The injected SKILL.md is a budgeted dynamic part (maxSkillTokens) plus a
+    // fixed instructional tail (~490 tokens). Section caps (≤5 prefs, ≤3
+    // workflows, ≤3 risks) plus the token budget keep the footprint bounded even
+    // when the pattern store is saturated, so per-call context cost never grows
+    // with learning history. Measured ≈ 954 tokens at saturation.
+    const now = new Date().toISOString();
+    const mk = (id, type, fix) => ({ id, type, status: type === "preference" ? "approved" : "pending", knowledgeTier: type === "preference" ? "durable" : undefined, score: 40, count: 8, lastSeen: now, firstSeen: now, desc: `${id} 这是一条较长的中文描述用于测试注入足迹 ${"x".repeat(30)}`, fix });
+    const patterns = [];
+    for (let i = 0; i < 40; i++) patterns.push(mk(`error:e${i}`, "error", `runtime hint ${i} ${"h".repeat(50)}`));
+    for (let i = 0; i < 40; i++) patterns.push(mk(`workflow:a${i}→b${i}`, "workflow", null));
+    for (let i = 0; i < 40; i++) patterns.push(mk(`pref:p${i}`, "preference", `重要偏好 ${i} ${"y".repeat(40)}`));
+    const cfg = { ...config, includePendingPreferences: true, autoInjectHighConfidence: true };
+
+    const saturated = buildSkillMdFromPatterns(patterns, cfg, { turnCount: 100 });
+    assert.ok(estimateTokens(saturated) <= 1100, `footprint ${estimateTokens(saturated)} tokens exceeds 1100 ceiling`);
+
+    // Tripling the store must not grow the footprint — caps/budget dominate.
+    const tripled = buildSkillMdFromPatterns(
+      [...patterns, ...patterns, ...patterns].map((p, i) => ({ ...p, id: `${p.id}#${i}` })),
+      cfg, { turnCount: 300 },
+    );
+    assert.ok(Math.abs(estimateTokens(tripled) - estimateTokens(saturated)) <= 60,
+      "injected footprint stays stable as the store grows");
   });
 
 

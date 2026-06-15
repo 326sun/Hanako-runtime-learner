@@ -470,6 +470,40 @@ describe("PatternDetector", () => {
       detector.invalidate();
       assert.equal(detector.all().find((p) => p.id === "error:boom").status, "approved");
     });
+
+    it("highConfidence and prefs return only the first eight matching decorated patterns", () => {
+      const detector = new PatternDetector({
+        autoInjectHighConfidence: true,
+        includePendingPreferences: true,
+        minInjectCount: 1,
+        minInjectScore: 1,
+      });
+      const now = new Date().toISOString();
+      for (let i = 0; i < 12; i++) {
+        detector.patterns.set(`error:${i}`, {
+          id: `error:${i}`,
+          type: "error",
+          status: "pending",
+          count: 2,
+          score: 30 - i,
+          lastSeen: now,
+        });
+        detector.patterns.set(`pref:${i}`, {
+          id: `pref:${i}`,
+          type: "preference",
+          knowledgeTier: "core",
+          status: "pending",
+          count: 2,
+          score: 30 - i,
+          fix: `preference ${i}`,
+          lastSeen: now,
+        });
+      }
+
+      assert.equal(detector.highConfidence().length, 8);
+      assert.equal(detector.prefs().length, 8);
+      assert.ok(detector.prefs().every((p) => p.type === "preference" && p.fix));
+    });
   });
 
   describe("integration: full pipeline", () => {
@@ -508,6 +542,106 @@ describe("PatternDetector", () => {
         detector.ingest(makeExp({ toolsUsed: ["grep", "edit"] }));
       }
       assert.equal(detector.turnCount, 5);
+    });
+  });
+
+  describe("_forgetPatterns (batched eviction)", () => {
+    it("removes all given patterns and cleans their category buckets", () => {
+      const detector = new PatternDetector({});
+      detector.restore([
+        { id: "a", type: "error", count: 1, context: { categories: ["x"] } },
+        { id: "b", type: "error", count: 1, context: { categories: ["y"] } },
+        { id: "c", type: "error", count: 1, context: { categories: ["z"] } },
+      ]);
+      detector._forgetPatterns(["a", "c"]);
+      assert.equal(detector.patterns.has("a"), false);
+      assert.equal(detector.patterns.has("c"), false);
+      assert.equal(detector.patterns.has("b"), true);
+      assert.equal(detector.catIndex.has("x"), false);
+      assert.equal(detector.catIndex.has("z"), false);
+      assert.equal(detector.catIndex.has("y"), true);
+    });
+
+    it("removes inbound relation edges pointing to any forgotten pattern in one pass", () => {
+      const detector = new PatternDetector({});
+      detector.restore([
+        { id: "a", type: "error", count: 1, context: { categories: ["x"], relations: [
+          { targetId: "b", type: "shared-tools", weight: 1 },
+          { targetId: "c", type: "same-task", weight: 0.3 },
+        ] } },
+        { id: "b", type: "error", count: 1, context: { categories: ["y"] } },
+        { id: "c", type: "error", count: 1, context: { categories: ["z"], relations: [
+          { targetId: "b", type: "shared-tools", weight: 1 },
+        ] } },
+      ]);
+      detector._forgetPatterns(["b"]);
+      assert.deepEqual(detector.patterns.get("a").context.relations.map((r) => r.targetId), ["c"]);
+      assert.deepEqual(detector.patterns.get("c").context.relations, []);
+    });
+
+    it("clears workflow seqCache and seqInsertOrder for forgotten workflow ids", () => {
+      const detector = new PatternDetector({});
+      detector.restore([
+        { id: "workflow:代码编写→文件探索", type: "workflow", count: 4, tools: ["grep", "edit", "bash"], context: { categories: ["文件探索", "代码编写"] } },
+      ]);
+      assert.equal(detector.seqCache.get("代码编写→文件探索"), 4);
+      detector._forgetPatterns(["workflow:代码编写→文件探索"]);
+      assert.equal(detector.patterns.has("workflow:代码编写→文件探索"), false);
+      assert.equal(detector.seqCache.has("代码编写→文件探索"), false);
+      assert.equal(detector.seqInsertOrder.includes("代码编写→文件探索"), false);
+    });
+
+    it("produces identical store/index/relation state as N single _forgetPattern calls", () => {
+      const build = () => [
+        { id: "p1", type: "error", count: 1, context: { categories: ["a"], relations: [{ targetId: "p2", type: "shared-tools", weight: 1 }, { targetId: "p3", type: "same-task", weight: 0.3 }] } },
+        { id: "p2", type: "error", count: 1, context: { categories: ["b"], relations: [{ targetId: "p1", type: "shared-tools", weight: 1 }, { targetId: "p4", type: "same-task", weight: 0.3 }] } },
+        { id: "p3", type: "error", count: 1, context: { categories: ["c"], relations: [{ targetId: "p4", type: "shared-tools", weight: 1 }] } },
+        { id: "p4", type: "error", count: 1, context: { categories: ["a", "c"] } },
+      ];
+      const ref = new PatternDetector({}); ref.restore(build());
+      const batched = new PatternDetector({}); batched.restore(build());
+
+      for (const id of ["p2", "p3"]) ref._forgetPattern(id);
+      batched._forgetPatterns(["p2", "p3"]);
+
+      assert.deepEqual([...batched.patterns.keys()].sort(), [...ref.patterns.keys()].sort());
+      assert.deepEqual([...batched.catIndex.keys()].sort(), [...ref.catIndex.keys()].sort());
+      assert.deepEqual(
+        batched.patterns.get("p1").context.relations,
+        ref.patterns.get("p1").context.relations,
+      );
+    });
+
+    it("is a no-op for empty or missing input", () => {
+      const detector = new PatternDetector({});
+      detector.restore([{ id: "a", type: "error", count: 1, context: { categories: ["x"] } }]);
+      detector._forgetPatterns([]);
+      detector._forgetPatterns();
+      assert.equal(detector.patterns.size, 1);
+    });
+  });
+
+  describe("pruneMemory — orphan relation cleanup", () => {
+    it("strips relation edges that point to a pruned low-score pattern", () => {
+      const detector = new PatternDetector({});
+      const old = new Date(Date.now() - 365 * 86_400_000).toISOString();
+      const fresh = new Date().toISOString();
+      // Strong survivor that links to a weak pattern which will be score-floor pruned.
+      detector.patterns.set("error:survivor", {
+        id: "error:survivor", type: "error", status: "approved",
+        count: 5, score: 50, firstSeen: fresh, lastSeen: fresh,
+        context: { categories: ["debug"], relations: [{ targetId: "error:weak", type: "shared-tools", weight: 1 }] },
+      });
+      detector.patterns.set("error:weak", {
+        id: "error:weak", type: "error", status: "approved", autoApproved: true,
+        count: 1, score: 1, firstSeen: old, lastSeen: old,
+        context: { categories: ["debug"] },
+      });
+      const pruned = detector.pruneMemory();
+      assert.ok(pruned >= 1, "weak decayed pattern is pruned");
+      assert.equal(detector.patterns.has("error:weak"), false);
+      assert.deepEqual(detector.patterns.get("error:survivor").context.relations, [],
+        "edge to the pruned pattern is removed");
     });
   });
 });

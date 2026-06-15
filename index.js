@@ -11,7 +11,7 @@
 
 import fs from "fs";
 import path from "path";
-import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatterns, cleanupTempFiles } from "./lib/common.js";
+import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatterns, cleanupTempFiles, mergeConfig } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
 import { applyProposal, buildSkillPatchProposal } from "./lib/proposals.js";
@@ -72,22 +72,32 @@ function ensureDir() {
 }
 
 
+/**
+ * Load config from disk, merging with defaults. Returns { config, source }:
+ *   - source="file": normal load from config.json
+ *   - source="corrupt": config.json had a JSON syntax error, renamed to .corrupt.bak
+ *   - source="default": no config file existed, wrote DEFAULT_CONFIG
+ * The caller should notify the user when source !== "file".
+ */
 function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
       const raw = fs.readFileSync(CONFIG_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      return { ...DEFAULT_CONFIG, ...parsed };
+      return { config: mergeConfig(parsed), source: "file" };
     }
   } catch (e) {
     // Only move the file aside on JSON parse errors — a disk I/O error
     // (EACCES, EIO, etc.) should not rename and overwrite valid user config.
     if (e instanceof SyntaxError) {
       try { fs.renameSync(CONFIG_FILE, `${CONFIG_FILE}.corrupt.${Date.now()}.bak`); } catch {}
+      // Fall through to write DEFAULT_CONFIG and signal the caller.
+      try { writeJson(CONFIG_FILE, DEFAULT_CONFIG); } catch {}
+      return { config: mergeConfig(), source: "corrupt" };
     }
   }
   try { writeJson(CONFIG_FILE, DEFAULT_CONFIG); } catch {}
-  return { ...DEFAULT_CONFIG };
+  return { config: mergeConfig(), source: "default" };
 }
 
 /* ── Activity log + retention ── */
@@ -110,7 +120,7 @@ export default definePlugin({
     try {
     ensureDir();
 
-    let config = loadConfig();
+    let { config, source: configSource } = loadConfig();
 
     // One-time migration: move any plaintext API keys from old config.json into
     // the encrypted credentials store. After migration the config file is
@@ -402,6 +412,19 @@ export default definePlugin({
     runtimeState.unsub = () => observer.unsubscribe();
     runtimeState.persistPatterns = flushPersist;
     runtimeState.refreshSkill = refreshSkill;
+
+    // Config fallback notification: let the user know when their config was
+    // corrupt or missing and the plugin reverted to defaults.
+    if (configSource !== "file") {
+      const reason = configSource === "corrupt"
+        ? "config.json was corrupt (JSON syntax error) — renamed to .corrupt.bak and reverted to defaults"
+        : "config.json was missing — wrote DEFAULT_CONFIG";
+      logActivity({
+        type: "config_fallback",
+        summary: reason,
+      });
+      ctx.log.warn(`runtime-learner: ${reason}`);
+    }
 
     // Session startup activity entry
     logActivity({

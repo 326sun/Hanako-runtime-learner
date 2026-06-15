@@ -37,6 +37,9 @@ describe("command allowlist final audit hardening", () => {
       "node --check !echo",
       "node --check lib/common.js > /tmp/out",
       "node --check lib/common.js; npm run check",
+      // # is a shell comment — it truncates the rest of the command so an
+      // attacker could hide a malicious suffix behind an allowed prefix.
+      "node --check lib/x.js #; rm -rf /",
     ];
     for (const command of commands) {
       assert.equal(isCommandAllowed(command, policy).allowed, false, command);

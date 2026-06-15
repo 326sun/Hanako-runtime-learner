@@ -8,6 +8,7 @@ import {
   ageDays,
   learnerDir as resolveLearnerDir,
   estimateTokens,
+  mergeConfig,
 } from "../lib/common.js";
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { listProposals } from "../lib/proposals.js";
@@ -40,7 +41,7 @@ const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
  * @param {number} opts.now
  */
 export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS } = {}) {
-  const cfg = { ...DEFAULT_CONFIG, ...config };
+  const cfg = mergeConfig(config);
   const decorated = decoratePatterns(patterns, cfg);
   const issues = [];
   const add = (severity, type, message, suggestion, extra = {}) =>

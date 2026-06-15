@@ -23,9 +23,29 @@ const tool = defineTool({
     const proposals = listProposals(p.learnerDir, { limit: 50 });
 
     const byStatus = { pending: 0, approved: 0, rejected: 0 };
-    for (const pattern of decorated) byStatus[pattern.status] = (byStatus[pattern.status] || 0) + 1;
     const byKnowledgeTier = {};
-    for (const pattern of decorated) byKnowledgeTier[pattern.knowledgeTier] = (byKnowledgeTier[pattern.knowledgeTier] || 0) + 1;
+    let injectableCount = 0;
+    for (const pattern of decorated) {
+      byStatus[pattern.status] = (byStatus[pattern.status] || 0) + 1;
+      byKnowledgeTier[pattern.knowledgeTier] = (byKnowledgeTier[pattern.knowledgeTier] || 0) + 1;
+      if (pattern.injectable) injectableCount += 1;
+    }
+
+    const proposalCounts = { pending: 0, applied: 0, rejected: 0 };
+    const pendingItems = [];
+    for (const proposal of proposals) {
+      if (proposalCounts[proposal.status] !== undefined) proposalCounts[proposal.status] += 1;
+      if (proposal.status === "pending" && pendingItems.length < 10) {
+        pendingItems.push({
+          id: proposal.id,
+          type: proposal.type,
+          risk: proposal.risk,
+          title: proposal.title,
+          autoApply: proposal.autoApply,
+          updatedAt: proposal.updatedAt,
+        });
+      }
+    }
 
     let historySnapshots = 0;
     try {
@@ -37,7 +57,7 @@ const tool = defineTool({
       compactTurns: countJsonl(p.turnsPath),
       errors: countJsonl(p.errorPath),
       patternCount: decorated.length,
-      injectableCount: decorated.filter((pattern) => pattern.injectable).length,
+      injectableCount,
       byStatus,
       byKnowledgeTier,
       historySnapshots,
@@ -50,20 +70,10 @@ const tool = defineTool({
         mode: "read-only-file-bridge",
       },
       proposals: {
-        pending: proposals.filter((proposal) => proposal.status === "pending").length,
-        applied: proposals.filter((proposal) => proposal.status === "applied").length,
-        rejected: proposals.filter((proposal) => proposal.status === "rejected").length,
-        pendingItems: proposals
-          .filter((proposal) => proposal.status === "pending")
-          .slice(0, 10)
-          .map((proposal) => ({
-            id: proposal.id,
-            type: proposal.type,
-            risk: proposal.risk,
-            title: proposal.title,
-            autoApply: proposal.autoApply,
-            updatedAt: proposal.updatedAt,
-          })),
+        pending: proposalCounts.pending,
+        applied: proposalCounts.applied,
+        rejected: proposalCounts.rejected,
+        pendingItems,
       },
       modelAdvice: readJson(MODEL_ADVICE_FILE, null),
       config,

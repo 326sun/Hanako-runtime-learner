@@ -1,0 +1,10 @@
+{
+  "_comment": "Advisory per-turn hot-path latency ceilings in ms, checked by scripts/perf-bench.js (npm run perf). Limits are generous (roughly 25-50x the measured baseline on dev hardware) so the harness only fires on a real regression, not normal machine-to-machine variance. Not wired into the release gate. Measured at N=100 (= MAX_PATTERN_COUNT*2, the bounded operating worst case).",
+  "search_ms": 2,
+  "decorate_ms": 2,
+  "skill_render_ms": 3,
+  "prune_ms": 5,
+  "all_cold_ms": 2,
+  "all_cached_ms": 1,
+  "coldImport_ms": 300
+}
