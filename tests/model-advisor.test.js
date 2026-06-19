@@ -169,6 +169,23 @@ describe("model advisor", () => {
     });
   });
 
+  describe("resolveAdvisorConfig credential handling", () => {
+    it("rejects the encrypted-credential placeholder instead of using it as an API key", () => {
+      // config.json stores a placeholder ("(stored in credentials.enc)") for the
+      // API key; the real key lives encrypted and is only present after
+      // mergeCredentials(). A caller that forgets to decrypt must NOT send the
+      // placeholder string as a bearer token (which 401s) — treat it as missing.
+      const resolved = advisor.resolveAdvisorConfig({
+        modelAdvisorSource: "private",
+        modelAdvisorBaseUrl: "https://api.example.com",
+        modelAdvisorModel: "small-1",
+        modelAdvisorApiKey: "(stored in credentials.enc)",
+      }, null);
+      assert.equal(resolved.ok, false);
+      assert.match(resolved.reason, /api key/i);
+    });
+  });
+
   describe("model:sample-text bus sampling (Hanako ≥ 0.305)", () => {
     const officialConfig = {
       modelAdvisorEnabled: true,

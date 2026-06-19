@@ -1,65 +1,52 @@
-# Benchmark API Freeze
+# 基准说明
 
-Status: frozen for v4.0.17 LTS.
+本项目有两类性能检查：场景基准和热路径微基准。
 
-## Purpose
+## 1. 场景基准
 
-Benchmarks provide system-level evidence beyond unit tests. They verify that the execution, rollback, repair, plugin, transfer, skill, controller, audit, and safety paths still work together.
+执行：
 
-## Command
-
-```bash
+```powershell
 npm run benchmark
 ```
 
-## Scenario file shape
+用途：
 
-```json
-{
-  "id": "category.example",
-  "title": "Example benchmark",
-  "category": "category",
-  "workspace": {
-    "files": []
-  },
-  "context": {},
-  "steps": []
-}
+- 回归验证典型学习场景
+- 确认不同模块协同下没有明显性能倒退
+- 作为发布前的固定检查项
+
+当前内置场景数：`17`
+
+## 2. 热路径微基准
+
+执行：
+
+```powershell
+npm run perf
 ```
 
-## Frozen step types
+用途：
 
-| Step | Purpose |
-|---|---|
-| `execute_action` | Execute a core or registered action. |
-| `run_command` | Run an allowed command in a fixture workspace. |
-| `run_agent_controller` | Run an Agent Controller task graph. |
-| `transfer_validate` | Validate a transferred memory candidate against a target project. |
-| `run_skill_promotion_loop` | Run the skill promotion pipeline. |
-| `generate_audit_dashboard` | Generate dashboard JSON/Markdown. |
-| `render_skill` | Render `SKILL.md` preview through the normal builder. |
-| `assert_file` | Assert fixture file existence/content. |
-| `assert_last_result` | Assert fields on the previous non-assertion result. |
-| `note` | Non-executing scenario annotation. |
+- 盯住搜索、装饰、渲染、裁剪等高频路径
+- 对局部清理和重构提供阈值护栏
 
-## Metrics
+典型关注指标：
 
-| Metric | Meaning |
-|---|---|
-| `task_success_rate` | Fraction of benchmark scenarios that succeeded. |
-| `auto_execution_success_rate` | Success rate for auto-applied scenarios. |
-| `rollback_success_rate` | Rollback success among rollback-attempted cases. |
-| `repair_success_rate` | Repair success among repair-attempted cases. |
-| `false_auto_apply_rate` | Incorrect automatic execution rate. |
-| `manual_escalation_rate` | Fraction requiring human escalation. |
-| `token_overhead` | Optional token overhead signal. |
-| `latency_overhead` | Scenario duration signal. |
-| `skill_effectiveness` | Optional skill benefit signal. |
+- `search_ms`
+- `decorate_ms`
+- `skill_render_ms`
+- `prune_ms`
+- `all_cold_ms`
+- `all_cached_ms`
+- 冷启动 import 时间
 
-## v4.0.17 corpus
+## 解释原则
 
-The built-in corpus covers 16 scenarios across audit, controller, plugin, quality, repair, runtime, safety, skill, and transfer categories.
+1. `benchmark` 是集成场景，关注真实工作流。
+2. `perf` 是微基准，关注局部热点。
+3. 任一基准变慢都要先找原因，再决定是否接受。
 
-## Compatibility promise
+## 发布要求
 
-v4.0.17 LTS freezes scenario loading, step names, and metric names. Future v4.x releases may add optional steps and scenarios, but must keep existing scenario compatibility.
+`benchmark` 属于正式发布门的一部分。`perf` 是建议门，但在做性能整理时应一起看。

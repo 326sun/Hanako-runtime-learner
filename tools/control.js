@@ -4,7 +4,8 @@ import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePattern
 import { defineTool } from "../lib/hana-runtime-compat.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
-import { applyProposal, listProposals, readProposal, rejectProposal, previewProposalDiff, verifyProposalReviewBinding } from "../lib/proposals.js";
+import { listProposals, readProposal, rejectProposal, previewProposalDiff, verifyProposalReviewBinding } from "../lib/proposals.js";
+import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
 import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
 import { readEvents, appendEvent, replayEventState, verifyEventLog } from "../lib/event-log.js";
@@ -15,7 +16,7 @@ import { loadFacts } from "../lib/facts.js";
 import { applyPolicyProfile, listPolicyProfiles } from "../lib/policy-profiles.js";
 import { buildAuditBundle, exportAuditBundle } from "../lib/audit-bundle.js";
 import { buildAuditDashboard, exportAuditDashboard } from "../lib/audit-dashboard.js";
-import { extractAndSaveCredentials } from "../lib/credentials.js";
+import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
 import { listAgentTaskStates, readAgentTaskBundle } from "../lib/agent-task-store.js";
 import { approveAgentTask, cancelAgentTask, rejectAgentTask, resumeAgentTask } from "../lib/agent-resume.js";
 import { expireTransferCandidate, listTransferCandidateRecords, loadTransferCandidateRecord, recordTransferValidation, registerTransferCandidate, summarizeTransferCandidate } from "../lib/transfer-registry.js";
@@ -170,12 +171,13 @@ const HANDLERS = {
     for (const key of Object.keys(DEFAULT_CONFIG)) {
       if (Object.prototype.hasOwnProperty.call(input, key)) patch[key] = input[key];
     }
-    const sanitisedPatch = extractAndSaveCredentials(patch);
+    const sanitisedPatch = sanitizeCredentialPatch(patch);
     const validation = validateConfigPatch(sanitisedPatch, config);
     if (!validation.ok) {
       const failures = validation.checks.filter((c) => c.status === "fail").map((c) => c.name).join(", ");
       throw new Error(`config validation failed: ${failures}`);
     }
+    extractAndSaveCredentials(patch);
     const next = mergeConfig(config, sanitisedPatch);
     writeJson(p.configPath, next);
     regenerateSkill(p, patterns, next);
@@ -205,7 +207,14 @@ const HANDLERS = {
   },
 
   async run_model_advisor(input, p, config, patterns, ctx) {
-    const result = await runModelAdvisor({ config, patterns, usage: readJson(p.usageSummaryPath, null), capabilities: readJson(p.capabilitiesPath, null), reason: "manual", ctx });
+    // Decrypt sensitive keys (API keys) just for the advisor — the only control
+    // handler that consumes a credential. config.json holds a placeholder, so
+    // without this a private-endpoint advisor call would send the literal
+    // placeholder as a bearer token and 401. Scoped to this handler so the
+    // decrypted secret never reaches handlers that persist config (set_config,
+    // set_policy_profile) and leak it back to disk in plaintext.
+    const advisorConfig = mergeCredentials(config);
+    const result = await runModelAdvisor({ config: advisorConfig, patterns, usage: readJson(p.usageSummaryPath, null), capabilities: readJson(p.capabilitiesPath, null), reason: "manual", ctx });
     if (!result.ok) return JSON.stringify({ ok: false, error: result.reason || "advisor skipped" }, null, 2);
     const { merged } = mergeAdvisorSuggestions(new Map(patterns.map((pat) => [pat.id, pat])), result.advice);
     if (merged > 0) writeJson(p.patternsPath, patterns);
@@ -231,9 +240,10 @@ const HANDLERS = {
     if (config.governanceProfile === "conservative") {
       throw new Error("conservative profile requires review-first flow: approve_review then apply_review");
     }
-    const applied = applyProposal(p.learnerDir, input.proposalId || input.id, {
+    const applied = applyProposalSafely(p.learnerDir, input.proposalId || input.id, {
       configPath: p.configPath,
       requireReview: !!config.requireReviewForAutoApply,
+      allowedSkillRoots: [p.pluginDir],
     });
     return JSON.stringify({ ok: true, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
   },
@@ -301,7 +311,7 @@ const HANDLERS = {
     if (!proposal) throw new Error(`proposal not found: ${review.proposalId}`);
     const binding = verifyProposalReviewBinding(proposal, review);
     if (!binding.ok) throw new Error(binding.error);
-    const applied = applyProposal(p.learnerDir, review.proposalId, { configPath: p.configPath, requireReview: true });
+    const applied = applyProposalSafely(p.learnerDir, review.proposalId, { configPath: p.configPath, requireReview: true, allowedSkillRoots: [p.pluginDir] });
     return JSON.stringify({ ok: true, reviewId, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
   },
 

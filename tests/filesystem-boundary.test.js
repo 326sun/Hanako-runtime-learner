@@ -30,6 +30,32 @@ describe("filesystem-boundary", () => {
     assert.equal(isPathForbidden(path.join(tmpDir, "lib", "ok.js"), policy).forbidden, false);
   });
 
+  it("matches deny patterns case-insensitively (Windows filesystems are case-insensitive)", () => {
+    // A deny pattern must still block a path that differs only by case, or the
+    // protection silently fails on case-insensitive filesystems.
+    const policy = { filesystem: { deny: ["NODE_MODULES", ".ENV"] } };
+    assert.equal(isPathForbidden(path.join(tmpDir, "node_modules", "x.js"), policy).forbidden, true);
+    assert.equal(isPathForbidden(path.join(tmpDir, ".env"), policy).forbidden, true);
+  });
+
+  it("resolves symlinks before matching deny patterns (no in-workspace symlink bypass)", (t) => {
+    fs.mkdirSync(tmpDir, { recursive: true });
+    const realSecret = path.join(tmpDir, ".git");
+    const link = path.join(tmpDir, "innocent");
+    fs.mkdirSync(realSecret, { recursive: true });
+    try {
+      fs.rmSync(link, { force: true, recursive: true });
+      fs.symlinkSync(realSecret, link, "junction");
+    } catch {
+      t.skip("symlink creation not permitted on this platform");
+      return;
+    }
+    const policy = { filesystem: { deny: [".git"] } };
+    // The symlink name ("innocent") does not contain ".git", but it resolves to
+    // a forbidden directory — the deny check must follow the link.
+    assert.equal(isPathForbidden(path.join(link, "config"), policy).forbidden, true);
+  });
+
   it("checks write allowed", () => {
     const policy = { filesystem: { deny: [".env"], allowWrite: ["lib/", "src/"] } };
     assert.equal(isWriteAllowed(path.join(tmpDir, "lib", "a.js"), tmpDir, policy).allowed, true);

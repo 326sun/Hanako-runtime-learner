@@ -1,70 +1,47 @@
-# Migration Guide: v3.x to v4.0 LTS
+# v3 到 v4 迁移说明
 
-Status: frozen for v4.0.17 LTS.
+v4 的核心变化不是“功能更多”，而是“边界更清晰、治理更完整、发布更可控”。
 
-## Who needs this
+## 迁移重点
 
-Use this guide when upgrading an earlier Hanako-runtime-learner installation to the v4.0 LTS line.
+### 1. 学习结果不再直接等价于生效结果
 
-## Upgrade path
+v4 引入了 proposal、review、validation、doctor、audit 这条完整治理链。原本偏直接的学习写入路径被拆成“学习”和“应用”两步。
 
-```bash
-git pull
-npm run install-plugin
-npm run check
-npm test
-npm run benchmark
-```
+### 2. 自动动作有了正式的风险分级
 
-If installing from a zip, replace the plugin directory, then run the same validation commands from the project root.
+v4 对动作明确区分 R0-R4：
 
-## Data compatibility
+- R0 / R1：只读或低风险
+- R2：工作区内可回滚写入
+- R3：需要人工确认
+- R4：永不自动执行
 
-The v4.0 line keeps existing local data files and adds new files under the same learner data directory:
+### 3. 数据与审计面更完整
 
-| File / directory | Added purpose |
-|---|---|
-| `action_feedback.jsonl` | Runtime execution feedback. |
-| `agent_tasks/` | Persistent Agent Controller task state. |
-| `transfer_registry.json` | Cross-project transfer candidates and evidence. |
-| `skill_candidates.json` | Skill promotion candidate lifecycle. |
-| `active_skills.json` | Evidence-backed active skill registry. |
-| `audit-dashboard/` | Exported dashboard reports. |
+新增或强化了：
 
-## Behavior changes
+- `event_log.jsonl`
+- `action_feedback.jsonl`
+- `memfs/`
+- release readiness 检查
 
-1. R2 write-like actions require transaction, verification, rollback, and scope gate.
-2. Approved proposals no longer bypass the unified executor chain.
-3. Plugin action code requires explicit opt-in and runs in a child process.
-4. Cross-project memory transfer requires target validation and still does not auto-promote.
-5. Skill promotion writes active skills to `active_skills.json`, not directly to `SKILL.md`.
-6. Active skill injection into rendered `SKILL.md` is off by default and must be explicitly enabled.
+## 对使用者的影响
 
-## Recommended validation checklist
+1. 默认行为更保守。
+2. 某些以前“看起来会自动做”的动作现在需要 review 或验证。
+3. 发布前需要跑正式发布门。
 
-```bash
-npm run check
-npm test
-npm run benchmark
-```
+## 对开发者的影响
 
-Then inspect:
+1. 插件动作不能再绕开命令策略。
+2. 配置 patch 必须通过统一校验链。
+3. 任何高风险扩展都必须先落文档，再进实现。
 
-```text
-benchmark-results/
-audit-dashboard/
-.hanako/self-learning/
-```
+## 建议迁移步骤
 
-## Rollback plan
-
-If the upgrade fails:
-
-1. Restore the previous plugin directory from backup.
-2. Keep the learner data directory intact unless corruption is confirmed.
-3. Disable advanced automation by setting `governanceProfile` to `conservative`.
-4. Re-run `npm run check` and `npm test` before reinstalling.
-
-## Compatibility promise
-
-v4.0.17 LTS preserves existing v3.x pattern and preference data. New automation layers are conservative by default and should not require destructive data migration.
+1. 升级代码。
+2. 保留原有 `self-learning` 数据目录。
+3. 运行 `self_learning_control action=status` 确认数据目录和版本。
+4. 运行 `self_learning_doctor` 清理积压告警。
+5. 如需发布，执行 `npm run release:check`。

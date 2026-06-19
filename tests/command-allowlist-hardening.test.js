@@ -22,4 +22,17 @@ describe("command allowlist hardening", () => {
     assert.equal(isCommandAllowed("git push origin main", policy).allowed, false);
     assert.equal(isAllowedCommand("npm test && rm -rf .", { autoActionCommands: policy.commands }), false);
   });
+
+  it("denies a dangerous verb even when written with an executable extension", () => {
+    // The dangerous-verb denylist must not be bypassable by appending .exe/.cmd/.bat.
+    const exePolicy = { commands: { allowlist: ["rm.exe", "del.cmd"], denylist: [] } };
+    assert.equal(isCommandAllowed("rm.exe -rf /tmp/x", exePolicy).allowed, false);
+    assert.equal(isCommandAllowed("del.cmd /s C:/tmp", exePolicy).allowed, false);
+  });
+
+  it("denies node --loader / --experimental-loader which run code under --check", () => {
+    const nodePolicy = { commands: { allowlist: ["node"], denylist: [] } };
+    assert.equal(isCommandAllowed("node --loader ./evil.mjs --check app.js", nodePolicy).allowed, false);
+    assert.equal(isCommandAllowed("node --experimental-loader=./evil.mjs --check app.js", nodePolicy).allowed, false);
+  });
 });

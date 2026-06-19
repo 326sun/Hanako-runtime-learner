@@ -1,43 +1,46 @@
-# v4.3.0 LTS API Freeze
+# v4.x API 冻结总览
 
-Status: final. Covers v4.0 through v4.3 LTS.
+`v4.3.0` 开始，Runtime Self-Learning 进入 v4.x LTS 维护期。此后版本允许修复、性能整理和审计加固，但不允许悄悄放宽公开契约和安全边界。
 
-## Frozen public contracts
+## 冻结范围
 
-| Contract | Document |
+| 主题 | 文档 |
 |---|---|
-| Action Plugin API | `docs/ACTION_API.md` |
-| Policy Decision API | `docs/POLICY.md` |
-| Transaction API | `docs/TRANSACTION.md` |
-| Sandbox API | `docs/SANDBOX.md` |
-| Skill Promotion API | `docs/SKILL_PROMOTION.md` |
-| Audit API | `docs/AUDIT.md` |
-| Benchmark API | `docs/BENCHMARKS.md` |
-| Migration Guide | `docs/MIGRATION_v3_to_v4.md` |
-| Self-Learning Control API | `tools/control.js` (40+ actions via `self_learning_control`) |
+| 动作接口 | [ACTION_API.md](ACTION_API.md) |
+| 策略门与风险分级 | [POLICY.md](POLICY.md) |
+| 事务与回滚 | [TRANSACTION.md](TRANSACTION.md) |
+| 沙箱边界 | [SANDBOX.md](SANDBOX.md) |
+| 技能晋升 | [SKILL_PROMOTION.md](SKILL_PROMOTION.md) |
+| 审计与治理 | [AUDIT.md](AUDIT.md)、[GOVERNANCE.md](GOVERNANCE.md) |
 
-## LTS rules
+## v4.x LTS 允许什么
 
-1. R4 automation remains forbidden.
-2. External side effects remain forbidden.
-3. R2 writes require transaction, verification, rollback, and scope gate.
-4. Plugin code execution remains explicit opt-in and process-isolated.
-5. Cross-project transfer remains validation-required and no-auto-promotion.
-6. Skill promotion remains evidence-gated and does not directly write `SKILL.md`.
-7. Active skill injection remains off by default.
-8. Project scripts require explicit hash approval before auto-execution (v4.1).
-9. Workspace boundary checks are realpath-aware and symlink-safe (v4.1).
-10. Benchmarks must pass before release.
+- 修复 bug
+- 增加测试和基准
+- 清理冗余代码
+- 优化热路径性能
+- 改善文档、可观测性和审计输出
 
-## Maintenance policy
+## v4.x LTS 不允许什么
 
-Future v4.x releases should focus on bug fixes, tests, documentation, adapters, and benchmark cases. They should not change the core architecture or weaken frozen safety boundaries.
+- 放宽 R4 / 外部副作用边界
+- 放宽文件系统越界、命令越权或凭证处理规则
+- 改变冻结 API 的既有语义而不做版本升级
+- 让发布门执行外部发布动作
 
-## Version history
+## 版本线说明
 
-| Version | Focus | Key addition |
+| 版本 | 状态 | 说明 |
 |---|---|---|
-| v4.0 LTS | Stable baseline | Observe/Learn/Inject + basic action pipeline |
-| v4.1 LTS | Security consistency | Project script trust gate + filesystem boundary realpath |
-| v4.2 LTS | Performance | Single-pass pattern decoration + code simplification |
-| v4.3 LTS | Maintainability | Documentation governance + API freeze finalization |
+| `v4.0.x` | LTS 起点 | 公共接口稳定化。 |
+| `v4.1.x` | 安全加固 | 治理和边界加强。 |
+| `v4.2.x` | 性能与结构收敛 | 热路径和模块布局优化。 |
+| `v4.3.x` | 发布整理期 | 文档、验收、审计、缺陷修复和边界加固。 |
+
+## 维护规则
+
+1. 公开契约变化必须先写文档。
+2. 风险更高的行为只能收紧，不能放松。
+3. 新增能力必须默认关闭，除非它本来就是只读或纯诊断。
+4. 发布必须通过 `release:check`。
+5. 验收文档、设计矩阵和版本号必须保持一致。

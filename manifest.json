@@ -2,8 +2,8 @@
   "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "4.3.2",
-  "description": "运行时自我学习引擎：观察本地交互习惯，归纳重复工作流和错误，并注入保守的经验提示。",
+  "version": "4.3.16",
+  "description": "运行时自学习引擎：观察本地交互，归纳重复工作流、偏好与错误，并生成保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
   "minAppVersion": "0.293.0",
@@ -28,62 +28,80 @@
       "properties": {
         "governanceProfile": {
           "type": "string",
-          "title": "治理策略配置档",
+          "title": "治理策略档位",
+          "enum": ["conservative", "balanced", "autonomous"],
+          "enumDescriptions": [
+            "保守 / 审查优先",
+            "均衡 / 默认",
+            "自主 / 单用户快路径"
+          ],
           "default": "balanced"
         },
         "autoInjectHighConfidence": {
           "type": "boolean",
-          "title": "自动注入高置信经验提示",
+          "title": "自动注入高置信经验",
           "default": true
         },
         "autoApproveHighConfidence": {
           "type": "boolean",
-          "title": "自动批准高置信模式（无需手动审批）",
+          "title": "自动批准高置信模式",
           "default": true
         },
         "minInjectScore": {
           "type": "number",
-          "title": "自动注入最低评分",
+          "title": "自动注入最低分",
+          "description": "有效范围 1–50。低于此评分的经验不会自动注入。",
+          "minimum": 1,
+          "maximum": 50,
           "default": 8
         },
         "minInjectCount": {
           "type": "number",
           "title": "自动注入最少重复次数",
+          "description": "有效范围 1–20。重复次数达到此值的模式才会自动注入。",
+          "minimum": 1,
+          "maximum": 20,
           "default": 2
         },
         "decayHalfLifeDays": {
           "type": "number",
           "title": "经验评分半衰期（天）",
+          "description": "有效范围 1–365 天。经验评分按此半衰期随时间衰减。",
+          "minimum": 1,
+          "maximum": 365,
           "default": 30
         },
         "includePendingPreferences": {
           "type": "boolean",
-          "title": "允许未审核的偏好提示参与注入（默认关闭，高级单用户可开启）",
+          "title": "允许未审核偏好参与注入（默认关闭）",
           "default": false
         },
         "learnFromUsage": {
           "type": "boolean",
-          "title": "从模型用量元数据中学习",
+          "title": "从模型用量元数据学习",
           "default": true
         },
         "includeUsageInAdvisorPrompt": {
           "type": "boolean",
-          "title": "允许将模型用量摘要发送给整理模型（默认关闭）",
+          "title": "允许将用量摘要发送给整理模型（默认关闭）",
           "default": false
         },
         "officialMemoryBridgeEnabled": {
           "type": "boolean",
-          "title": "桥接 Hanako 官方记忆（只读）",
+          "title": "启用 Hanako 官方记忆桥（只读）",
           "default": true
         },
         "officialMemoryBridgeMaxResults": {
           "type": "number",
-          "title": "官方记忆桥接最大返回条数",
+          "title": "官方记忆桥最大返回条数",
           "default": 3
         },
         "largeUsageTokenThreshold": {
           "type": "number",
-          "title": "大上下文用量阈值（token）",
+          "title": "大上下文阈值（token）",
+          "description": "有效范围 1000–1000000。超过此 token 量视为大上下文。",
+          "minimum": 1000,
+          "maximum": 1000000,
           "default": 120000
         },
         "officialUtilityModelDisplay": {
@@ -93,12 +111,18 @@
         },
         "modelAdvisorEnabled": {
           "type": "boolean",
-          "title": "启用小模型后台整理（Hanako ≥ 0.305 优先走官方模型采样接口，凭证不经过插件；旧版本回退到你配置的端点）",
+          "title": "启用后台整理（Hanako ≥ 0.305 优先走官方采样；旧版本回退到自配端点）",
           "default": false
         },
         "modelAdvisorSource": {
           "type": "string",
           "title": "整理模型来源",
+          "enum": ["official", "private", "off"],
+          "enumDescriptions": [
+            "官方采样接口",
+            "自配端点",
+            "关闭"
+          ],
           "default": "official"
         },
         "modelAdvisorBaseUrl": {
@@ -109,6 +133,8 @@
         "modelAdvisorApiKey": {
           "type": "string",
           "title": "备用整理模型 API Key",
+          "description": "仅旧版本回退到自配端点时使用；保存后会加密存储。",
+          "format": "password",
           "default": ""
         },
         "modelAdvisorModel": {
@@ -119,56 +145,62 @@
         "modelAdvisorMaxTokens": {
           "type": "number",
           "title": "整理模型最大输出 token",
+          "description": "有效范围 100–4000。",
+          "minimum": 100,
+          "maximum": 4000,
           "default": 500
         },
         "modelAdvisorMinIntervalMinutes": {
           "type": "number",
           "title": "后台整理最小间隔（分钟）",
+          "description": "有效范围 1–1440 分钟（最长 24 小时）。",
+          "minimum": 1,
+          "maximum": 1440,
           "default": 60
         },
         "workStatusEnabled": {
           "type": "boolean",
-          "title": "在对话中显示自我学习工作状态（默认关闭，会主动插入消息）",
+          "title": "在对话中显示自学习工作状态（默认关闭）",
           "default": false
         },
         "workStatusText": {
           "type": "string",
-          "title": "自我学习状态文案",
+          "title": "自学习状态文案",
           "default": "正在自我整理学习"
         },
         "proposalChatNotificationsEnabled": {
           "type": "boolean",
-          "title": "在对话中通知待处理改进提案（默认关闭，会主动插入消息）",
+          "title": "在对话中提示待处理改进提案（默认关闭）",
           "default": false
         },
         "requireReviewForAutoApply": {
           "type": "boolean",
-          "title": "严格审核模式：自动应用前必须先批准 Review（默认关闭）",
+          "title": "严格审核：自动应用前必须先批准 Review",
           "default": false
         },
         "activeSkillsInjectionEnabled": {
           "type": "boolean",
-          "title": "允许已激活技能注册表参与 SKILL.md 注入（默认关闭）",
+          "title": "允许激活技能注册表参与 SKILL.md 注入（默认关闭）",
           "default": false
         },
         "activeSkillsInjectionMaxCount": {
           "type": "number",
-          "title": "已激活技能最多注入条数",
+          "title": "激活技能最多注入条数",
           "default": 3
         },
         "activeSkillsInjectionMinSuccess": {
           "type": "number",
-          "title": "已激活技能注入所需最少成功证据",
+          "title": "激活技能最少成功证据数",
           "default": 7
         },
         "activeSkillsInjectionMaxRegression": {
           "type": "number",
-          "title": "已激活技能注入允许的最大回归次数",
+          "title": "激活技能允许的最大回归次数",
           "default": 0
         },
         "semanticSearchEnabled": {
           "type": "boolean",
-          "title": "启用语义检索（默认关闭，开启后会把记忆文本发送到你配置的 embedding 端点）",
+          "title": "启用语义检索（默认关闭，会向 embedding 端点发送记忆文本）",
           "default": false
         },
         "semanticEmbeddingBaseUrl": {
@@ -179,6 +211,8 @@
         "semanticEmbeddingApiKey": {
           "type": "string",
           "title": "语义 embedding API Key",
+          "description": "仅在开启语义检索时使用；保存后会加密存储。",
+          "format": "password",
           "default": ""
         },
         "semanticEmbeddingModel": {
@@ -188,7 +222,10 @@
         },
         "semanticCacheMaxEntries": {
           "type": "number",
-          "title": "语义 embedding 缓存条目上限",
+          "title": "语义 embedding 缓存上限",
+          "description": "有效范围 0–10000。0 表示不缓存。",
+          "minimum": 0,
+          "maximum": 10000,
           "default": 1000
         }
       }

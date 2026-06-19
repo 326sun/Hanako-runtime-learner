@@ -138,6 +138,16 @@ function relationBoost(pattern, byId) {
   return Math.min(boost, 5);
 }
 
+export function prepareSearch(allPatterns, { type = null, taskType = null } = {}) {
+  const source = Array.isArray(allPatterns) ? allPatterns : [];
+  const prefiltered = filterPatterns(source, type, taskType);
+  return {
+    source,
+    prefiltered,
+    index: new MemoryIndex().rebuild(prefiltered),
+  };
+}
+
 /**
  * Core retrieval pipeline, separated from the tool wrapper so tests (and the
  * retrieval eval) can drive it directly with in-memory patterns:
@@ -155,14 +165,15 @@ function relationBoost(pattern, byId) {
  * @param {object} opts — { config, type, taskType, project, limit, semantic }
  * @returns {{ results: Array, queryScope: object }}
  */
-export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = null, taskType = null, project = null, limit = 5, semantic = null } = {}) {
+export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = null, taskType = null, project = null, limit = 5, semantic = null, prepared = null } = {}) {
   const cfg = mergeConfig(config);
-  const source = Array.isArray(allPatterns) ? allPatterns : [];
+  const usePrepared = prepared?.index && prepared.source === allPatterns;
+  const source = usePrepared ? prepared.source : (Array.isArray(allPatterns) ? allPatterns : []);
   const tokens = expandQueryTokens(query);
   const queryScope = inferScope({ taskType, userText: query, project });
 
   // Pre-filter only on the user's explicit, hard filters (type / taskType).
-  const prefiltered = filterPatterns(source, type, taskType);
+  const prefiltered = usePrepared ? prepared.prefiltered : filterPatterns(source, type, taskType);
 
   if (!tokens.length) return { results: [], queryScope };
 
@@ -170,7 +181,7 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
   // index so incidental single-CJK-character matches are dropped before rerank.
   const strongQ = buildStrongTokenSet(tokens);
   const candidateLimit = Math.max(limit, Number(cfg.retrievalCandidateLimit || 20));
-  const index = new MemoryIndex().rebuild(prefiltered);
+  const index = usePrepared ? prepared.index : new MemoryIndex().rebuild(prefiltered);
   const bm25Hits = index.search(tokens, { limit: candidateLimit, requireAnyToken: strongQ });
   if (!bm25Hits.length) return { results: [], queryScope };
 
@@ -290,9 +301,13 @@ const tool = defineTool({
     // of a corrected fact never resurfaces.
     const factItems = factMemoryItems(resolveLearnerDir());
     const allPatterns = [...patterns, ...factItems];
+    const prepared = prepareSearch(allPatterns, { type: typeFilter, taskType: taskFilter });
     const config = mergeCredentials(mergeConfig(readJson(CONFIG_FILE, {})));
     const officialMemory = config.officialMemoryBridgeEnabled
-      ? searchOfficialMemory(query, { limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)) })
+      ? searchOfficialMemory(query, {
+        limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)),
+        project: projectFilter,
+      })
       : [];
 
     // Node.js HTTPS-based fetch for sandbox environments where global fetch
@@ -329,6 +344,7 @@ const tool = defineTool({
         const probe = runSearch(allPatterns, query, {
           config, type: typeFilter, taskType: taskFilter, project: projectFilter,
           limit: Math.max(limit, Number(config.semanticTopK) || 50),
+          prepared,
         }).results;
         if (probe.length) {
           const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, { fetchImpl: nodeFetch });
@@ -352,6 +368,7 @@ const tool = defineTool({
       project: projectFilter,
       limit,
       semantic,
+      prepared,
     });
 
     if (!results.length) {

@@ -11,10 +11,11 @@
 
 import fs from "fs";
 import path from "path";
-import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatterns, cleanupTempFiles, mergeConfig } from "./lib/common.js";
+import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatterns, cleanupTempFiles, mergeConfig, applyPanelConfig } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
-import { applyProposal, buildSkillPatchProposal } from "./lib/proposals.js";
+import { buildSkillPatchProposal } from "./lib/proposals.js";
+import { applyProposalSafely } from "./lib/proposal-apply-safe.js";
 import { buildRepeatedCodePatchProposals } from "./lib/advisor-insights.js";
 import { summarizeUsageEntry, updateUsageSummary, snapshotHostCapabilities } from "./lib/usage-pipeline.js";
 import { usageDedupKey, absorbDiskPatternState } from "./lib/helpers.js";
@@ -23,7 +24,7 @@ import { createObserver } from "./lib/observer.js";
 import { snapshotSkill, pruneSkillBackups, skipObservedLine } from "./lib/skill-lifecycle.js";
 import { isProposalReviewApproved } from "./lib/review-queue.js";
 import { runPostFlushPipeline } from "./lib/pipeline.js";
-import { mergeCredentials, detectPlaintextCredentials, saveCredentials } from "./lib/credentials.js";
+import { mergeCredentials, detectPlaintextCredentials, saveCredentials, loadCredentials, panelCredentialsToStore } from "./lib/credentials.js";
 import { createActivityLogger } from "./lib/activity-log.js";
 import { createJsonlRetentionPruner } from "./lib/log-retention.js";
 import { createSessionMessenger } from "./lib/session-messenger.js";
@@ -122,6 +123,30 @@ export default definePlugin({
 
     let { config, source: configSource } = loadConfig();
 
+    // Bridge the Hanako settings panel into the runtime config. The panel writes
+    // user toggles into ctx.config; the runtime persists its own config.json.
+    // Without this, panel changes (e.g. enabling the model advisor) never
+    // reached the runtime. The panel is authoritative for the settings it
+    // exposes — see applyPanelConfig. We persist the result below so the control
+    // tools (which re-read config.json) observe the same values. Live panel
+    // edits take effect on the next plugin load / Hanako restart.
+    const preBridge = JSON.stringify(config);
+    config = applyPanelConfig(config, ctx.config);
+    let configNeedsPersist = JSON.stringify(config) !== preBridge;
+
+    // Capture any API key the user typed into a settings-panel credential field.
+    // applyPanelConfig deliberately drops credential keys (they must never live
+    // in config.json plaintext), so route real panel-entered credentials into
+    // the encrypted store here — mergeCredentials() below then picks them up.
+    // Merge with the existing store so keys set via set_config aren't clobbered.
+    try {
+      const panelCreds = panelCredentialsToStore(ctx.config);
+      if (Object.keys(panelCreds).length > 0) {
+        saveCredentials({ ...loadCredentials(), ...panelCreds });
+        ctx.log.info(`runtime-learner: captured ${Object.keys(panelCreds).length} settings-panel credential(s) into the encrypted store`);
+      }
+    } catch {}
+
     // One-time migration: move any plaintext API keys from old config.json into
     // the encrypted credentials store. After migration the config file is
     // rewritten with placeholder values so the keys never persist in plaintext.
@@ -132,12 +157,16 @@ export default definePlugin({
         for (const key of plaintextKeys) toEncrypt[key] = config[key];
         saveCredentials(toEncrypt);
         // Rewrite config with sanitised values
-        const sanitised = { ...config };
-        for (const key of plaintextKeys) sanitised[key] = "(stored in credentials.enc)";
-        try { writeJson(CONFIG_FILE, sanitised); } catch {}
+        for (const key of plaintextKeys) config[key] = "(stored in credentials.enc)";
+        configNeedsPersist = true;
         ctx.log.info(`runtime-learner: migrated ${plaintextKeys.length} plaintext credential(s) to encrypted store`);
       }
     } catch {}
+
+    // Persist the bridged (and credential-sanitised) config so config.json on
+    // disk mirrors the panel for the runtime and the control tools alike. At
+    // this point config holds only credential placeholders, never plaintext.
+    if (configNeedsPersist) { try { writeJson(CONFIG_FILE, config); } catch {} }
 
     // Merge encrypted credentials on top of the config — the encrypted store
     // is the canonical source for API keys.
@@ -261,9 +290,10 @@ export default definePlugin({
           if (config.requireReviewForAutoApply && !isProposalReviewApproved(DATA_DIR, proposal.id)) {
             ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
           } else {
-            applyProposal(DATA_DIR, proposal.id, {
+            applyProposalSafely(DATA_DIR, proposal.id, {
               configPath: CONFIG_FILE,
               requireReview: !!config.requireReviewForAutoApply,
+              allowedSkillRoots: [ctx.pluginDir],
             });
             pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
           }

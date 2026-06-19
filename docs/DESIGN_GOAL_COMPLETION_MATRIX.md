@@ -1,72 +1,28 @@
-# Design Goal Completion Matrix
+# 设计目标完成矩阵
 
-Status: v4.3.2 LTS — long-term maintainability governance. v4.x roadmap complete.
+当前版本：`v4.3.16`
 
-## Completion summary
+## 总体状态
 
-| Area | Status | Evidence |
+| 目标 | 状态 | 说明 |
 |---|---|---|
-| Unified execution chain | Complete | Action executor, registry runtime, controller integration |
-| Risk policy | Complete | R0-R4 policy freeze, governance profiles |
-| Scope gate | Complete | Diff preview, scope gate, impact analyzer |
-| Transaction / rollback | Complete | Transaction manager, rollback benchmark scenarios |
-| Verifier / repair once | Complete | Repair classifier/strategies, repair benchmark |
-| Plugin action registry | Complete | Package registry, verify/rollback, process isolation |
-| Task decomposition | Complete baseline | Decomposer, subtask queue, result merger, task verifier |
-| Agent Controller | Complete baseline | Explicit repair/rollback/human interrupt branches |
-| Cross-project transfer | Complete baseline | Transfer registry + validation runner |
-| Reflexion memory | Complete baseline | Reflexion memory, failure analyzer, failure cluster |
-| Skill promotion | Complete | Promotion loop, candidates, active registry, active injection gate |
-| Model advisor / routing | Complete baseline | Provider/model advisor and feedback hooks |
-| Audit dashboard | Complete baseline | Markdown/JSON dashboard surface |
-| Benchmark suite | Complete baseline | 17 passing system scenarios, including release-readiness gate |
-| LTS docs / API freeze | Complete | ACTION/POLICY/TRANSACTION/SANDBOX/SKILL/AUDIT/BENCHMARKS/MIGRATION/API_FREEZE docs + release readiness gate |
+| 本地学习闭环 | 完成 | 观察、学习、注入、治理链路完整。 |
+| 保守自动化边界 | 完成 | R4 / 外部副作用维持冻结。 |
+| 事务化写入 | 完成 | R2 写动作受事务、验证和回滚保护。 |
+| 可审计治理 | 完成 | proposal / review / doctor / event log 全部可追溯。 |
+| 性能护栏 | 完成 | `benchmark` + `perf` 已固定。 |
+| 发布门 | 完成 | `release:check` 维持本地就绪度检查。 |
 
-## Final validation commands
+## 发布验证矩阵
 
-```text
-npm run check
-npm test
-npm run perf
-npm run benchmark
-```
+| 项目 | 预期 |
+|---|---|
+| `npm run check` | 通过 |
+| `npm test` | 560 个测试，555 通过，5 跳过 |
+| `npm run benchmark` | 17/17 通过 |
+| `npm run perf` | 无阈值越界 |
+| `npm run release:check` | Score 100 |
 
-Expected v4.3.2 result:
+## 未完成项
 
-```text
-package version: 4.3.2
-npm run check: passed
-npm test: 515 tests, 511 passed, 4 skipped
-npm run benchmark: passed, 17 scenarios
-npm run perf: passed, no threshold breaches
-```
-
-## Optional maintenance items after v4.3.0
-
-These are not blockers for the v4.0 LTS final candidate. They belong to v4.1+ maintenance or optional enterprise hardening.
-
-| Item | Category | Why not blocker |
-|---|---|---|
-| Container / OS-level sandbox | Optional hardening | Current LTS has command, transaction, filesystem, and process boundaries; full container isolation is adapter-level. |
-| Frontend dashboard UI | Optional UX | Markdown/JSON dashboard surface is already auditable and scriptable. |
-| More provider adapters | Maintenance | Core model-routing contract is present; adapters can be added later. |
-| More benchmark cases | Maintenance | Current corpus covers all core safety and autonomy paths; additional cases improve confidence but do not change architecture. |
-| Enterprise approval flow | Enterprise hardening | Single-user LTS governance is complete. |
-
-## Final judgment
-
-v4.3.2 satisfies the planned LTS definition:
-
-```text
-safe bounded automation
-transactional writes
-verification and rollback
-one-shot repair
-human escalation
-long-term learning without direct SKILL.md pollution
-cross-project transfer with revalidation
-plugin action extension under process isolation
-benchmark evidence
-audit report surface
-frozen API docs
-```
+v4.x LTS 当前没有待完成的架构性主目标，后续工作以缺陷修复、性能整理、审计加固和文档维护为主。

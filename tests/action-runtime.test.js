@@ -70,6 +70,25 @@ describe("runtime action policy and executor", () => {
     assert.equal(evaluateActionPolicy(destructive, { config: DEFAULT_CONFIG }).decision, "reject");
   });
 
+  it("detects destructive intent even when steps are objects, not strings", () => {
+    // The destructive-intent scan is a safety net that forces R4. If a step is a
+    // structured object (e.g. { command: "rm -rf …" }) its content must still be
+    // scanned — otherwise String(object) = "[object Object]" hides the command
+    // and the plan is wrongly classified auto-eligible.
+    const plan = {
+      id: "action_plan:obj",
+      type: "action_plan",
+      plan: {
+        actionType: ACTION_TYPES.APPLY_PATCH_SANDBOXED,
+        steps: [{ type: "command", command: "rm -rf the project" }],
+      },
+    };
+    const result = classifyActionRisk(plan);
+    assert.equal(result.destructive, true);
+    assert.equal(result.riskTier, "R4");
+    assert.equal(result.autoEligible, false);
+  });
+
   it("requires rollback for R2 auto actions", () => {
     const r2 = {
       id: "action_plan:r2",
@@ -102,5 +121,16 @@ describe("runtime action policy and executor", () => {
     assert.equal(isAllowedCommand("npm run check", DEFAULT_CONFIG), false);
     assert.equal(isAllowedCommand("npm run lint", DEFAULT_CONFIG), false);
     assert.equal(isAllowedCommand("git push origin main", DEFAULT_CONFIG), false);
+  });
+
+  it("surfaces implicit workspaceRoot fallback for filesystem actions", async () => {
+    const result = await executeActionPlan({
+      id: "locate:implicit-workspace",
+      plan: { actionType: ACTION_TYPES.LOCATE_MISSING_FILE, target: "missing-file.js" },
+      verification: { metrics: ["success"] },
+    }, { config: DEFAULT_CONFIG });
+
+    assert.equal(result.status, "succeeded");
+    assert.match(result.warnings?.[0] || "", /workspaceRoot not supplied/);
   });
 });

@@ -48,6 +48,59 @@ models:
   assert.equal(result.config.modelAdvisorModel, "gpt-small");
 }));
 
+test("official utility config tolerates a models: sequence nested inside a provider", () => withHome((home) => {
+  // Real added-models.yaml entries (e.g. DeepSeek) often list the provider's
+  // models as a nested sequence under the credential mapping. That sequence
+  // carries no credential data, so it must be skipped — not treated as a
+  // prov(ider)-as-list and used to discard the already-parsed credentials.
+  writePrefs(home, { utility_model: "deepseek/deepseek-v4-flash" });
+  writeAddedModels(home, `
+providers:
+  deepseek:
+    base_url: https://api.deepseek.com
+    api_key: sk-deepseek-test
+    api: openai-completions
+    models:
+      - deepseek-v4-flash
+`);
+
+  const result = resolveOfficialUtilityAdvisorConfig();
+  assert.equal(result.ok, true);
+  assert.equal(result.config.modelAdvisorResolvedProvider, "deepseek");
+  assert.equal(result.config.modelAdvisorApiKey, "sk-deepseek-test");
+  assert.equal(result.config.modelAdvisorBaseUrl, "https://api.deepseek.com");
+  assert.equal(result.config.modelAdvisorModel, "deepseek-v4-flash");
+}));
+
+test("official utility config tolerates a nested model_defaults mapping keyed by slash model ids", () => withHome((home) => {
+  // siliconflow-style entries carry a `model_defaults:` mapping keyed by model
+  // ids that contain "/" (e.g. Pro/MiniMaxAI/MiniMax-M2.5). Those nested keys are
+  // not provider credentials and must be skipped — not treated as malformed
+  // provider fields that abort the parse and discard an earlier provider's
+  // (deepseek's) already-parsed valid credentials.
+  writePrefs(home, { utility_model: "deepseek/deepseek-v4-flash" });
+  writeAddedModels(home, `
+providers:
+  deepseek:
+    base_url: https://api.deepseek.com
+    api_key: sk-deepseek-test
+    api: openai-completions
+  siliconflow:
+    base_url: https://api.siliconflow.cn
+    api_key: sk-silicon-test
+    api: openai-completions
+    model_defaults:
+      Pro/MiniMaxAI/MiniMax-M2.5:
+        temperature: 0.7
+`);
+
+  const result = resolveOfficialUtilityAdvisorConfig();
+  assert.equal(result.ok, true);
+  assert.equal(result.config.modelAdvisorResolvedProvider, "deepseek");
+  assert.equal(result.config.modelAdvisorApiKey, "sk-deepseek-test");
+  assert.equal(result.config.modelAdvisorBaseUrl, "https://api.deepseek.com");
+}));
+
 test("official utility config fails closed when provider credentials use unsupported YAML block scalars", () => withHome((home) => {
   writePrefs(home, { utility_model: "openai/gpt-small" });
   writeAddedModels(home, `

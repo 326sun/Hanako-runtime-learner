@@ -1,52 +1,36 @@
-# Sandbox API Freeze
+# 沙箱边界
 
-Status: frozen for v4.0.17 LTS.
+Runtime Self-Learning 的“沙箱”并不是操作系统级沙箱，而是一组由代码层强制执行的边界：
 
-## Purpose
+- 文件系统边界
+- 命令 allowlist / denylist
+- 项目脚本信任基线
+- 作用域门
 
-Sandboxing limits command and plugin execution. The current LTS baseline is a bounded process and command sandbox, not a full container or OS-level isolation layer.
+## 文件系统边界
 
-## Current sandbox layers
+文件读写会经过 realpath 解析，防止：
 
-| Layer | Status |
-|---|---|
-| Command allowlist / denylist | Implemented |
-| Workspace filesystem boundary | Implemented |
-| Transaction snapshots | Implemented for R2 writes |
-| Plugin child-process isolation | Implemented |
-| Timeout enforcement | Implemented |
-| Sanitized plugin process environment | Implemented |
-| stdout/stderr byte caps | Implemented |
-| Container / OS user isolation | Not part of v4.0 LTS core |
+- 通过软链接逃出工作区
+- 大小写差异绕过 denylist
+- 使用看起来在工作区内、实际指向敏感目录的路径
 
-## Command policy
+## 命令边界
 
-Allowed commands must match the configured allowlist. Denied command fragments such as destructive shell operations, publishing, git push/tag, release commands, and network write commands are rejected.
+命令执行同时受 allowlist 和 denylist 限制。默认原则：
 
-```json
-{
-  "autoActionCommands": {
-    "allowlist": ["node --check"],
-    "denylist": ["rm", "del", "git push", "git tag", "npm publish", "release"],
-    "allowProjectScripts": false
-  }
-}
-```
+1. 命中 denylist 直接拒绝。
+2. 不在 allowlist 的命令也拒绝。
+3. Windows 可执行扩展名和危险 Node flag 也会参与判断。
 
-## Plugin process contract
+## 项目脚本信任
 
-File-backed plugin modules run through a child Node process. The process receives structured input and returns a structured result envelope. It is bounded by:
+`package.json` 脚本不会因为“项目里本来就有”而自动可信。需要先建立脚本哈希基线，再允许相关脚本进入动作链。
 
-1. Workspace `cwd`.
-2. Sanitized `env`.
-3. Timeout and forced termination.
-4. stdout/stderr size caps.
-5. Structured JSON result parsing.
+## 冻结承诺
 
-## Explicit limitation
+v4.x LTS 期间：
 
-Child-process isolation is not equivalent to a container sandbox. A plugin that is explicitly allowed to execute remains trusted code within the local user environment. The LTS promise is that plugin code no longer shares the host runtime process and cannot bypass Hanako policy gates, not that it is untrusted malware isolation.
-
-## Compatibility promise
-
-v4.0.17 LTS freezes command policy semantics, plugin process result semantics, and workspace-bound execution. Future v4.x releases may add container adapters without removing the current process sandbox API.
+- 不允许放宽沙箱边界而不升级版本线
+- 不允许让插件声明绕过全局命令策略
+- 不允许通过隐式工作区根推断来掩盖越界风险

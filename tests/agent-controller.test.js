@@ -65,6 +65,25 @@ test("agent controller pauses for human approval on R4 action plan", async () =>
   assert.equal(latestPendingApproval(resolved), null);
 });
 
+test("approval resolution rejects stale or mismatched requests", () => {
+  const state = {
+    taskId: "task:approval",
+    currentNode: TASK_GRAPH_NODES.POLICY,
+    approvalRequests: [{
+      id: "approval:1",
+      taskId: "task:approval",
+      node: TASK_GRAPH_NODES.POLICY,
+      status: "pending",
+    }],
+  };
+
+  const resolved = resolveApprovalRequest(state, "approval:1", "approved");
+  assert.equal(resolved.approvalRequests[0].status, "approved");
+  assert.throws(() => resolveApprovalRequest(resolved, "approval:1", "cancelled"), /already resolved/);
+  assert.throws(() => resolveApprovalRequest({ ...state, taskId: "task:other" }, "approval:1", "approved"), /task mismatch/);
+  assert.throws(() => resolveApprovalRequest({ ...state, currentNode: TASK_GRAPH_NODES.SCOPE }, "approval:1", "approved"), /node mismatch/);
+});
+
 test("custom handler pauses on verification failure", async () => {
   const controller = new AgentController({
     handlers: {

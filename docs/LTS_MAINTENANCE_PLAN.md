@@ -1,124 +1,55 @@
-# LTS Maintenance Plan
+# v4.x LTS 维护计划
 
-Status: v4.3.0-lts final baseline. Effective 2026-06-11.
+`v4.3.0` 之后，Runtime Self-Learning 进入维护期。这个阶段的重点不是继续扩大功能面，而是保证边界、稳定性、性能和发布质量。
 
-## What v4.3.0-lts is
+## 维护目标
 
-v4.3.0 is the final v4.x LTS baseline for Hanako Runtime Self-Learning. It completes the bounded self-learning loop:
+1. 修复影响正确性和安全边界的缺陷。
+2. 清理冗余实现，降低维护成本。
+3. 维持热路径性能不倒退。
+4. 保持文档、验收记录和发布门一致。
 
-```text
-Observe → Learn → Plan → Policy Gate → Execute → Verify → Rollback / Repair → Feedback → Audit
+## 允许的变更
+
+- bug fix
+- 审计加固
+- 测试补全
+- 基准补全
+- 性能优化
+- 内部重构
+- 文档和发布整理
+
+## 不允许的变更
+
+- 放宽 R4 或外部副作用边界
+- 新增默认开启的外部网络能力
+- 改变冻结 API 语义却不升级大版本
+- 让发布门执行真实发布动作
+
+## 发布前检查
+
+每个 LTS 版本发布前至少应完成：
+
+```powershell
+npm run check
+npm test
+npm run benchmark
+npm run perf
+npm run release:check
 ```
 
-Core architecture and automation boundaries are frozen. Future v4.x releases are limited to stability, security, documentation, and compatibility work.
+## 文档一致性要求
 
-## What is allowed in maintenance releases
+以下文件必须与当前版本一致：
 
-| Category | Allowed | Example |
-|---|---|---|
-| Bug fix | Yes | Fix a null-pointer crash in pattern decoration |
-| Security patch | Yes (mandatory) | Patch a filesystem boundary bypass |
-| Documentation | Yes | Correct inaccurate API doc, add missing install step |
-| Tests | Yes | Add regression test for a discovered edge case |
-| Benchmark cases | Yes | Add scenario for a newly observed failure mode |
-| Hanako version compat | Yes | Adapt to breaking changes in Hanako plugin API |
-| Provider adapter | Optional | Add support for a new embedding model endpoint |
-| Dashboard UI | Optional | Add a minimal settings viewer page |
-| Container sandbox | Optional (adapter-level only) | OS-level sandbox as an independent adapter |
+- `package.json`
+- `manifest.json`
+- `README.md`
+- `docs/DESIGN_GOAL_COMPLETION_MATRIX.md`
+- `docs/ACCEPTANCE-v<version>.md`
 
-## What is forbidden in maintenance releases
+## 建议节奏
 
-| Category | Handling |
-|---|---|
-| Relax R4 auto-execution | Reject |
-| Auto-execute git push / git tag | Reject |
-| Auto-execute npm publish | Reject |
-| Auto-delete user files | Reject |
-| Auto-modify credentials or secrets | Reject |
-| Bypass verification on writes | Reject |
-| Bypass rollback on failed patches | Reject |
-| Default-inject active skills into SKILL.md | Reject (requires explicit opt-in per governance) |
-| Widen automation permission boundary | Reject |
-| Change core architecture | Reject |
-| Break existing API freeze contracts | Reject |
-
-## Version rules
-
-| Type | Allowed content | Example |
-|---|---|---|
-| patch (`4.3.x`) | Bug fix, docs, tests, benchmark | `4.3.1` |
-| minor (`4.x.0`) | Adapters, non-core enhancements | `4.4.0` (not recommended short-term) |
-| major (`5.0.0`) | Architecture change or permission boundary change | Not planned |
-
-## API freeze
-
-The frozen public contracts are documented in `docs/API_FREEZE.md`. They cover:
-
-- Action Plugin API (`docs/ACTION_API.md`)
-- Policy Decision API (`docs/POLICY.md`)
-- Transaction API (`docs/TRANSACTION.md`)
-- Sandbox API (`docs/SANDBOX.md`)
-- Skill Promotion API (`docs/SKILL_PROMOTION.md`)
-- Audit API (`docs/AUDIT.md`)
-- Benchmark API (`docs/BENCHMARKS.md`)
-- Migration Guide (`docs/MIGRATION_v3_to_v4.md`)
-- Self-Learning Control API (`tools/control.js`, 40+ actions)
-
-Any change that would break these contracts requires a new major version and a full design review.
-
-## Release process for maintenance versions
-
-Every maintenance release must pass the following before tagging:
-
-1. `npm run check` — all source files pass syntax check
-2. `npm test` — all tests pass
-3. `npm run benchmark` — all scenarios pass, no regressions
-4. `npm run release:check` — Score 100, all consistency checks pass
-
-Additionally, each release must include:
-
-- Updated `CHANGELOG.md` with an entry under the new version
-- An acceptance report under `docs/ACCEPTANCE-vX.Y.Z-LTS.md`
-- No changes to frozen API contracts (unless documented in a migration guide)
-
-## Acceptance report template
-
-```markdown
-# Acceptance Report: vX.Y.Z LTS
-
-## Version
-package version: vX.Y.Z-lts
-
-## Validation
-- npm run check: passed
-- npm test: N passed
-- npm run benchmark: N scenarios passed
-- npm run release:check: Score 100
-
-## Changes
-- [List changes]
-
-## Safety boundary audit
-- R4 auto-execution: unchanged (forbidden)
-- External side effects: unchanged (forbidden)
-- R2 write gate: unchanged (transaction + verification + rollback)
-- API freeze: unchanged
-
-## Decision
-Ready / Not ready
-```
-
-## Judgment rule
-
-When considering whether to implement a request:
-
-```text
-Improves stability → do it.
-Improves verifiability → do it.
-Improves documentation consistency → do it.
-Improves real Hanako compatibility → do it.
-Just makes it "more automatic" → don't.
-Just makes it "more agent-like" → don't.
-Widens permission boundary → don't.
-Breaks API freeze → don't.
-```
+- 高频：小范围 hardening、缺陷修复、测试补齐
+- 中频：性能清理、文档对齐
+- 低频：仅在必要时更新冻结说明

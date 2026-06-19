@@ -1,8 +1,8 @@
 # Runtime Self-Learning 安装指南
 
-让 Hanako 在本地记录经验、识别重复错误和用户纠正，把高置信度提示写入自己的 skill。
+本文档只讲四件事：安装到哪里、怎么装、怎么升级、怎么排障。
 
-## 你需要知道的一句话
+## 目录约定
 
 插件代码安装到：
 
@@ -16,13 +16,13 @@
 %USERPROFILE%\.hanako\self-learning
 ```
 
-升级插件时不要删除 `self-learning`，否则学习记录会被清空。
+升级插件时不要删除 `self-learning`，否则会把历史学习记录一起清空。
 
-## 普通用户安装步骤
+## 首次安装
 
 1. 关闭 Hanako。
 2. 打开 PowerShell。
-3. 复制下面命令：
+3. 执行：
 
 ```powershell
 cd $env:USERPROFILE\Downloads
@@ -31,10 +31,10 @@ cd Hanako-runtime-learner
 npm run install-plugin
 ```
 
-看到这些字样就表示安装成功：
+看到类似输出即可认为安装成功：
 
 ```text
-Installed to C:\Users\你的用户名\.hanako\plugins\hanako-runtime-learner
+Installed to C:\Users\<你的用户名>\.hanako\plugins\hanako-runtime-learner
 OK    manifest.json
 OK    index.js
 OK    lib/common.js
@@ -44,13 +44,23 @@ OK    skills/self-learning/SKILL.md
 ```
 
 4. 打开 Hanako。
-5. 进入 `设置 -> 插件`。
-6. 打开 `允许全权限插件`。
+5. 进入“设置 -> 插件”。
+6. 允许全权限插件。
 7. 启用 `Runtime Self-Learning`。
 
-## 怎么确认它在工作
+## 固定版本安装
 
-在 Hanako 里让 Agent 调用：
+如需固定到某个 release，例如 `v4.3.16`：
+
+```powershell
+git clone --branch v4.3.16 https://github.com/326sun/Hanako-runtime-learner.git
+cd Hanako-runtime-learner
+npm run install-plugin
+```
+
+## 如何确认插件已经工作
+
+在 Hanako 中调用：
 
 ```text
 hanako-runtime-learner_self_learning_stats
@@ -62,13 +72,13 @@ hanako-runtime-learner_self_learning_stats
 hanako-runtime-learner_self_learning_control
 ```
 
-参数用：
+参数：
 
 ```json
 { "action": "status" }
 ```
 
-如果返回里出现下面字段，就是正常：
+返回中看到以下字段，说明基础运行正常：
 
 ```text
 patterns
@@ -77,9 +87,24 @@ historySnapshots
 dataDir
 ```
 
-## 升级会不会丢数据
+## 升级
 
-不会。安装脚本只替换：
+进入插件源码目录，执行：
+
+```powershell
+git pull
+npm run install-plugin
+```
+
+不要执行下面这种删数据目录的命令，除非你明确想重置学习数据：
+
+```powershell
+Remove-Item -Recurse -Force $env:USERPROFILE\.hanako\self-learning
+```
+
+## 升级是否会丢数据
+
+不会。安装脚本只替换插件代码目录：
 
 ```text
 %USERPROFILE%\.hanako\plugins\hanako-runtime-learner
@@ -91,7 +116,7 @@ dataDir
 %USERPROFILE%\.hanako\self-learning
 ```
 
-所以旧版本收集到的：
+所以旧版本积累的以下文件会继续被新版本读取：
 
 ```text
 experience_log.jsonl
@@ -102,52 +127,35 @@ turns.jsonl
 skill_history/
 ```
 
-都会被新版本继续读取。
+## 清理旧目录
 
-## 升级步骤
-
-进入插件源码目录，执行：
-
-```powershell
-git pull
-npm run install-plugin
-```
-
-不要执行下面这种删除数据的命令，除非你想清空学习记录：
-
-```powershell
-Remove-Item -Recurse -Force $env:USERPROFILE\.hanako\self-learning
-```
-
-## 删除旧重复目录
-
-如果你以前装过旧版，可能有旧目录：
+如果你以前安装过早期版本，可能还残留旧目录：
 
 ```text
 %USERPROFILE%\.hanako\plugins\runtime-learner
 %USERPROFILE%\.hanako\plugins-dev\runtime-learner
 ```
 
-可以删除：
+确认新目录可用后，可以删除：
 
 ```powershell
 Remove-Item -Recurse -Force $env:USERPROFILE\.hanako\plugins\runtime-learner -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $env:USERPROFILE\.hanako\plugins-dev\runtime-learner -ErrorAction SilentlyContinue
 ```
 
-保留新版目录：
+保留的新目录应为：
 
 ```text
 %USERPROFILE%\.hanako\plugins\hanako-runtime-learner
 ```
 
-## 给 Agent 的安装检查清单
+## 排障清单
 
-安装或升级时必须检查：
+安装或升级后，建议按下面顺序检查：
 
-1. `manifest.json` 的 `id` 必须是 `hanako-runtime-learner`。
-2. 插件目录必须是 `%USERPROFILE%\.hanako\plugins\hanako-runtime-learner`。
-3. 若存在旧目录 `runtime-learner`，删除旧目录。
+1. `manifest.json` 中的 `id` 必须是 `hanako-runtime-learner`。
+2. 实际插件目录必须是 `%USERPROFILE%\.hanako\plugins\hanako-runtime-learner`。
+3. 如果存在旧目录 `runtime-learner`，先移除旧目录，避免宿主读错目录。
 4. 不要删除 `%USERPROFILE%\.hanako\self-learning`。
-5. 安装后调用 `self_learning_control` 的 `status`，确认数据目录仍是 `%USERPROFILE%\.hanako\self-learning`。
-6. 如需完全卸载插件，只删除插件目录；如需清空学习数据，必须单独征得用户确认。
+5. 安装后执行 `self_learning_control action=status`，确认 `dataDir` 仍然指向 `%USERPROFILE%\.hanako\self-learning`。
+6. 如需完全卸载插件，只删除插件目录；如需清空学习数据，必须单独确认后再删数据目录。

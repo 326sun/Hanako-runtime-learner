@@ -1,57 +1,50 @@
-# Audit API Freeze
+# 审计面说明
 
-Status: frozen for v4.0.17 LTS.
+Runtime Self-Learning 的审计面分成三类：事件链、可读汇总、可导出审计包。
 
-## Purpose
+## 事件链
 
-Audit artifacts explain what the system did, why it was allowed, what it changed, how it verified the result, what rolled back, and what learning state changed.
+`event_log.jsonl` 是追加写日志，记录以下关键状态变更：
 
-## Audit surfaces
+- 提案创建、验证、应用、拒绝
+- review 创建、批准、拒绝、应用
+- doctor 关键告警
+- 自动动作执行、验证、回滚
 
-| Surface | Role |
-|---|---|
-| `audit_trace` | Node-level Agent Controller trace. |
-| `audit_bundle` | Export of governance and event state. |
-| `audit-dashboard/<name>/dashboard.json` | Machine-readable dashboard. |
-| `audit-dashboard/<name>/dashboard.md` | User-readable dashboard. |
-| `benchmark-results/` | System-level evaluation reports. |
+事件链设计目标：
 
-## Dashboard contents
+1. 可回放
+2. 可校验
+3. 不依赖 UI 才能理解
 
-The dashboard may include:
+## 仪表板
 
-1. Benchmark metrics and regressions.
-2. Failed benchmark scenarios.
-3. Agent Controller task state and pending approvals.
-4. Audit trace timeline.
-5. Transfer candidates and validation readiness.
-6. Skill candidates and active skills.
-7. Governance boundaries.
-8. Recommended actions.
+`audit-dashboard.js` 会把分散状态整合成一份可读视图，通常包含：
 
-## Frozen dashboard result
+- proposal / review 当前状态
+- doctor 汇总
+- 作用域泄漏、证据缺失、积压情况
+- 自动动作结果与失败原因
 
-```json
-{
-  "status": "generated",
-  "files": {
-    "json": ".../dashboard.json",
-    "markdown": ".../dashboard.md"
-  },
-  "dashboard": {
-    "benchmark": {},
-    "agent": {},
-    "transfer": {},
-    "skills": {},
-    "governance": {}
-  }
-}
+## 审计包
+
+执行：
+
+```text
+self_learning_control action=export_audit_bundle
 ```
 
-## Safety boundary
+会生成导出物，通常包括：
 
-Audit generation is read-mostly. It may write report artifacts but must not mutate policy, source files, transfer candidates, skill candidates, active skills, or agent task state.
+- `audit-bundle.json`
+- `audit-report.md`
 
-## Compatibility promise
+导出时会对明显敏感信息做脱敏，例如 API Key、token、password、secret。
 
-v4.0.17 LTS freezes dashboard output file names and the top-level result envelope. Future reports may add sections, but must preserve JSON and Markdown exports.
+## 冻结要求
+
+v4.x LTS 期间审计面必须满足：
+
+1. 高风险变更必须留下结构化记录。
+2. 失败和回滚不能被静默吞掉。
+3. 导出能力只读，不产生新的外部副作用。

@@ -9,7 +9,7 @@ import {
   resolveSemanticConfig,
   embedTexts,
 } from "../lib/embeddings.js";
-import { runSearch } from "../tools/search.js";
+import { prepareSearch, runSearch } from "../tools/search.js";
 
 describe("embeddings · cosineSim", () => {
   it("is 1 for identical, 0 for orthogonal, 0 for bad input", () => {
@@ -98,5 +98,13 @@ describe("runSearch · RRF semantic fusion", () => {
     // fused breakdown is populated when semantic is active
     assert.ok(typeof favA.results[0].scoreBreakdown.fused === "number");
     assert.ok(typeof favA.results[0].scoreBreakdown.semantic === "number");
+  });
+
+  it("prepared search index preserves normal ranking", () => {
+    const baseline = runSearch(PATS, "signal", { limit: 5 });
+    const prepared = prepareSearch(PATS);
+    const cached = runSearch(PATS, "signal", { limit: 5, prepared });
+
+    assert.deepEqual(cached.results.map((r) => r.id), baseline.results.map((r) => r.id));
   });
 });

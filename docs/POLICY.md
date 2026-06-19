@@ -1,60 +1,45 @@
-# Policy API Freeze
+# 策略门与风险分级
 
-Status: frozen for v4.0.17 LTS.
+策略门决定“候选动作能不能执行”，风险分级决定“候选动作需要什么级别的约束”。
 
-## Purpose
+## 风险等级
 
-Policy decides whether an action may run automatically, must be escalated to human review, or must be rejected. Policy is the first hard boundary before scope, transaction, execution, verification, repair, rollback, feedback, and learning.
-
-## Risk tiers
-
-| Tier | Meaning | Default automation |
+| 等级 | 定义 | 默认处理 |
 |---|---|---|
-| R0 | Pure read / local classification / no side effect | Automatic |
-| R1 | Low-risk local action, such as diagnosis or allowed checks | Automatic |
-| R2 | Bounded write or repair with transaction, verification, rollback | Conditional automatic |
-| R3 | Broad write, dependency/config change, ambiguous impact | Human confirmation |
-| R4 | External side effect, secret, publish, destructive or irreversible action | Reject / never automatic |
+| R0 | 纯内部记录、统计、诊断 | 自动 |
+| R1 | 只读动作或副作用可忽略 | 自动 |
+| R2 | 工作区内可回滚写入或一次性修复 | 自动，但必须验证和回滚能力 |
+| R3 | 影响长期行为或项目状态 | 需要人工确认 |
+| R4 | 外部不可逆或高影响动作 | 永不自动执行 |
 
-## Frozen decision envelope
+## 冻结规则
 
-```json
-{
-  "decision": "auto_execute",
-  "riskTier": "R1",
-  "reason": ["low risk", "verification available"],
-  "requiresHuman": false,
-  "blocked": false
-}
-```
+1. 动作类型自带基线风险。
+2. 计划中声明的 `riskTier` 只能上调，不能下调基线。
+3. 结构化步骤也必须参与破坏性意图扫描。
+4. 未知动作默认拒绝，而不是假定低风险。
 
-Stable decisions:
+## 一票否决项
 
-| Decision | Meaning |
+以下场景即使来自可信动作，也不能自动放行：
+
+- `git push`
+- `git tag`
+- release / publish
+- 外部写请求
+- 删除项目文件
+- 修改凭证或放宽安全门
+
+## 策略档
+
+内置三档：
+
+| 档位 | 说明 |
 |---|---|
-| `auto_execute` | May proceed to scope and execution. |
-| `manual_confirm` | Must enter Review Queue or Agent Controller human interrupt. |
-| `reject` | Must not execute. |
+| `conservative` | 审核优先，自动化最少。 |
+| `balanced` | 默认档，允许低风险闭环。 |
+| `autonomous` | 更激进，但仍不突破冻结边界。 |
 
-## Non-negotiable rules
+## 与事务的关系
 
-1. R4 never auto-executes.
-2. External side effects never auto-execute.
-3. Delete, publish, push, tag, release, email/message sending, credentials, payment, and secret modifications never auto-execute.
-4. R2 writes require transaction, rollback, verification, and scope gate.
-5. Repair is at most once.
-6. Retry is at most once unless a future policy explicitly narrows the condition.
-7. Learning weights and active skills cannot bypass policy.
-8. User-specified stricter governance overrides learned preferences.
-
-## Governance profiles
-
-| Profile | Behavior |
-|---|---|
-| `conservative` | Prefer review and low automation. Useful when trust is still being established. |
-| `balanced` | Default. Allows low-risk automation and guarded R2 actions. |
-| `autonomous` | More permissive inside R0-R2 boundaries, still blocks R4 and external side effects. |
-
-## Compatibility promise
-
-v4.0.17 LTS freezes tier semantics, decision names, and non-negotiable rules. Future v4.x changes may tune thresholds, but must not permit R4 automation or policy bypass through learning.
+策略门决定“能否尝试执行”，事务模型决定“执行时如何可回滚”。两者不能互相替代。

@@ -20,6 +20,8 @@ import {
   mergeCredentials,
   extractAndSaveCredentials,
   detectPlaintextCredentials,
+  panelCredentialsToStore,
+  CREDENTIAL_PLACEHOLDER,
   SENSITIVE_KEYS,
 } from "../lib/credentials.js";
 
@@ -46,6 +48,36 @@ describe("SENSITIVE_KEYS", () => {
   it("does not include non-sensitive keys", () => {
     assert.equal(SENSITIVE_KEYS.has("modelAdvisorEnabled"), false);
     assert.equal(SENSITIVE_KEYS.has("learnFromUsage"), false);
+  });
+});
+
+describe("panelCredentialsToStore · capture API keys typed into the settings panel", () => {
+  it("returns real panel-provided credential values to be encrypted", () => {
+    const out = panelCredentialsToStore({ modelAdvisorApiKey: "sk-typed-in-panel" });
+    assert.deepEqual(out, { modelAdvisorApiKey: "sk-typed-in-panel" });
+  });
+
+  it("ignores blank, placeholder, and masked values (nothing to capture)", () => {
+    assert.deepEqual(panelCredentialsToStore({ modelAdvisorApiKey: "" }), {});
+    assert.deepEqual(panelCredentialsToStore({ modelAdvisorApiKey: "   " }), {});
+    assert.deepEqual(panelCredentialsToStore({ modelAdvisorApiKey: CREDENTIAL_PLACEHOLDER }), {});
+    assert.deepEqual(panelCredentialsToStore({ modelAdvisorApiKey: "***redacted" }), {});
+  });
+
+  it("ignores non-sensitive keys and a missing/invalid panel object", () => {
+    assert.deepEqual(panelCredentialsToStore({ modelAdvisorEnabled: true, learnFromUsage: false }), {});
+    assert.deepEqual(panelCredentialsToStore(null), {});
+    assert.deepEqual(panelCredentialsToStore(undefined), {});
+    assert.deepEqual(panelCredentialsToStore("nope"), {});
+  });
+
+  it("captures both sensitive keys when both are provided, trimming whitespace", () => {
+    const out = panelCredentialsToStore({
+      modelAdvisorApiKey: "  sk-a  ",
+      semanticEmbeddingApiKey: "sk-b",
+      modelAdvisorBaseUrl: "https://x",
+    });
+    assert.deepEqual(out, { modelAdvisorApiKey: "sk-a", semanticEmbeddingApiKey: "sk-b" });
   });
 });
 

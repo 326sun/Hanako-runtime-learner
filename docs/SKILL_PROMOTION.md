@@ -1,87 +1,43 @@
-# Skill Promotion API Freeze
+# 技能晋升说明
 
-Status: frozen for v4.0.17 LTS.
+技能晋升负责把“局部模式”提升为“更稳定、可复用的技能提示”，但这个过程必须受证据和回归约束。
 
-## Purpose
-
-Skill promotion converts repeated execution feedback into controlled reusable rules without polluting `SKILL.md` by default.
-
-## Promotion path
+## 流程
 
 ```text
-reflexion
-→ failure cluster
-→ skill candidate
-→ feedback evidence
-→ staged
-→ active registry
-→ optional injection gate
+reflexion -> cluster -> candidate -> evidence -> staged -> active
 ```
 
-## Files
+## 阶段含义
 
-| File | Role |
+| 阶段 | 说明 |
 |---|---|
-| `reflexion_memory.jsonl` | Failure reflections and future strategies. |
-| `action_feedback.jsonl` | Success, failure, repair, rollback, and regression evidence. |
-| `skill_candidates.json` | Candidate lifecycle state. |
-| `active_skills.json` | Evidence-backed active skills. |
-| `SKILL.md` | Runtime prompt skill. Not directly written by the promotion loop. |
+| `candidate` | 初步候选，还没有足够证据。 |
+| `staged` | 证据逐渐完整，等待进一步确认。 |
+| `active` | 已经可作为稳定技能参与注入。 |
 
-## Candidate envelope
+## 晋升条件
 
-```json
-{
-  "id": "skill_candidate:example",
-  "rule": "When adding a new action module, check exports before tests.",
-  "status": "candidate",
-  "scope": {
-    "taskTypes": ["code_patch"]
-  },
-  "evidence": {
-    "failureCount": 3,
-    "successCount": 5,
-    "regressionCount": 0,
-    "reflexionIds": [],
-    "feedbackIds": []
-  }
-}
-```
+通常至少关注：
 
-Stable statuses:
+- 重复次数
+- 成功证据数
+- 回归次数
+- 作用域稳定性
+- 文本是否适合写入 `SKILL.md`
 
-| Status | Meaning |
-|---|---|
-| `candidate` | Pattern observed but not yet strong enough. |
-| `staged` | Enough evidence for trial injection registry. |
-| `active` | Evidence-backed active skill. |
-| `decayed` | Confidence fell or regressions occurred. |
-| `removed` | Candidate is no longer retained. |
+## 注入边界
 
-## Active skill injection gate
+即便技能进入 `active`，也不代表会自动注入。注入仍受以下开关和预算控制：
 
-v4.0.17 adds an explicit opt-in gate for surfacing active skills inside rendered `SKILL.md`.
+- `activeSkillsInjectionEnabled`
+- `activeSkillsInjectionMaxCount`
+- `activeSkillsInjectionMinSuccess`
+- `activeSkillsInjectionMaxRegression`
+- `maxSkillTokens`
 
-Default config:
+## 冻结规则
 
-```json
-{
-  "activeSkillsInjectionEnabled": false,
-  "activeSkillsInjectionMaxCount": 3,
-  "activeSkillsInjectionMinSuccess": 7,
-  "activeSkillsInjectionMaxRegression": 0
-}
-```
-
-Rules:
-
-1. Default is off.
-2. Only `status: active` skills can be injected.
-3. Minimum success evidence is required.
-4. Regressed skills are excluded by default.
-5. The promotion loop still does not write `SKILL.md` directly.
-6. Final rendering still respects `maxSkillTokens`.
-
-## Compatibility promise
-
-v4.0.17 LTS freezes candidate status names, active registry semantics, and the default no-direct-SKILL-write boundary. Future releases may improve scoring but must preserve evidence requirements and explicit injection gating.
+1. 技能文本必须被当成数据渲染，不能借机注入 Markdown 结构。
+2. 技能晋升不能绕过作用域门。
+3. 已激活技能的回归信号必须能让它降级或停止注入。

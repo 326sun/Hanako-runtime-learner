@@ -8,7 +8,7 @@ import { approveAgentTask, cancelAgentTask, rejectAgentTask, resumeAgentTask } f
 import { AGENT_STATES } from "../lib/agent-state-machine.js";
 import { TASK_GRAPH_NODES } from "../lib/task-graph.js";
 import { latestPendingApproval } from "../lib/human-interrupt.js";
-import { listAgentTaskStates, readAgentTaskBundle } from "../lib/agent-task-store.js";
+import { listAgentTaskStates, readAgentTaskBundle, saveAgentTaskState } from "../lib/agent-task-store.js";
 import { loadAuditTrace, summarizeAuditTrace } from "../lib/audit-trace.js";
 
 function tmpdir() {
@@ -61,6 +61,48 @@ test("approved agent task resumes after the approved node", async () => {
   const summary = summarizeAuditTrace(trace);
   assert.equal(summary.byType["human.approved"], 1);
   assert.ok(summary.byType["state.completed"] >= 1);
+});
+
+test("agent task approval rejects stale pending requests", async () => {
+  const learnerDir = tmpdir();
+  const paused = await createPausedTask(learnerDir);
+  const pending = latestPendingApproval(paused.state);
+  assert.ok(pending);
+
+  const stale = {
+    ...pending,
+    id: "approval:stale",
+    node: TASK_GRAPH_NODES.PLAN,
+    status: "pending",
+    createdAt: new Date(Date.now() + 1000).toISOString(),
+    updatedAt: new Date(Date.now() + 1000).toISOString(),
+  };
+  saveAgentTaskState(learnerDir, {
+    ...paused.state,
+    approvalRequests: [...paused.state.approvalRequests, stale],
+  });
+
+  assert.throws(
+    () => approveAgentTask(learnerDir, paused.state.taskId, { reason: "ambiguous approval" }),
+    /approval request node mismatch|ambiguous pending approval requests/,
+  );
+  assert.throws(
+    () => rejectAgentTask(learnerDir, paused.state.taskId, { requestId: stale.id, reason: "reject stale" }),
+    /approval request node mismatch/,
+  );
+});
+
+test("agent task cancel does not rewrite resolved approval requests", async () => {
+  const learnerDir = tmpdir();
+  const paused = await createPausedTask(learnerDir);
+  const pending = latestPendingApproval(paused.state);
+  assert.ok(pending);
+
+  approveAgentTask(learnerDir, paused.state.taskId, { requestId: pending.id, reason: "unit test approval" });
+  assert.throws(
+    () => cancelAgentTask(learnerDir, paused.state.taskId, { requestId: pending.id, reason: "rewrite approval" }),
+    /pending approval request not found/,
+  );
 });
 
 test("rejected agent task becomes failed and cannot resume work", async () => {

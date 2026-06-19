@@ -1,60 +1,40 @@
-# Transaction API Freeze
+# 事务与回滚
 
-Status: frozen for v4.0.17 LTS.
+事务模型用于保护 R2 及以上的写动作。目的不是“尽量写成功”，而是“失败时保持工作区干净且可恢复”。
 
-## Purpose
-
-Transactions protect write-like actions. They snapshot affected files before execution and provide rollback evidence when verification or repair fails.
-
-## Transaction lifecycle
+## 事务生命周期
 
 ```text
-begin
-→ snapshot affected files
-→ apply bounded change
-→ verify
-→ commit / rollback
-→ write feedback
+snapshot -> execute -> verify -> commit
+                     \-> rollback
 ```
 
-## Frozen transaction envelope
+## 事务包络
 
-```json
-{
-  "transactionId": "txn:example",
-  "status": "committed",
-  "files": ["lib/example.js"],
-  "snapshots": [],
-  "rollback": {
-    "attempted": false,
-    "ok": false
-  }
-}
-```
+一个可回滚写动作至少需要：
 
-Stable statuses:
+- 目标文件列表
+- 执行步骤
+- 验证命令或验证指标
+- 回滚策略
 
-| Status | Meaning |
-|---|---|
-| `open` | Snapshot created, action still executing. |
-| `committed` | Verification passed and changes remain. |
-| `rolled_back` | Verification failed and snapshots were restored. |
-| `failed` | Transaction could not complete safely. |
+## R2 写动作规则
 
-## R2 write requirements
+1. 先快照，再执行。
+2. 验证失败先尝试一次受控修复。
+3. 修复仍失败则自动回滚。
+4. 回滚结果必须记录到反馈日志。
 
-R2 write-like actions must provide:
+## 文本补丁规则
 
-1. Declared target files or a narrow workspace scope.
-2. Rollback plan or transaction snapshot.
-3. Verification command or structured verification check.
-4. Diff preview and scope gate before execution.
-5. Feedback record after completion or rollback.
+`apply_patch_sandboxed` 默认要求：
 
-## Rollback rule
+- `oldText` 唯一匹配
+- 匹配不到则拒绝
+- 匹配多次也拒绝
 
-Rollback must restore the pre-action state for files captured by the transaction. If rollback cannot prove restoration, the action result must not claim success.
+这样做是为了避免“补丁打到了不确定位置”。
 
-## Compatibility promise
+## 冻结承诺
 
-v4.0.17 LTS freezes transaction status names and rollback semantics. Future changes may improve snapshot storage or add metadata, but must preserve rollback-first failure handling for R2 writes.
+v4.x LTS 期间，写动作如果不能提供事务、验证和回滚，就不能被当成自动 R2 动作放行。
