@@ -24,6 +24,7 @@ import { runBenchmarkCorpus } from "../lib/benchmark-corpus.js";
 import { loadActiveSkills, loadSkillCandidates, runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
 import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
+import { resolveProjectRoot } from "../lib/project-root.js";
 import { toolPaths } from "./_shared.js";
 
 const MAX_SKILL_HISTORY = 20;
@@ -415,13 +416,19 @@ const HANDLERS = {
 
   async run_benchmarks(input, p, config) {
     const outputDir = input.benchmarkOutputDir || path.join(p.learnerDir, "benchmark-runs", new Date().toISOString().replace(/[:.]/g, "-"));
+    const root = resolveProjectRoot(input, p, { requireBenchmarkCorpus: true });
+    if (!root.ok) {
+      appendEvent(p.learnerDir, { type: "benchmark.unavailable", entityType: "benchmark", entityId: path.basename(outputDir), summary: "Benchmark corpus unavailable in runtime package", data: { outputDir, reason: root.reason, checked: root.checked } });
+      return JSON.stringify({ ok: false, status: "unavailable", outputDir, reason: root.reason, checked: root.checked, nextAction: "provide projectRoot/sourceRoot or install from a source checkout with .source-root.json" }, null, 2);
+    }
     const result = await runBenchmarkCorpus({
-      benchmarkRoot: path.join(p.pluginDir, "benchmarks"),
+      projectRoot: root.projectRoot,
+      benchmarkRoot: path.join(root.projectRoot, "benchmarks"),
       ids: input.benchmarkId || input.id ? [input.benchmarkId || input.id] : [],
       outputDir,
-    }, { pluginDir: p.pluginDir, learnerDir: p.learnerDir, config });
-    appendEvent(p.learnerDir, { type: "benchmark.ran", entityType: "benchmark", entityId: path.basename(outputDir), summary: `Ran benchmark corpus: ${result.runs?.length || 0} scenario(s), ok=${result.ok}`, data: { outputDir, metrics: result.metrics, regressions: result.regressions || [] } });
-    return JSON.stringify({ ok: result.ok, outputDir, metrics: result.metrics, regressions: result.regressions || [], nextAction: "review benchmark-report.md" }, null, 2);
+    }, { pluginDir: root.projectRoot, learnerDir: p.learnerDir, config });
+    appendEvent(p.learnerDir, { type: "benchmark.ran", entityType: "benchmark", entityId: path.basename(outputDir), summary: `Ran benchmark corpus: ${result.runs?.length || 0} scenario(s), ok=${result.ok}`, data: { outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, metrics: result.metrics, regressions: result.regressions || [] } });
+    return JSON.stringify({ ok: result.ok, outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, metrics: result.metrics, regressions: result.regressions || [], nextAction: "review benchmark-report.md" }, null, 2);
   },
 
   run_skill_promotion_loop(input, p, config) {
@@ -478,8 +485,11 @@ const HANDLERS = {
   },
 
   generate_audit_dashboard(input, p) {
-    const version = readPluginVersion(p.pluginDir);
-    const dashboard = buildAuditDashboard(p.learnerDir, { version, limit: input.limit || 50 });
+    const root = resolveProjectRoot(input, p, { requireBenchmarkCorpus: true });
+    const version = readPluginVersion(root.ok ? root.projectRoot : p.pluginDir);
+    const benchmarkRunsDir = input.benchmarkRunsDir || path.join(p.learnerDir, "benchmark-runs");
+    const dashboard = buildAuditDashboard(p.learnerDir, { version, limit: input.limit || 50, benchmarkRunsDir, benchmarkReportPath: input.benchmarkReportPath });
+    if (!dashboard.benchmark?.available && root.ok) dashboard.benchmark.sourceProjectRoot = root.projectRoot;
     const written = exportAuditDashboard(p.learnerDir, dashboard, { name: input.id || undefined, version });
     appendEvent(p.learnerDir, { type: "audit.dashboard_generated", entityType: "audit_dashboard", entityId: path.basename(written.dir), summary: `Generated audit dashboard: posture=${written.safetyPosture}`, data: { dir: written.dir, summary: written.summary, recommendations: written.recommendations } });
     return JSON.stringify({ ok: true, ...written, nextAction: "review dashboard.md or export_audit_bundle" }, null, 2);
@@ -512,9 +522,15 @@ const HANDLERS = {
 
   release_readiness(input, p) {
     const outputDir = input.releaseOutputDir || path.join(p.learnerDir, "release-readiness", new Date().toISOString().replace(/[:.]/g, "-"));
-    const result = exportReleaseReadiness(p.pluginDir, outputDir, { minBenchmarkScenarios: input.minInjectCount || 16 });
-    appendEvent(p.learnerDir, { type: "release.readiness_checked", entityType: "release", entityId: result.summary.version, summary: `Release readiness checked: status=${result.summary.status}, score=${result.summary.score}`, data: { outputDir, failedChecks: result.summary.failedChecks } });
-    if (input.format === "json") return JSON.stringify({ ok: result.summary.ok, outputDir, summary: result.summary, checks: result.checks, nextAction: result.summary.nextAction }, null, 2);
+    const root = resolveProjectRoot(input, p, { requireReleaseArtifacts: true });
+    if (!root.ok) {
+      const unavailable = { ok: false, status: "unavailable", outputDir, reason: root.reason, checked: root.checked, nextAction: "provide projectRoot/sourceRoot for the source checkout; release readiness is not meaningful in a trimmed runtime package" };
+      appendEvent(p.learnerDir, { type: "release.readiness_unavailable", entityType: "release", entityId: "runtime-package", summary: "Release readiness unavailable in runtime package", data: unavailable });
+      return JSON.stringify(unavailable, null, 2);
+    }
+    const result = exportReleaseReadiness(root.projectRoot, outputDir, { minBenchmarkScenarios: input.minInjectCount || 16 });
+    appendEvent(p.learnerDir, { type: "release.readiness_checked", entityType: "release", entityId: result.summary.version, summary: `Release readiness checked: status=${result.summary.status}, score=${result.summary.score}`, data: { outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, failedChecks: result.summary.failedChecks } });
+    if (input.format === "json") return JSON.stringify({ ok: result.summary.ok, outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, summary: result.summary, checks: result.checks, nextAction: result.summary.nextAction }, null, 2);
     return formatReleaseReadinessReport(result);
   },
 
@@ -551,7 +567,11 @@ const tool = defineTool({
       candidateId: { type: "string", description: "Cross-project transfer candidate id for transfer registry actions." },
       benchmarkId: { type: "string", description: "Optional benchmark scenario id for run_benchmarks." },
       benchmarkOutputDir: { type: "string", description: "Optional output directory for benchmark reports." },
+      benchmarkRunsDir: { type: "string", description: "Optional benchmark-runs directory for audit dashboard lookup." },
+      benchmarkReportPath: { type: "string", description: "Optional explicit benchmark-report.json path for audit dashboard lookup." },
       releaseOutputDir: { type: "string", description: "Optional output directory for release readiness reports." },
+      projectRoot: { type: "string", description: "Optional source checkout root for release/benchmark actions." },
+      sourceRoot: { type: "string", description: "Alias of projectRoot for runtime package source checkout resolution." },
       candidate: { type: "object", description: "Cross-project transfer candidate object for register_transfer_candidate." },
       validationStatus: { type: "string", enum: ["passed", "failed"], description: "Target validation status for record_transfer_validation." },
       evidence: { type: "array", items: { type: "string" }, description: "Validation evidence lines for transfer registry actions." },

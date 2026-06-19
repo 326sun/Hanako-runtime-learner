@@ -78,6 +78,7 @@ const JS_FILES = [
   "lib/plugin-process-runner.js",
   "lib/plugin-process-runner-child.js",
   "lib/policy-profiles.js",
+  "lib/project-root.js",
   "lib/project-script-trust.js",
   "lib/proposals.js",
   "lib/release-readiness.js",
@@ -178,7 +179,13 @@ for (const file of filesToCopy) {
 for (const dir of dirsToCopy) {
   fs.cpSync(path.join(PLUGIN_SRC, dir), path.join(PLUGIN_DEST, dir), { recursive: true });
 }
+fs.writeFileSync(
+  path.join(PLUGIN_DEST, ".source-root.json"),
+  `${JSON.stringify({ sourceRoot: PLUGIN_SRC, installedAt: new Date().toISOString(), installer: "install.cjs" }, null, 2)}\n`,
+  "utf-8"
+);
 console.log(`  Installed to ${PLUGIN_DEST}`);
+console.log(`  Source root metadata written: ${path.join(PLUGIN_DEST, ".source-root.json")}`);
 
 // ── Verify deployed files ──
 console.log("\n[4/4] Verify...");
