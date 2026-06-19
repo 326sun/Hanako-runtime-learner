@@ -119,4 +119,27 @@ describe("event log hash chain", () => {
     const proposals = readEvents(dir, { limit: 3, type: "proposal.created" });
     assert.deepEqual(proposals.map((evt) => evt.entityId), ["p118", "p116", "p114"]);
   });
+
+  it("reclaims a stale lock left behind by a crashed writer instead of stalling", () => {
+    const dir = path.join(tmpDir, "stale-lock");
+    fs.mkdirSync(dir, { recursive: true });
+    // Simulate a writer that was SIGKILL'd while holding the lock: the lock file
+    // was never released and its mtime is far in the past. A single append holds
+    // the lock only briefly, so an old lock cannot belong to a live writer.
+    const lockFile = path.join(dir, ".event-log.lock");
+    fs.writeFileSync(lockFile, "");
+    const oldSeconds = (Date.now() - 60_000) / 1000;
+    fs.utimesSync(lockFile, oldSeconds, oldSeconds);
+
+    const started = Date.now();
+    const evt = appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "after-crash", summary: "reclaimed" });
+    // Must not block for the full 5s lock-acquisition timeout.
+    assert.ok(Date.now() - started < 4000, "append should reclaim the stale lock promptly");
+    assert.equal(evt.entityId, "after-crash");
+
+    const result = verifyEventLog(dir);
+    assert.equal(result.ok, true);
+    assert.equal(result.events, 1);
+    assert.equal(result.brokenAt, null);
+  });
 });
