@@ -10,7 +10,7 @@ function write(filePath, content) {
   fs.writeFileSync(filePath, content, "utf-8");
 }
 
-function makeProject({ version = "4.0.18-lts", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 564 } = {}) {
+function makeProject({ version = "4.0.18-lts", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 565 } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hanako-release-readiness-"));
   const baseVersion = version.replace(/-lts$/, "");
   write(path.join(root, "package.json"), JSON.stringify({ name: "hanako-runtime-learner", version }, null, 2));

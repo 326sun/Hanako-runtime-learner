@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
-
 import { appendEvent, eventLogPath, readEvents, verifyEventLog } from "../lib/event-log.js";
 import { execute as executeControl } from "../tools/control.js";
 

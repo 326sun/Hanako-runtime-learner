@@ -10,7 +10,7 @@
 - 动作包加载阶段复用包目录 `realpath`，减少 `action.json`、`execute.js`、`verify.js`、`rollback.js` 的重复路径解析。
 - 控制面 `release_readiness` / `run_benchmarks` 现在通过安装时写入的 `.source-root.json` 回到源码仓库查找发布与基准材料；没有源码根时返回 `unavailable`，不再把裁剪后的运行包误报为发布失败。
 - `self_learning_open_dir` 在 Windows 下改用参数化 `cmd /c start` 调用，并在失败时仍返回目录文件摘要。
-- 测试总数 `557 -> 564`，新增工作区根回退、插件子进程回退元数据、prepared-search 索引一致性、运行包源码根解析和 open-dir 命令构造回归。
+- 测试总数 `557 -> 565`，新增工作区根回退、插件子进程回退元数据、prepared-search 索引一致性、运行包源码根解析、open-dir 命令构造回归和事件日志跨进程并发写入回归。
 - 边界未放宽：仅做可观测性、去重、路径语义修复和热路径清理。
 
 ## 4.3.15
