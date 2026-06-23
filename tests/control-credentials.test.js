@@ -32,9 +32,9 @@ before(async () => {
   fs.mkdirSync(learnerDir, { recursive: true });
   ({ saveCredentials, loadCredentials, CREDENTIAL_PLACEHOLDER } = await import("../lib/credentials.js"));
   control = await import("../tools/control.js");
-  // Real key lives only in the encrypted store; config.json keeps the placeholder.
+  // Real key lives only in the encrypted store; runtime-config.json keeps the placeholder.
   saveCredentials({ modelAdvisorApiKey: "sk-real-encrypted-key" });
-  fs.writeFileSync(path.join(learnerDir, "config.json"), JSON.stringify({
+  fs.writeFileSync(path.join(learnerDir, "runtime-config.json"), JSON.stringify({
     modelAdvisorEnabled: true,
     modelAdvisorSource: "private",
     modelAdvisorBaseUrl: "https://api.example.com",
@@ -57,8 +57,9 @@ describe("control.js run_model_advisor credential decryption", () => {
     let fetched = false;
     globalThis.fetch = async () => { fetched = true; throw new Error("network must not be reached with zero patterns"); };
 
-    const raw = await control.execute({ action: "run_model_advisor" }, { pluginDir: tmpHome });
-    const out = JSON.parse(raw);
+    const rawResult = await control.execute({ action: "run_model_advisor" }, { pluginDir: tmpHome });
+    const rawText = rawResult?.content?.[0]?.text ?? (typeof rawResult === "string" ? rawResult : JSON.stringify(rawResult));
+    const out = JSON.parse(rawText);
 
     // With the real key decrypted, resolveAdvisorConfig passes the key gate and
     // runModelAdvisor short-circuits at "no candidate patterns" (no network).

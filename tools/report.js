@@ -1,26 +1,40 @@
-import { readJson, readRecentJsonl, countBy, decoratePatterns, describeOfficialUtilityModel } from "../lib/common.js";
-import { defineTool } from "../lib/hana-runtime-compat.js";
-import { MODEL_ADVICE_FILE } from "../lib/model-advisor.js";
+import { readJson, readRecentJsonl, countBy, decoratePatterns, describeOfficialUtilityModel, summarizeSessionRows, inspectSessionIdentityCoverage } from "../lib/common.js";
+import { modelAdviceFile } from "../lib/model-advisor.js";
 import { listProposals } from "../lib/proposals.js";
 import { toolPaths, loadConfig, loadPatterns } from "./_shared.js";
 
-const tool = defineTool({
-  name: "self_learning_report",
-  description: "Generate a local self-learning report: task trends, error trends, review states, injectable hints, and skill candidates.",
-  parameters: {
-    type: "object",
-    properties: {
-      days: { type: "number", description: "Days to analyze, default 7" },
-    },
-    required: [],
+export const name = "self_learning_report";
+
+export const description = "Generate a local self-learning report: task trends, error trends, review states, injectable hints, and skill candidates.";
+
+export const sessionPermission = { readOnly: true };
+
+export const parameters = {
+  type: "object",
+  properties: {
+    days: { type: "number", description: "Days to analyze, default 7" },
   },
-  async execute(input = {}) {
-    const days = input.days || 7;
-    const p = toolPaths();
+};
+
+export async function execute(input = {}, ctx) {
+  const days = input.days || 7;
+  const p = toolPaths(ctx);
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
 
     const experiences = readRecentJsonl(p.experiencePath, cutoff);
     const errors = readRecentJsonl(p.errorPath, cutoff);
+    const sessions = summarizeSessionRows(experiences);
+    const errorSessions = summarizeSessionRows(errors);
+    const sessionCoverage = [
+      ["experience_log.jsonl", inspectSessionIdentityCoverage(p.experiencePath)],
+      ["error_log.jsonl", inspectSessionIdentityCoverage(p.errorPath)],
+      ["turns.jsonl", inspectSessionIdentityCoverage(p.turnsPath)],
+      ["activity_log.jsonl", inspectSessionIdentityCoverage(p.activityPath)],
+    ].map(([file, coverage]) => ({
+      file,
+      ...coverage,
+      coveragePct: Math.round((coverage.coverageRatio || 0) * 100),
+    })).filter((item) => item.total > 0);
     const config = loadConfig(p.configPath);
     const patterns = decoratePatterns(loadPatterns(p.patternsPath), config);
 
@@ -30,7 +44,7 @@ const tool = defineTool({
     const skillCandidates = patterns.filter((pattern) => pattern.decayedScore >= 12 && pattern.count >= 3);
     const usage = readJson(p.usageSummaryPath, null);
     const capabilities = readJson(p.capabilitiesPath, null);
-    const modelAdvice = readJson(MODEL_ADVICE_FILE, null);
+    const modelAdvice = readJson(modelAdviceFile(p.learnerDir), null);
     const proposals = listProposals(p.learnerDir, { limit: 30 });
     const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
     const officialUtilityModel = describeOfficialUtilityModel();
@@ -39,12 +53,14 @@ const tool = defineTool({
       .sort((a, b) => (b[1].totalTokens || 0) - (a[1].totalTokens || 0))
       .slice(0, 8);
 
-    return [
+    const text = [
       `# Self-Learning Report (last ${days} days)`,
       "",
       "## Overview",
       `- Total tasks: ${experiences.length}`,
       `- Errors: ${errors.length}`,
+      `- Sessions observed: ${sessions.length}`,
+      `- Sessions with errors: ${errorSessions.length}`,
       `- Patterns detected: ${patterns.length}`,
       `- Injectable hints: ${injectable.length}`,
       `- Durable settings: ${patterns.filter((pattern) => pattern.knowledgeTier === "durable").length}`,
@@ -97,8 +113,17 @@ const tool = defineTool({
       "## Task Distribution",
       ...Object.entries(countBy(experiences, "taskType")).map(([k, v]) => `- ${k}: ${v}`),
       "",
+      "## Session Activity",
+      ...(sessions.length ? sessions.slice(0, 8).map((s) => `- ${s.sessionKey}: turns=${s.count}, label=${s.sessionLabel}, lastSeen=${s.lastSeenAt}`) : ["- No sessions observed"]),
+      "",
+      "## Session Identity Coverage",
+      ...(sessionCoverage.length
+        ? sessionCoverage.map((item) => `- ${item.file}: stable=${item.withStableIdentity}/${item.total} (${item.coveragePct}%), legacyOnly=${item.legacyPathOnly}, unknown=${item.unknown}`)
+        : ["- No sampled session-bearing log rows found"]),
+      "",
       "## Error Distribution",
       ...(errors.length ? Object.entries(countBy(errors, "errorType")).map(([k, v]) => `- ${k}: ${v}`) : ["- No errors recorded"]),
+      ...(errorSessions.length ? ["", "## Error Sessions", ...errorSessions.slice(0, 8).map((s) => `- ${s.sessionKey}: errors=${s.count}, label=${s.sessionLabel}, lastSeen=${s.lastSeenAt}`)] : []),
       "",
       "## Injectable Hints",
       ...(injectable.length ? injectable.slice(0, 10).map((p) => `- [${p.type}, ${p.status}, score=${p.decayedScore}] ${p.id}: ${p.desc}${p.fix ? ` -> ${p.fix}` : ""}`) : ["- No injectable hints"]),
@@ -111,7 +136,8 @@ const tool = defineTool({
       "",
       `> Data dir: ${p.learnerDir}`,
     ].join("\n");
-  },
-});
 
-export const { name, description, parameters, execute } = tool;
+  return {
+    content: [{ type: "text", text: text }],
+  };
+}

@@ -8,9 +8,10 @@ import {
   ageDays,
   learnerDir as resolveLearnerDir,
   estimateTokens,
+  inspectSessionIdentityCoverage,
   mergeConfig,
 } from "../lib/common.js";
-import { defineTool } from "../lib/hana-runtime-compat.js";
+import { runtimeConfigPath } from "../lib/runtime-config-path.js";
 import { listProposals } from "../lib/proposals.js";
 import { listReviews } from "../lib/review-queue.js";
 import { eventSummary } from "../lib/event-log.js";
@@ -158,6 +159,54 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       { files: overdue.map((l) => l.name) });
   }
 
+  let sessionCoverageSummary = {
+    sampledLogRows: 0,
+    withStableIdentity: 0,
+    legacySessionRows: 0,
+    unknownSessionRows: 0,
+    sessionIdentityCoveragePct: null,
+    byFile: [],
+  };
+  const coverageLogs = logs.filter((l) => l.sessionCoverage && l.sessionCoverage.total > 0);
+  if (coverageLogs.length) {
+    const coverage = coverageLogs.reduce((acc, item) => {
+      acc.total += item.sessionCoverage.total || 0;
+      acc.withStableIdentity += item.sessionCoverage.withStableIdentity || 0;
+      acc.legacyPathOnly += item.sessionCoverage.legacyPathOnly || 0;
+      acc.unknown += item.sessionCoverage.unknown || 0;
+      return acc;
+    }, { total: 0, withStableIdentity: 0, legacyPathOnly: 0, unknown: 0 });
+    const ratio = coverage.total > 0 ? coverage.withStableIdentity / coverage.total : 1;
+    sessionCoverageSummary = {
+      sampledLogRows: coverage.total,
+      withStableIdentity: coverage.withStableIdentity,
+      legacySessionRows: coverage.legacyPathOnly,
+      unknownSessionRows: coverage.unknown,
+      sessionIdentityCoveragePct: Math.round(ratio * 100),
+      byFile: coverageLogs.map((item) => ({
+        name: item.name,
+        total: item.sessionCoverage.total || 0,
+        withStableIdentity: item.sessionCoverage.withStableIdentity || 0,
+        legacySessionRows: item.sessionCoverage.legacyPathOnly || 0,
+        unknownSessionRows: item.sessionCoverage.unknown || 0,
+        sessionIdentityCoveragePct: Math.round(((item.sessionCoverage.total || 0) > 0
+          ? (item.sessionCoverage.withStableIdentity || 0) / item.sessionCoverage.total
+          : 1) * 100),
+      })),
+    };
+    if (coverage.withStableIdentity === 0 && coverage.legacyPathOnly > 0) {
+      add("info", "legacy_session_logs",
+        `Observed ${coverage.legacyPathOnly} sampled log row(s) with only legacy sessionPath identity.`,
+        "This is expected on old hosts; on Hanako beta hosts, verify the runtime is emitting sessionId/sessionRef.",
+        { coverage });
+    } else if (coverage.total >= 20 && ratio < 0.5) {
+      add("warning", "session_identity_coverage",
+        `Only ${Math.round(ratio * 100)}% of sampled log rows carry stable session identity.`,
+        "Inspect self_learning_stats or self_learning_report and verify the host is emitting sessionId/sessionRef consistently.",
+        { coverage });
+    }
+  }
+
   // 9) scope_leakage — injectable patterns spanning multiple concrete projects.
   const concrete = injectable
     .map((p) => normalizeScope(p.scope || p.context).project)
@@ -266,6 +315,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       pendingReviews: activeReviews.length,
       blockedReviews: blockedReviews.length,
       concreteProjects: projectSet.size,
+      ...sessionCoverageSummary,
     },
     issues,
     suggestedActions,
@@ -295,14 +345,17 @@ function oldestLogMs(file) {
 
 // Gather the on-disk inputs and run diagnose. Shared by the tool and by
 // self_learning_control's `doctor` action.
-export function runDoctorFromDisk(learnerDir = resolveLearnerDir()) {
-  const config = loadLearnerConfig(path.join(learnerDir, "config.json"));
+export function runDoctorFromDisk(learnerDir = resolveLearnerDir(), { configPath = runtimeConfigPath(learnerDir) } = {}) {
+  const config = loadLearnerConfig(configPath);
   const patterns = readJson(path.join(learnerDir, "patterns.json"), []) || [];
   const facts = readJson(path.join(learnerDir, "facts.json"), []) || [];
   const proposals = listProposals(learnerDir, { limit: 500 });
   const logs = [
     ["experience_log.jsonl"], ["error_log.jsonl"], ["turns.jsonl"], ["activity_log.jsonl"],
-  ].map(([name]) => ({ name, oldestMs: oldestLogMs(path.join(learnerDir, name)) }));
+  ].map(([name]) => {
+    const file = path.join(learnerDir, name);
+    return { name, oldestMs: oldestLogMs(file), sessionCoverage: inspectSessionIdentityCoverage(file, { maxLines: 2000 }) };
+  });
   const reviews = listReviews(learnerDir, { limit: 500 });
   const events = eventSummary(learnerDir);
   const memfsIndex = readMemFSIndex(learnerDir);
@@ -311,10 +364,13 @@ export function runDoctorFromDisk(learnerDir = resolveLearnerDir()) {
 
 export function formatReport(report) {
   const icon = report.status === "good" ? "✅" : report.status === "warning" ? "⚠️" : "🛑";
+  const coverageSummary = report.summary.sessionIdentityCoveragePct == null
+    ? "sessionCoverage=n/a"
+    : `sessionCoverage=${report.summary.sessionIdentityCoveragePct}%`;
   const lines = [
     `# Self-Learning Doctor — ${icon} ${report.label} (score ${report.score}/100)`,
     "",
-    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals} · pendingReviews=${report.summary.pendingReviews || 0}`,
+    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals} · pendingReviews=${report.summary.pendingReviews || 0} · ${coverageSummary}`,
     "",
   ];
   if (!report.issues.length) {
@@ -334,25 +390,40 @@ export function formatReport(report) {
       for (const a of report.priorityActions) lines.push(`- [${a.priority}] ${a.action} (${a.reason})`);
     }
   }
+  if (report.summary.byFile?.length) {
+    lines.push("", "## Session Coverage");
+    for (const item of report.summary.byFile) {
+      lines.push(`- ${item.name}: stable=${item.withStableIdentity}/${item.total} (${item.sessionIdentityCoveragePct}%), legacyOnly=${item.legacySessionRows}, unknown=${item.unknownSessionRows}`);
+    }
+  }
   lines.push("", "> Read-only diagnostic — no files were modified.");
   return lines.join("\n");
 }
 
-const tool = defineTool({
-  name: "self_learning_doctor",
-  description: "Read-only health check of the self-learning memory: policy consistency, duplicate/conflicting/expired memories, unreviewed preferences, proposal backlog, SKILL.md budget, scope leakage, orphan relations, missing evidence. Reports Good/Warning/Critical with fixes. Modifies nothing.",
-  parameters: {
-    type: "object",
-    properties: {
-      format: { type: "string", enum: ["text", "json"], description: "Output format. Default text." },
-    },
-    required: [],
-  },
-  async execute(input = {}) {
-    const report = runDoctorFromDisk();
-    if (input.format === "json") return JSON.stringify(report, null, 2);
-    return formatReport(report);
-  },
-});
+export const name = "self_learning_doctor";
 
-export const { name, description, parameters, execute } = tool;
+export const description = "Read-only health check of the self-learning memory: policy consistency, duplicate/conflicting/expired memories, unreviewed preferences, proposal backlog, SKILL.md budget, scope leakage, orphan relations, missing evidence. Reports Good/Warning/Critical with fixes. Modifies nothing.";
+
+export const sessionPermission = { readOnly: true };
+
+export const parameters = {
+  type: "object",
+  properties: {
+    format: { type: "string", enum: ["text", "json"], description: "Output format. Default text." },
+  },
+};
+
+export async function execute(input = {}, ctx) {
+  const dataDir = ctx?.dataDir || resolveLearnerDir();
+  const report = runDoctorFromDisk(dataDir);
+  if (input.format === "json") {
+    return {
+      content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
+      details: report,
+    };
+  }
+  return {
+    content: [{ type: "text", text: formatReport(report) }],
+    details: report,
+  };
+}

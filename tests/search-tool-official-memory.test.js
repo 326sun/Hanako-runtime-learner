@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { parseToolResult } from "./_test-utils.js";
 
 function writePinnedMemory(home, agent, content) {
   const agentDir = path.join(home, "agents", agent);
@@ -23,7 +24,7 @@ test("self_learning_search scopes official memory by project", async () => {
     writePinnedMemory(home, "yolo-paper", "Shared review workflow for Yolo paper.");
 
     const searchTool = await import(`../tools/search.js?official-project-${Date.now()}`);
-    const result = JSON.parse(await searchTool.execute({
+    const result = parseToolResult(await searchTool.execute({
       query: "shared review workflow",
       project: "hanako",
       limit: 5,

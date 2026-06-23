@@ -79,6 +79,21 @@ describe("panelCredentialsToStore · capture API keys typed into the settings pa
     });
     assert.deepEqual(out, { modelAdvisorApiKey: "sk-a", semanticEmbeddingApiKey: "sk-b" });
   });
+
+  it("extracts values from a v0.341+ method-based config store via getAll()", () => {
+    const store = {
+      getAll: () => ({ modelAdvisorApiKey: "  sk-method  ", semanticEmbeddingApiKey: "sk-embed", learnFromUsage: true }),
+    };
+    assert.deepEqual(panelCredentialsToStore(store), {
+      modelAdvisorApiKey: "sk-method",
+      semanticEmbeddingApiKey: "sk-embed",
+    });
+  });
+
+  it("tolerates a method-based store whose getAll() returns nothing", () => {
+    assert.deepEqual(panelCredentialsToStore({ getAll: () => null }), {});
+    assert.deepEqual(panelCredentialsToStore({ getAll: () => undefined }), {});
+  });
 });
 
 describe("credentials round-trip", () => {

@@ -50,6 +50,18 @@ describe("config consistency · manifest ↔ DEFAULT_CONFIG", () => {
       );
     }
   });
+
+  // The host's declarative network channel (ctx.network.fetch) validates a
+  // STATIC manifest network.allowedHosts allowlist where a bare "*" matches no
+  // host. This plugin's only outbound calls target arbitrary user-configured
+  // endpoints (model advisor / embeddings), which cannot be enumerated, so it
+  // uses direct fetch and must NOT advertise a non-functional network block or
+  // an unused network.fetch capability. See lib/model-advisor.js + tools/search.js.
+  it("declares no non-functional network channel for arbitrary user endpoints", () => {
+    assert.ok(!("network" in manifest), "manifest must not declare a network block (uses direct fetch)");
+    assert.ok(!(manifest.capabilities || []).includes("network.fetch"), "network.fetch capability is unused and must not be declared");
+    assert.ok(!(manifest.sensitiveCapabilities || []).includes("network.fetch"), "network.fetch sensitive capability is unused and must not be declared");
+  });
 });
 
 describe("config consistency · README ↔ DEFAULT_CONFIG", () => {

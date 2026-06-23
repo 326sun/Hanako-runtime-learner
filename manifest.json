@@ -2,11 +2,11 @@
   "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "4.3.17",
+  "version": "4.3.22",
   "description": "运行时自学习引擎：观察本地交互，归纳重复工作流、偏好与错误，并生成保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
-  "minAppVersion": "0.293.0",
+  "minAppVersion": "0.330.0",
   "permissions": [
     "usage.read"
   ],
@@ -16,12 +16,10 @@
     "onToolCall:self_learning_report",
     "onToolCall:self_learning_control",
     "onToolCall:self_learning_activity",
+    "onToolCall:self_learning_console",
     "onToolCall:self_learning_open_dir",
     "onToolCall:self_learning_search",
     "onToolCall:self_learning_doctor"
-  ],
-  "capabilities": [
-    "model.sample"
   ],
   "contributes": {
     "configuration": {
@@ -29,7 +27,11 @@
         "governanceProfile": {
           "type": "string",
           "title": "治理策略档位",
-          "enum": ["conservative", "balanced", "autonomous"],
+          "enum": [
+            "conservative",
+            "balanced",
+            "autonomous"
+          ],
           "enumDescriptions": [
             "保守 / 审查优先",
             "均衡 / 默认",
@@ -117,7 +119,11 @@
         "modelAdvisorSource": {
           "type": "string",
           "title": "整理模型来源",
-          "enum": ["official", "private", "off"],
+          "enum": [
+            "official",
+            "private",
+            "off"
+          ],
           "enumDescriptions": [
             "官方采样接口",
             "自配端点",
@@ -134,7 +140,10 @@
           "type": "string",
           "title": "备用整理模型 API Key",
           "description": "仅旧版本回退到自配端点时使用；保存后会加密存储。",
-          "format": "password",
+          "sensitive": true,
+          "ui": {
+            "control": "password"
+          },
           "default": ""
         },
         "modelAdvisorModel": {
@@ -212,7 +221,10 @@
           "type": "string",
           "title": "语义 embedding API Key",
           "description": "仅在开启语义检索时使用；保存后会加密存储。",
-          "format": "password",
+          "sensitive": true,
+          "ui": {
+            "control": "password"
+          },
           "default": ""
         },
         "semanticEmbeddingModel": {

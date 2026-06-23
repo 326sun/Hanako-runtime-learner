@@ -1,7 +1,6 @@
 import fs from "fs";
 import path from "path";
 import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, buildSkillMdFromPatterns, mergeConfig } from "../lib/common.js";
-import { defineTool } from "../lib/hana-runtime-compat.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
 import { listProposals, readProposal, rejectProposal, previewProposalDiff, verifyProposalReviewBinding } from "../lib/proposals.js";
@@ -25,6 +24,7 @@ import { loadActiveSkills, loadSkillCandidates, runSkillPromotionLoop } from "..
 import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
 import { resolveProjectRoot } from "../lib/project-root.js";
+import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths } from "./_shared.js";
 
 const MAX_SKILL_HISTORY = 20;
@@ -215,7 +215,7 @@ const HANDLERS = {
     // decrypted secret never reaches handlers that persist config (set_config,
     // set_policy_profile) and leak it back to disk in plaintext.
     const advisorConfig = mergeCredentials(config);
-    const result = await runModelAdvisor({ config: advisorConfig, patterns, usage: readJson(p.usageSummaryPath, null), capabilities: readJson(p.capabilitiesPath, null), reason: "manual", ctx });
+    const result = await runModelAdvisor({ config: advisorConfig, patterns, usage: readJson(p.usageSummaryPath, null), capabilities: readJson(p.capabilitiesPath, null), reason: "manual", ctx, dataDir: p.learnerDir });
     if (!result.ok) return JSON.stringify({ ok: false, error: result.reason || "advisor skipped" }, null, 2);
     const { merged } = mergeAdvisorSuggestions(new Map(patterns.map((pat) => [pat.id, pat])), result.advice);
     if (merged > 0) writeJson(p.patternsPath, patterns);
@@ -544,83 +544,169 @@ const HANDLERS = {
     try { diag.sessionSendCap = ctx?.bus?.getCapability?.("session:send") || null; } catch (e) { diag.sessionSendCap = { error: e.message }; }
     try { diag.sampleTextCap = ctx?.bus?.getCapability?.("model:sample-text") || null; } catch (e) { diag.sampleTextCap = { error: e.message }; }
     try {
-      if (input.sessionPath) { const r = await ctx.bus.request("session:send", { sessionPath: input.sessionPath, text: "[self-evolve diagnostic] session:send test" }); diag.sessionSendTest = { ok: true, result: r }; }
-      else diag.sessionSendTest = { skipped: "no sessionPath provided in input" };
+      const target = normalizeSessionTarget(input);
+      if (target.sessionId || target.sessionRef || target.sessionPath) {
+        const payload = { text: "[self-evolve diagnostic] session:send test" };
+        if (target.sessionId) payload.sessionId = target.sessionId;
+        if (target.sessionRef) payload.sessionRef = target.sessionRef;
+        if (target.sessionPath) payload.sessionPath = target.sessionPath;
+        const r = await ctx.bus.request("session:send", payload);
+        diag.sessionSendTest = { ok: true, payload, result: r };
+      } else diag.sessionSendTest = { skipped: "no session target provided in input" };
     } catch (e) { diag.sessionSendTest = { ok: false, error: e.message, stack: e.stack?.slice(0, 300) }; }
     return JSON.stringify(diag, null, 2);
   },
 };
-const tool = defineTool({
-  name: "self_learning_control",
-  description: "Review and control the runtime self-learning engine: list patterns, approve/reject hints, update injection config, or roll back the generated skill.",
-  parameters: {
-    type: "object",
-    properties: {
-      action: {
-        type: "string",
-        enum: Object.keys(HANDLERS),
-        description: "Control action to run.",
-      },
-      id: { type: "string", description: "Pattern id for approve/reject." },
-      proposalId: { type: "string", description: "Proposal id for show/apply/reject proposal actions." },
-      taskId: { type: "string", description: "Agent task id for agent task show/approve/reject/resume actions." },
-      candidateId: { type: "string", description: "Cross-project transfer candidate id for transfer registry actions." },
-      benchmarkId: { type: "string", description: "Optional benchmark scenario id for run_benchmarks." },
-      benchmarkOutputDir: { type: "string", description: "Optional output directory for benchmark reports." },
-      benchmarkRunsDir: { type: "string", description: "Optional benchmark-runs directory for audit dashboard lookup." },
-      benchmarkReportPath: { type: "string", description: "Optional explicit benchmark-report.json path for audit dashboard lookup." },
-      releaseOutputDir: { type: "string", description: "Optional output directory for release readiness reports." },
-      projectRoot: { type: "string", description: "Optional source checkout root for release/benchmark actions." },
-      sourceRoot: { type: "string", description: "Alias of projectRoot for runtime package source checkout resolution." },
-      candidate: { type: "object", description: "Cross-project transfer candidate object for register_transfer_candidate." },
-      validationStatus: { type: "string", enum: ["passed", "failed"], description: "Target validation status for record_transfer_validation." },
-      evidence: { type: "array", items: { type: "string" }, description: "Validation evidence lines for transfer registry actions." },
-      requestId: { type: "string", description: "Approval request id for agent task approval actions." },
-      reason: { type: "string", description: "Optional reason for proposal rejection." },
-      status: { type: "string", description: "Optional proposal status filter: pending, applied, or rejected." },
-      format: { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." },
-      governanceProfile: { type: "string", enum: ["conservative", "balanced", "autonomous"], description: "Governance policy profile to apply." },
-      limit: { type: "number", description: "Maximum number of events/reviews to return for list actions." },
-      autoInjectHighConfidence: { type: "boolean" },
-      autoApproveHighConfidence: { type: "boolean" },
-      minInjectScore: { type: "number" },
-      minInjectCount: { type: "number" },
-      decayHalfLifeDays: { type: "number" },
-      includePendingPreferences: { type: "boolean" },
-      learnFromUsage: { type: "boolean" },
-      includeUsageInAdvisorPrompt: { type: "boolean" },
-      officialMemoryBridgeEnabled: { type: "boolean" },
-      officialMemoryBridgeMaxResults: { type: "number" },
-      durableMemoryMaxCount: { type: "number" },
-      largeUsageTokenThreshold: { type: "number" },
-      officialUtilityModelDisplay: { type: "string" },
-      modelAdvisorEnabled: { type: "boolean" },
-      modelAdvisorSource: { type: "string", enum: ["official", "private", "off"] },
-      modelAdvisorBaseUrl: { type: "string" },
-      modelAdvisorApiKey: { type: "string" },
-      modelAdvisorModel: { type: "string" },
-      modelAdvisorMaxTokens: { type: "number" },
-      modelAdvisorMinIntervalMinutes: { type: "number" },
-      workStatusEnabled: { type: "boolean" },
-      workStatusText: { type: "string" },
-      proposalChatNotificationsEnabled: { type: "boolean" },
-      requireReviewForAutoApply: { type: "boolean" },
-      semanticSearchEnabled: { type: "boolean" },
-      semanticEmbeddingBaseUrl: { type: "string" },
-      semanticEmbeddingApiKey: { type: "string" },
-      semanticEmbeddingModel: { type: "string" },
-      semanticCacheMaxEntries: { type: "number" },
-    },
-    required: ["action"],
-  },
-  async execute(input = {}, ctx) {
-    const p = toolPaths(ctx);
-    const config = loadLearnerConfig(p.configPath, { persist: true });
-    const patterns = readJson(p.patternsPath, []);
-    const handler = HANDLERS[input.action];
-    if (!handler) throw new Error(`unknown action: ${input.action}`);
-    return await handler(input, p, config, patterns, ctx);
-  },
-});
+export const name = "self_learning_control";
 
-export const { name, description, parameters, execute } = tool;
+export const description = "Review and control the runtime self-learning engine: list patterns, approve/reject hints, update injection config, or roll back the generated skill.";
+
+const READ_ONLY_CONTROL_ACTIONS = new Set([
+  "status", "list", "list_proposals", "show_proposal", "review_panel", "list_reviews",
+  "list_events", "event_summary", "verify_event_log", "list_agent_tasks", "show_agent_task",
+  "list_transfer_candidates", "show_transfer_candidate", "list_skill_candidates", "list_active_skills",
+  "doctor", "list_policy_profiles", "diagnose_bus",
+]);
+
+const EXTERNAL_MODEL_ACTIONS = new Set([
+  "run_model_advisor",
+]);
+
+const FILE_OUTPUT_ACTIONS = new Set([
+  "run_benchmarks",
+  "export_audit_bundle",
+  "generate_audit_dashboard",
+  "release_readiness",
+]);
+
+const REVIEW_QUEUE_ACTIONS = new Set([
+  "preview_proposal",
+  "validate_proposal",
+]);
+
+const LOCAL_STATE_MUTATION_ACTIONS = new Set([
+  "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs",
+  "apply_proposal", "reject_proposal", "approve_review", "reject_review", "apply_review",
+  "approve_agent_task", "reject_agent_task", "cancel_agent_task", "resume_agent_task",
+  "register_transfer_candidate", "record_transfer_validation", "expire_transfer_candidate",
+  "run_skill_promotion_loop", "set_policy_profile", "trust_project_scripts",
+]);
+
+function describeControlSideEffect(input = {}) {
+  const action = typeof input.action === "string" ? input.action : "unknown";
+  if (READ_ONLY_CONTROL_ACTIONS.has(action)) {
+    return {
+      kind: "read",
+      summary: `Read runtime learner state for control action: ${action}.`,
+      ruleId: `runtime-learner-control-${action}`,
+    };
+  }
+  if (FILE_OUTPUT_ACTIONS.has(action)) {
+    return {
+      kind: "plugin_output",
+      summary: `Generate runtime learner audit, benchmark, or release-readiness output for action: ${action}.`,
+      ruleId: `runtime-learner-control-${action}`,
+    };
+  }
+  if (REVIEW_QUEUE_ACTIONS.has(action)) {
+    return {
+      kind: "plugin_state_mutation",
+      summary: `Update runtime learner review queue or event log while preparing proposal review action: ${action}.`,
+      ruleId: `runtime-learner-control-${action}`,
+    };
+  }
+  if (EXTERNAL_MODEL_ACTIONS.has(action)) {
+    return {
+      kind: "external_model_or_benchmark_run",
+      summary: `Run runtime learner analysis that may call configured model/network providers: ${action}.`,
+      ruleId: `runtime-learner-control-${action}`,
+    };
+  }
+  return {
+    kind: LOCAL_STATE_MUTATION_ACTIONS.has(action) ? "plugin_state_mutation" : "external_side_effect",
+    summary: `Mutate runtime learner governance, memory, proposals, skills, approvals, configuration, or external state: ${action}.`,
+    ruleId: `runtime-learner-control-${action}`,
+  };
+}
+
+export const sessionPermission = {
+  kind: "external_side_effect",
+  describeSideEffect: describeControlSideEffect,
+};
+
+export const parameters = {
+  type: "object",
+  properties: {
+    action: {
+      type: "string",
+      enum: Object.keys(HANDLERS),
+      description: "Control action to run.",
+    },
+    id: { type: "string", description: "Pattern id for approve/reject." },
+    proposalId: { type: "string", description: "Proposal id for show/apply/reject proposal actions." },
+    taskId: { type: "string", description: "Agent task id for agent task show/approve/reject/resume actions." },
+    candidateId: { type: "string", description: "Cross-project transfer candidate id for transfer registry actions." },
+    benchmarkId: { type: "string", description: "Optional benchmark scenario id for run_benchmarks." },
+    benchmarkOutputDir: { type: "string", description: "Optional output directory for benchmark reports." },
+    benchmarkRunsDir: { type: "string", description: "Optional benchmark-runs directory for audit dashboard lookup." },
+    benchmarkReportPath: { type: "string", description: "Optional explicit benchmark-report.json path for audit dashboard lookup." },
+    releaseOutputDir: { type: "string", description: "Optional output directory for release readiness reports." },
+    projectRoot: { type: "string", description: "Optional source checkout root for release/benchmark actions." },
+    sourceRoot: { type: "string", description: "Alias of projectRoot for runtime package source checkout resolution." },
+    candidate: { type: "object", description: "Cross-project transfer candidate object for register_transfer_candidate." },
+    validationStatus: { type: "string", enum: ["passed", "failed"], description: "Target validation status for record_transfer_validation." },
+    evidence: { type: "array", items: { type: "string" }, description: "Validation evidence lines for transfer registry actions." },
+    requestId: { type: "string", description: "Approval request id for agent task approval actions." },
+    reason: { type: "string", description: "Optional reason for proposal rejection." },
+    status: { type: "string", description: "Optional proposal status filter: pending, applied, or rejected." },
+    format: { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." },
+    governanceProfile: { type: "string", enum: ["conservative", "balanced", "autonomous"], description: "Governance policy profile to apply." },
+    limit: { type: "number", description: "Maximum number of events/reviews to return for list actions." },
+    autoInjectHighConfidence: { type: "boolean" },
+    autoApproveHighConfidence: { type: "boolean" },
+    minInjectScore: { type: "number" },
+    minInjectCount: { type: "number" },
+    decayHalfLifeDays: { type: "number" },
+    includePendingPreferences: { type: "boolean" },
+    learnFromUsage: { type: "boolean" },
+    includeUsageInAdvisorPrompt: { type: "boolean" },
+    officialMemoryBridgeEnabled: { type: "boolean" },
+    officialMemoryBridgeMaxResults: { type: "number" },
+    durableMemoryMaxCount: { type: "number" },
+    largeUsageTokenThreshold: { type: "number" },
+    officialUtilityModelDisplay: { type: "string" },
+    modelAdvisorEnabled: { type: "boolean" },
+    modelAdvisorSource: { type: "string", enum: ["official", "private", "off"] },
+    modelAdvisorBaseUrl: { type: "string" },
+    modelAdvisorApiKey: { type: "string" },
+    modelAdvisorModel: { type: "string" },
+    modelAdvisorMaxTokens: { type: "number" },
+    modelAdvisorMinIntervalMinutes: { type: "number" },
+    workStatusEnabled: { type: "boolean" },
+    workStatusText: { type: "string" },
+    proposalChatNotificationsEnabled: { type: "boolean" },
+    requireReviewForAutoApply: { type: "boolean" },
+    semanticSearchEnabled: { type: "boolean" },
+    semanticEmbeddingBaseUrl: { type: "string" },
+    semanticEmbeddingApiKey: { type: "string" },
+    semanticEmbeddingModel: { type: "string" },
+    semanticCacheMaxEntries: { type: "number" },
+  },
+  required: ["action"],
+};
+
+export async function execute(input = {}, ctx) {
+  const p = toolPaths(ctx);
+  const config = loadLearnerConfig(p.configPath, { persist: true });
+  const patterns = readJson(p.patternsPath, []);
+  const handler = HANDLERS[input.action];
+  if (!handler) throw new Error(`unknown action: ${input.action}`);
+  const result = await handler(input, p, config, patterns, ctx);
+  if (typeof result === "string") {
+    return { content: [{ type: "text", text: result }] };
+  }
+  if (result && typeof result === "object" && result.content) {
+    return result;
+  }
+  return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+}

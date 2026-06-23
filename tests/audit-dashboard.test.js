@@ -8,6 +8,7 @@ import { createAuditTrace, appendAuditEvent, saveAuditTrace } from "../lib/audit
 import { saveAgentTaskState } from "../lib/agent-task-store.js";
 import { registerTransferCandidate, recordTransferValidation } from "../lib/transfer-registry.js";
 import { saveActiveSkills, saveSkillCandidates } from "../lib/skill-promotion-loop.js";
+import { parseToolResult } from "./_test-utils.js";
 
 function tmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "hanako-audit-dashboard-"));
@@ -128,7 +129,7 @@ test("self_learning_control exposes audit dashboard generation", async () => {
     const learnerDir = path.join(home, "self-learning");
     fs.mkdirSync(learnerDir, { recursive: true });
     seedBenchmark(learnerDir);
-    const result = JSON.parse(await executeControl({ action: "generate_audit_dashboard", id: "control-test" }, { pluginDir: process.cwd() }));
+    const result = parseToolResult(await executeControl({ action: "generate_audit_dashboard", id: "control-test" }, { pluginDir: process.cwd() }));
     assert.equal(result.ok, true);
     assert.equal(result.status, "generated");
     assert.equal(fs.existsSync(result.mdPath), true);

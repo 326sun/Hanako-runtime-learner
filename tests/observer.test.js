@@ -228,6 +228,28 @@ describe("SessionObserver — event routing", () => {
       // No error thrown, no session created
       assert.equal(sessions.size, 0);
     });
+
+    it("tracks turns by stable sessionId when the host provides session metadata", () => {
+      const sessions = new Map();
+      const runtimeState = { pendingAdoptionChecks: new Map(), sessionActivityCount: 0, sessionTargets: new Map() };
+      const mocks = setupMocks({ sessions, runtimeState });
+      const observer = createObserver(mocks);
+
+      let eventCallback;
+      observer.subscribe({
+        subscribe(cb) { eventCallback = cb; return () => {}; },
+      }, { learnFromUsage: false });
+
+      eventCallback(
+        { type: "session_user_message", message: { content: "remember this" } },
+        { sessionId: "sess-42", sessionRef: { tabId: "tab-1" }, sessionPath: "sessions/test.jsonl" }
+      );
+
+      const turn = sessions.get("sid:sess-42");
+      assert.ok(turn);
+      assert.equal(turn.sessionPath, "sessions/test.jsonl");
+      assert.equal(runtimeState.sessionTargets.get("sid:sess-42").sessionId, "sess-42");
+    });
   });
 
   describe("tool-end semantic handlers", () => {

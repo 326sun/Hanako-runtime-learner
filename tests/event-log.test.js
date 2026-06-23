@@ -5,6 +5,7 @@ import os from "os";
 import path from "path";
 import { appendEvent, eventLogPath, readEvents, verifyEventLog } from "../lib/event-log.js";
 import { execute as executeControl } from "../tools/control.js";
+import { parseToolResult } from "./_test-utils.js";
 
 const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "event-log-test-"));
 
@@ -66,7 +67,7 @@ describe("event log hash chain", () => {
       const learnerDir = path.join(home, "self-learning");
       appendEvent(learnerDir, { type: "policy.applied", entityType: "config", entityId: "governanceProfile", summary: "Applied policy" });
 
-      const result = JSON.parse(await executeControl({ action: "verify_event_log" }));
+      const result = parseToolResult(await executeControl({ action: "verify_event_log" }));
       assert.equal(result.ok, true);
       assert.equal(result.events, 1);
       assert.equal(result.brokenAt, null);

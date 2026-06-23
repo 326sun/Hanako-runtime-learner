@@ -2,6 +2,52 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.x` 为 LTS 维护线，因此该阶段的记录重点放在缺陷修复、审计加固、性能整理和发布治理，不再扩张自动化边界。
 
+## 4.3.22
+
+- **新增自学习控制台（`chat.surface`，Hanako v0.344+）**：新增只读工具 `self_learning_console`，把"最近活动 + 待处理提案"快照投递进一条插件自有的 `plugin_private` 会话，并以原生 `chat.surface` transcript 卡片在当前聊天内嵌展示，可点开滚动查看历史快照。这是 UX/呈现层的可选增强，**不扩张自动化边界**：控台只读、由用户显式调用工具触发，不自动应用任何动作、不在后台主动推送。
+  - 会话懒创建、归插件所有（`ownerPluginId`）、`visibility: "plugin_private"`，sessionId 持久化到 `<dataDir>/console-state.json` 并复用；宿主提供 `session:get` 时校验存活、失效自动重建。
+  - **优雅降级、不抬 `minAppVersion`（维持 `0.330.0`）**：探测 `session:create` 不可用（旧宿主）时工具返回纯文本状态、不发卡片；旧渲染器忽略未知 `chat.surface` 卡片类型（前向兼容）。
+  - 新增隔离模块 `lib/console-session.js`（`ensureConsoleSession` 生命周期 + `buildSnapshot` 文本拼装），工具壳 `tools/console.js` 仅做接线；快照投递复用现有 `session-messenger`（按 `sessionId` 优先构造 payload），不耦合 observer/advisor 后台路径。
+- 测试总数 `594 -> 606`：新增 `console-session`（8）与 `console-tool`（4）回归——覆盖懒创建/复用、`session:create` 不可用与抛错降级、`session:get` 失效重建、卡片 shape（`pluginId`/`sessionId`/`sessionRef`，`sessionPath` 仅在宿主提供时带）、快照非空/含活动/长度封顶；发布门测试基线默认同步至 606。
+- 边界未放宽：新增的是只读呈现工具与插件私有会话生命周期，无新增自动放行或危险动作。
+
+## 4.3.21
+
+- 对照 Hanako 宿主新测试版协议 `v0.344.3`（`liliMozi/openhanako` 的 `core/plugin-context.ts`、`packages/plugin-runtime`、`server/plugin-chat-surface.ts`、`hub/event-bus-capabilities.ts`）做 contract-level 核对。该版本对本插件实际用到的面（`ctx.bus` capability 调用、`ctx.config`、直连 `fetch`）基本是增量；新增的 ResourceIO `resource.watch`、UI `resource.*`、`chat.surface`、route `getPluginRequestContext` 均落在本插件未触及的区域。核对确认 capability 探测（`getCapability().available !== false` → `hasHandler` 回退）与 manifest 权限声明（`usage.read`）仍正确——`createPluginBusProxy` 对插件仅强制 `usage.read`，`session:send`/`model:sample-text` 在 `full-access` 下放行，无需新增 permission，`minAppVersion` 维持 `0.330.0`。
+- **会话身份对齐 v0.344 语义（`sessionId`/`sessionRef` 为权威，`sessionPath` 仅为旧 locator）**：
+  - **`recordUsage` 句柄丢身份（修复）**：post-flush 管线的 `sessionHandle` 原先用 `session.sessionPath || sessionIdentityKey(session)`，当宿主提供 `sessionId` 时句柄退化为原始 path，`resolveSessionTarget` 查 `sessionTargets`（observer 按 `sessionIdentityKey` 注册）必然 miss，回退为字符串后只剩 `sessionPath`，使下游整理/通知丢失 `sessionId`/`sessionRef`。改为统一用 `sessionIdentityKey(session)`，与 observer 注册键一致并保证完整 target round-trip，同时统一了通知冷却 Map 的键。
+  - **`SessionTurn` 污染 `sessionPath`（加固）**：path 缺失时构造器会把合成身份键（`sid:`/`sref:`）兜底塞进 `sessionPath`，污染 scope 推断与 dedup payload。`sessionPath` 现在只保留真实文件定位或 `null`；path 形态的旧 key 仍按 path 接受。
+- **修复 `lib/session-messenger.js` 中文字符串 UTF-8 损坏（缺陷）**：`formatProposalNotification` 的提案通知正文与 `notifyWorkStatus` 的 `workStatusText` fallback 在磁盘上为乱码，开启对话提案通知/工作状态时用户会看到不可读文本。已按原意重建为正确 UTF-8 文案。
+- 测试总数 `578 -> 594`：纳入新宿主 payload 的稳定会话标识捕获回归与 `SessionTurn` 不污染 `sessionPath` 的回归；发布门测试基线默认同步至 594。
+- 边界未放宽：纯 contract-level 对齐与缺陷修复，无新增自动化能力。
+
+## 4.3.20
+
+- 对照 Hanako 宿主权威协议（`liliMozi/openhanako` 的 `core/plugin-context.ts`、`core/plugin-config.ts`、`packages/plugin-runtime`）做 contract-level 收尾，修复两处 v0.341+ 适配引入的副作用：
+  - **`config.json` 与宿主插件配置存储撞车（数据完整性）**：宿主用 `ctx.dataDir` 同目录持久化自己的 `config.json`（`{schemaVersion, global, agents, sessions}` 结构），而本插件运行时也把扁平 config 写在 `<dataDir>/config.json`，两个写入方会互相覆盖。运行时私有配置改名为 `runtime-config.json`，`config.json` 归还宿主；新增 `lib/runtime-config-path.js` 做一次性迁移（旧宿主遗留的扁平 `config.json` 搬到 `runtime-config.json`，宿主 `{global,...}` 形状的 `config.json` 绝不触碰）。
+  - **`network.fetch` 声明式通道对任意用户端点不可用（功能失效）**：宿主 `ctx.network.fetch` 要求静态 `allowedHosts` 白名单，裸 `"*"` 不匹配任何 host；而整理模型/语义 embedding 的端点是用户任意配置的，无法在 manifest 枚举。改回直接 `fetch`（宿主明确保留 legacy 直连兼容），并移除 manifest 里失效的 `network` 块与未使用的 `network.fetch` capability。
+- 测试总数 `570 -> 578`：新增 `runtime-config.json` 迁移回归（6 项）、整理模型对任意端点使用直连 fetch 的回归、manifest 不声明失效 network 通道的回归；`runtime-e2e` 的 `ctx.dataDir` 断言改为校验运行时写 `runtime-config.json` 且不创建 `config.json`。
+- 边界未放宽：纯 contract-level 对齐与缺陷修复，无新增自动化能力。
+
+## 4.3.19
+
+- 收口 Hanako v0.341+ 宿主数据目录语义：主运行时不再在模块加载时固定 legacy `learnerDir()`，而是在 `onload` 中按 `ctx.dataDir` 生成运行路径；旧宿主继续回退 legacy 目录。新增回归确保 `config.json` 与 `activity_log.jsonl` 写入宿主提供的数据目录，不误写 `HANA_HOME/self-learning`。
+- 加强插件权限审计上下文：`self_learning_control` 与 `self_learning_open_dir` 保持 reviewer-bound 的保守工具级权限，同时补充 `describeSideEffect()`，按 action 区分只读查询、审计/benchmark/release 输出、review queue 写入、外部模型整理和本地治理状态变更，避免 v0.341+ reviewer 只能看到泛泛副作用。
+- 测试总数 `568 -> 570`，新增 `ctx.dataDir` 主运行时回归和工具 session side-effect 分类回归。
+- 边界未放宽：`self_learning_control` 仍声明为 `external_side_effect`，新增描述只提升审计可见性，不扩大自动放行范围。
+
+## 4.3.18
+
+- 适配 Hanako 宿主 v0.341.x 的接口变更，向后兼容旧宿主：
+  - **`ctx.config` 方法化存储**：宿主由普通对象改为 `getAll()/setMany()/getSchema()` 方法存储。`normalizeConfig` 统一两套 API；`applyPanelConfig` 与 `panelCredentialsToStore` 现在先经 `getAll()` 取值——修复了新宿主下用户在设置面板输入的 API Key 被静默丢弃的破坏点。
+  - **`ctx.network.fetch`**：模型整理与语义 embedding 的 HTTP 请求优先走宿主声明式网络通道（manifest `network`），旧宿主回退到全局 `fetch`；二者统一为标准 WHATWG `fetch(url, options)` 签名。
+  - **工具返回结构化格式**：所有工具由返回纯字符串改为 `{ content: [{ type: "text", text }], details }`；新增 `sessionPermission` 声明（只读工具 `readOnly`，副作用工具 `external_side_effect`）。
+  - **`register()` 生命周期清理**：onload 通过宿主 `register()` 登记 disposable，保证即使 onunload 被跳过也能有序释放订阅与落盘；旧宿主无此回调时安全跳过。
+  - **`ctx.dataDir`**：工具与运行时优先使用宿主提供的数据目录。
+  - manifest 新增 `sensitiveCapabilities` 与 `network` 声明，`minAppVersion` 提升至 `0.330.0`。
+- 测试总数 `566 -> 568`，新增 method-based config 凭证桥接回归；工具测试改用 `parseToolResult/unwrapToolResult` 适配结构化返回。
+- 边界未放宽：纯协议兼容适配，无新增自动化能力。
+
 ## 4.3.17
 
 - 事件日志锁现在会回收崩溃写入方遗留的陈旧 `.event-log.lock`：单次追加只会短暂持锁，故 mtime 超过 30 秒的锁判定为孤儿并原子重建，避免后续每次 `appendEvent` 都在事件循环上同步空等满 5 秒锁超时后抛错。`wx` 原子创建仍保证并发重建时只有一个持有者。

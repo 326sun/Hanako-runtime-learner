@@ -182,6 +182,49 @@ describe("doctor · privacy_retention", () => {
   });
 });
 
+describe("doctor · session identity coverage", () => {
+  it("reports legacy-only session logs when stable identifiers are absent", () => {
+    const r = diagnose({
+      patterns: [],
+      logs: [{
+        name: "experience_log.jsonl",
+        oldestMs: NOW - 5 * 86_400_000,
+        sessionCoverage: { total: 12, withStableIdentity: 0, legacyPathOnly: 12, unknown: 0 },
+      }],
+      now: NOW,
+    });
+    assert.ok(types(r).includes("legacy_session_logs"));
+    assert.equal(r.summary.sessionIdentityCoveragePct, 0);
+    assert.equal(r.summary.legacySessionRows, 12);
+  });
+
+  it("warns when stable session identity coverage is low on sampled logs", () => {
+    const r = diagnose({
+      patterns: [],
+      logs: [
+        {
+          name: "turns.jsonl",
+          oldestMs: NOW - 2 * 86_400_000,
+          sessionCoverage: { total: 40, withStableIdentity: 12, legacyPathOnly: 24, unknown: 4, coverageRatio: 0.3 },
+        },
+        {
+          name: "activity_log.jsonl",
+          oldestMs: NOW - 2 * 86_400_000,
+          sessionCoverage: { total: 10, withStableIdentity: 8, legacyPathOnly: 2, unknown: 0, coverageRatio: 0.8 },
+        },
+      ],
+      now: NOW,
+    });
+    assert.ok(types(r).includes("session_identity_coverage"));
+    assert.equal(r.summary.sampledLogRows, 50);
+    assert.equal(r.summary.withStableIdentity, 20);
+    assert.equal(r.summary.unknownSessionRows, 4);
+    assert.equal(r.summary.sessionIdentityCoveragePct, 40);
+    assert.equal(r.summary.byFile.length, 2);
+    assert.equal(r.summary.byFile[0].name, "turns.jsonl");
+  });
+});
+
 describe("doctor · scope_leakage", () => {
   it("notes injectable patterns spanning multiple concrete projects", () => {
     const r = diagnose({
@@ -224,11 +267,22 @@ describe("doctor · evidence_missing", () => {
 
 describe("doctor · formatReport", () => {
   it("renders a human-readable report and never claims to modify files", () => {
-    const r = diagnose({ patterns: [base({ id: "wf:a", desc: "x", fix: "y" }), base({ id: "wf:b", desc: "x", fix: "y" })], now: NOW });
+    const r = diagnose({
+      patterns: [base({ id: "wf:a", desc: "x", fix: "y" }), base({ id: "wf:b", desc: "x", fix: "y" })],
+      logs: [{
+        name: "activity_log.jsonl",
+        oldestMs: NOW - 2 * 86_400_000,
+        sessionCoverage: { total: 10, withStableIdentity: 8, legacyPathOnly: 2, unknown: 0 },
+      }],
+      now: NOW,
+    });
     const text = formatReport(r);
     assert.match(text, /Self-Learning Doctor/);
     assert.match(text, /Read-only diagnostic/);
     assert.match(text, /duplicate_patterns/);
     assert.match(text, /Priority actions/);
+    assert.match(text, /sessionCoverage=80%/);
+    assert.match(text, /Session Coverage/);
+    assert.match(text, /activity_log\.jsonl: stable=8\/10 \(80%\)/);
   });
 });

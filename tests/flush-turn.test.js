@@ -109,6 +109,21 @@ describe("flushTurn integration", () => {
       turn.touch();
       assert.ok(turn.lastTouched > before);
     });
+
+    it("never leaks a synthetic identity key into sessionPath", () => {
+      // v0.344 hardening: when the host supplies sessionId/sessionRef, the turn
+      // key is an identity key (sid:/sref:). It must not pollute sessionPath,
+      // which is a real filesystem locator or null.
+      assert.equal(new SessionTurn("sid:abc123").sessionPath, null);
+      assert.equal(new SessionTurn("sref:tab-1").sessionPath, null);
+      // A path-shaped legacy key is still accepted as a path.
+      assert.equal(new SessionTurn("sessions/test.jsonl").sessionPath, "sessions/test.jsonl");
+      // A real sessionPath on the target always wins over the key.
+      assert.equal(
+        new SessionTurn("sid:abc123", { sessionId: "abc123", sessionPath: "sessions/real.jsonl" }).sessionPath,
+        "sessions/real.jsonl",
+      );
+    });
   });
 
   describe("error classification", () => {

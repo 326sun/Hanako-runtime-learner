@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { usageDedupKey, normalizeSeenIds } from "../lib/helpers.js";
+import { summarizeUsageEntry } from "../lib/usage-pipeline.js";
 
 const summary = {
   date: "2026-06-08T10:00:00.000Z",
@@ -56,5 +57,21 @@ describe("normalizeSeenIds", () => {
 
   it("keeps only non-empty string ids within cap", () => {
     assert.deepEqual(normalizeSeenIds(["a", "", 1, "b", "c"], { cap: 2 }), ["b", "c"]);
+  });
+});
+
+describe("summarizeUsageEntry", () => {
+  it("preserves stable session identifiers from new host payloads", () => {
+    const result = summarizeUsageEntry({
+      endedAt: summary.date,
+      status: "success",
+      model: { provider: "openai", modelId: "gpt-5" },
+      source: { subsystem: "chat", operation: "completion", trigger: "user" },
+      usage: { totalTokens: 1234 },
+      attribution: { sessionId: "sess-1", sessionRef: { tabId: "tab-1" }, sessionPath: "D:/sessions/a.jsonl" },
+    });
+    assert.equal(result.sessionId, "sess-1");
+    assert.deepEqual(result.sessionRef, { tabId: "tab-1" });
+    assert.equal(result.sessionPath, "D:/sessions/a.jsonl");
   });
 });

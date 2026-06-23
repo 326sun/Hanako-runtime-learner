@@ -1,7 +1,5 @@
-import path from "path";
 import https from "https";
-import { readJson, memoryStrength, learnerDir as resolveLearnerDir, DEFAULT_CONFIG, knowledgeTier, mergeConfig } from "../lib/common.js";
-import { defineTool } from "../lib/hana-runtime-compat.js";
+import { readJson, memoryStrength, DEFAULT_CONFIG, knowledgeTier, mergeConfig } from "../lib/common.js";
 import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
 import { MemoryIndex, tokenizeText } from "../lib/memory-index.js";
 import { admitMemory } from "../lib/memory-gate.js";
@@ -10,9 +8,8 @@ import { previewEvidence } from "../lib/evidence.js";
 import { factMemoryItems } from "../lib/facts.js";
 import { resolveSemanticConfig, embedTexts, cosineSim, rrfScores } from "../lib/embeddings.js";
 import { mergeCredentials } from "../lib/credentials.js";
+import { toolPaths, loadConfig } from "./_shared.js";
 
-const PATTERNS_FILE = path.join(resolveLearnerDir(), "patterns.json");
-const CONFIG_FILE = path.join(resolveLearnerDir(), "config.json");
 const hasOwn = Object.prototype.hasOwnProperty;
 
 // Cross-language synonym table for mixed CN/EN search expansion. Applied on top
@@ -274,127 +271,126 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
   return { results, queryScope };
 }
 
-const tool = defineTool({
-  name: "self_learning_search",
-  description: "Search learned patterns by keyword, type, context, or task category. Scope-aware retrieval: CJK-aware BM25 + memory gate (rejects cross-project / expired / superseded / low-confidence) + relation & memory-strength rerank.",
-  parameters: {
-    type: "object",
-    properties: {
-      query: { type: "string", description: "Search keywords (e.g. 'coding', 'preference', 'web search workflow', 'paper writing')" },
-      type: { type: "string", description: "Filter by pattern type: workflow, preference, error, or all (default)" },
-      taskType: { type: "string", description: "Filter by task context: file_management, coding, research, planning, or general" },
-      project: { type: "string", description: "Scope the search to a project. Cross-project memories are blocked unless global." },
-      limit: { type: "number", description: "Maximum results, default 5" },
-    },
-    required: ["query"],
+export const name = "self_learning_search";
+
+export const description = "Search learned patterns by keyword, type, context, or task category. Scope-aware retrieval: CJK-aware BM25 + memory gate (rejects cross-project / expired / superseded / low-confidence) + relation & memory-strength rerank.";
+
+export const sessionPermission = { readOnly: true };
+
+export const parameters = {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "Search keywords (e.g. 'coding', 'preference', 'web search workflow', 'paper writing')" },
+    type: { type: "string", description: "Filter by pattern type: workflow, preference, error, or all (default)" },
+    taskType: { type: "string", description: "Filter by task context: file_management, coding, research, planning, or general" },
+    project: { type: "string", description: "Scope the search to a project. Cross-project memories are blocked unless global." },
+    limit: { type: "number", description: "Maximum results, default 5" },
   },
-  async execute(input = {}) {
-    const query = input.query || "";
-    const typeFilter = input.type || null;
-    const taskFilter = input.taskType || null;
-    const projectFilter = input.project || null;
-    const limit = Math.min(input.limit || 5, 10);
+  required: ["query"],
+};
 
-    const patterns = (readJson(PATTERNS_FILE, []) || []).filter((p) => p && p.id);
-    // Merge time-aware facts as retrieval candidates. Superseded/expired facts
-    // are carried in but rejected by the gate (status/validTo), so the old value
-    // of a corrected fact never resurfaces.
-    const factItems = factMemoryItems(resolveLearnerDir());
-    const allPatterns = [...patterns, ...factItems];
-    const prepared = prepareSearch(allPatterns, { type: typeFilter, taskType: taskFilter });
-    const config = mergeCredentials(mergeConfig(readJson(CONFIG_FILE, {})));
-    const officialMemory = config.officialMemoryBridgeEnabled
-      ? searchOfficialMemory(query, {
-        limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)),
-        project: projectFilter,
-      })
-      : [];
+export async function execute(input = {}, ctx) {
+  const p = toolPaths(ctx);
+  const dataDir = p.learnerDir;
+  const patternsFile = p.patternsPath;
+  const query = input.query || "";
+  const typeFilter = input.type || null;
+  const taskFilter = input.taskType || null;
+  const projectFilter = input.project || null;
+  const limit = Math.min(input.limit || 5, 10);
 
-    // Node.js HTTPS-based fetch for sandbox environments where global fetch
-    // may not be exposed or may fail (e.g. Hana plugin runtime).
-    const nodeFetch = (url, init = {}) => new Promise((resolve, reject) => {
-      const u = new URL(url);
-      const opts = {
-        hostname: u.hostname,
-        port: u.port || 443,
-        path: u.pathname + u.search,
-        method: init.method || "GET",
-        headers: init.headers || {},
-        timeout: 15000,
-      };
-      const req = https.request(opts, (res) => {
-        let data = "";
-        res.on("data", (c) => data += c);
-        res.on("end", () => {
-          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => JSON.parse(data), text: () => data });
-        });
-      });
-      req.on("error", reject);
-      req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
-      if (init.body) req.write(init.body);
-      req.end();
-    });
-
-    // Optional semantic pass (v1.3). Only when enabled + endpoint configured;
-    // any failure (network/timeout) leaves `semantic` null → weighted BM25.
-    let semantic = null;
-    let semanticUsed = false;
-    if (resolveSemanticConfig(config).ok) {
-      try {
-        const probe = runSearch(allPatterns, query, {
-          config, type: typeFilter, taskType: taskFilter, project: projectFilter,
-          limit: Math.max(limit, Number(config.semanticTopK) || 50),
-          prepared,
-        }).results;
-        if (probe.length) {
-          const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, { fetchImpl: nodeFetch });
-          if (emb.ok && Array.isArray(emb.vectors[0])) {
-            const qv = emb.vectors[0];
-            semantic = new Map();
-            probe.forEach((r, i) => {
-              const v = emb.vectors[i + 1];
-              if (Array.isArray(v)) semantic.set(r.id, cosineSim(qv, v));
-            });
-            semanticUsed = semantic.size > 0;
-          }
-        }
-      } catch { /* degrade to weighted */ }
-    }
-
-    const { results, queryScope } = runSearch(allPatterns, query, {
-      config,
-      type: typeFilter,
-      taskType: taskFilter,
+  const patterns = (readJson(patternsFile, []) || []).filter((p) => p && p.id);
+  const factItems = factMemoryItems(dataDir);
+  const allPatterns = [...patterns, ...factItems];
+  const prepared = prepareSearch(allPatterns, { type: typeFilter, taskType: taskFilter });
+  const config = mergeCredentials(loadConfig(p.configPath));
+  const officialMemory = config.officialMemoryBridgeEnabled
+    ? searchOfficialMemory(query, {
+      limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)),
       project: projectFilter,
-      limit,
-      semantic,
-      prepared,
+    })
+    : [];
+
+  // Use a direct Node.js HTTPS request for the user-configured embedding
+  // endpoint. The host's declarative ctx.network.fetch channel needs a static
+  // manifest allowedHosts allowlist and cannot express the arbitrary OpenAI-
+  // compatible base URL a user supplies, so it would reject every request on
+  // v0.341+ hosts. Direct outbound requests stay compatible for this case.
+  const nodeFetch = (url, init = {}) => new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const opts = {
+      hostname: u.hostname,
+      port: u.port || 443,
+      path: u.pathname + u.search,
+      method: init.method || "GET",
+      headers: init.headers || {},
+      timeout: 15000,
+    };
+    const req = https.request(opts, (res) => {
+      let data = "";
+      res.on("data", (c) => data += c);
+      res.on("end", () => {
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => JSON.parse(data), text: () => data });
+      });
     });
+    req.on("error", reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+    if (init.body) req.write(init.body);
+    req.end();
+  });
+  const fetchImpl = nodeFetch;
 
-    if (!results.length) {
-      return JSON.stringify({
-        ok: true,
-        query,
-        queryScope,
-        count: 0,
-        results: [],
-        officialMemory,
-        hint: "No matching patterns admitted. Try broader keywords, a different taskType/project filter, or check self_learning_stats for an overview.",
-      }, null, 2);
-    }
+  let semantic = null;
+  let semanticUsed = false;
+  if (resolveSemanticConfig(config).ok) {
+    try {
+      const probe = runSearch(allPatterns, query, {
+        config, type: typeFilter, taskType: taskFilter, project: projectFilter,
+        limit: Math.max(limit, Number(config.semanticTopK) || 50),
+        prepared,
+      }).results;
+      if (probe.length) {
+        const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, { fetchImpl });
+        if (emb.ok && Array.isArray(emb.vectors[0])) {
+          const qv = emb.vectors[0];
+          semantic = new Map();
+          probe.forEach((r, i) => {
+            const v = emb.vectors[i + 1];
+            if (Array.isArray(v)) semantic.set(r.id, cosineSim(qv, v));
+          });
+          semanticUsed = semantic.size > 0;
+        }
+      }
+    } catch { /* degrade to weighted */ }
+  }
 
-    return JSON.stringify({
-      ok: true,
-      query,
-      queryScope,
-      count: results.length,
-      strategy: semanticUsed
-        ? "rrf(bm25 + semantic + relation + memoryStrength) + gate"
-        : "bm25(cjk) + gate + relation + memoryStrength",
-      results,
-      officialMemory,
-    }, null, 2);
-  },
-});
+  const { results, queryScope } = runSearch(allPatterns, query, {
+    config,
+    type: typeFilter,
+    taskType: taskFilter,
+    project: projectFilter,
+    limit,
+    semantic,
+    prepared,
+  });
 
-export const { name, description, parameters, execute } = tool;
+  const result = {
+    ok: true,
+    query,
+    queryScope,
+    count: results.length,
+    strategy: semanticUsed
+      ? "rrf(bm25 + semantic + relation + memoryStrength) + gate"
+      : "bm25(cjk) + gate + relation + memoryStrength",
+    results,
+    officialMemory,
+  };
+  if (!results.length) {
+    result.hint = "No matching patterns admitted. Try broader keywords, a different taskType/project filter, or check self_learning_stats for an overview.";
+  }
+
+  return {
+    content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    details: result,
+  };
+}

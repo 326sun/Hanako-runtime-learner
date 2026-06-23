@@ -39,6 +39,21 @@ describe("session messenger", () => {
     assert.ok(ctx.sent[0].context.beforeUser[0].text.includes("p1"));
   });
 
+  test("prefers stable session identifiers when available", async () => {
+    const ctx = makeCtx();
+    const messenger = createSessionMessenger(ctx, { proposalNotifiedIds: new Map() });
+    await messenger.notifyProposalReview(
+      { sessionId: "sess-123", sessionRef: { tabId: "tab-7" }, sessionPath: "legacy.md" },
+      [{ id: "p2", type: "code_patch", risk: "high", title: "Fix" }],
+      { proposalChatNotificationsEnabled: true },
+      { sessionKey: "sid:sess-123" },
+    );
+    assert.equal(ctx.sent.length, 1);
+    assert.equal(ctx.sent[0].sessionId, "sess-123");
+    assert.deepEqual(ctx.sent[0].sessionRef, { tabId: "tab-7" });
+    assert.equal(ctx.sent[0].sessionPath, "legacy.md");
+  });
+
   test("does not send when session:send is unavailable", async () => {
     const ctx = makeCtx({ available: false });
     const messenger = createSessionMessenger(ctx);

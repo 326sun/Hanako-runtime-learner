@@ -1,6 +1,6 @@
 # 设计目标完成矩阵
 
-当前版本：`v4.3.17`
+当前版本：`v4.3.22`
 
 ## 总体状态
 
@@ -18,7 +18,7 @@
 | 项目 | 预期 |
 |---|---|
 | `npm run check` | 通过 |
-| `npm test` | 566 个测试，561 通过，5 跳过 |
+| `npm test` | 570 个测试，565 通过，5 跳过 |
 | `npm run benchmark` | 17/17 通过 |
 | `npm run perf` | 无阈值越界 |
 | `npm run release:check` | Score 100 |

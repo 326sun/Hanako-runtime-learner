@@ -507,4 +507,23 @@ describe("readRecentJsonl", () => {
     const cutoff = Date.now() - 60_000;
     assert.deepEqual(readRecentJsonl(file, cutoff, { maxLines: 5 }).map((row) => row.id), ["recent-1", "recent-2"]);
   });
+
+  it("normalizes stable session identity fields while reading", () => {
+    const file = path.join(tmpDir, "recent-session.jsonl");
+    const recent = new Date().toISOString();
+    fs.writeFileSync(file, `${JSON.stringify({
+      id: "recent-1",
+      date: recent,
+      sessionId: "sess-1",
+      sessionRef: { tabId: "tab-1" },
+      sessionPath: "sessions/test.jsonl",
+    })}\n`, "utf-8");
+
+    const cutoff = Date.now() - 60_000;
+    const [row] = readRecentJsonl(file, cutoff, { maxLines: 5 });
+    assert.equal(row.sessionId, "sess-1");
+    assert.deepEqual(row.sessionRef, { tabId: "tab-1" });
+    assert.equal(row.sessionKey, "sid:sess-1");
+    assert.equal(row.sessionLabel, "sessions/test.jsonl");
+  });
 });

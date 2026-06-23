@@ -100,6 +100,22 @@ describe("model advisor", () => {
       assert.ok(!sentBody.includes("SECRET_USER_TEXT"), "raw user text must not be sent");
     });
 
+    it("uses direct global fetch for the user endpoint, ignoring ctx.network.fetch", async () => {
+      // The host's declarative ctx.network.fetch channel requires a static
+      // manifest allowedHosts allowlist and cannot express the arbitrary base
+      // URL a user configures, so it would reject every request on v0.341+
+      // hosts. The advisor must therefore use direct fetch for this path.
+      let globalCalled = false;
+      let networkCalled = false;
+      globalThis.fetch = async () => { globalCalled = true; return jsonResponse(); };
+      const ctx = { network: { fetch: async () => { networkCalled = true; throw new Error("ctx.network.fetch must not be used for arbitrary user endpoints"); } } };
+      const patterns = [{ id: "error:x", type: "error", status: "pending", count: 4, score: 8, desc: "d", fix: "" }];
+      const res = await advisor.runModelAdvisor({ config: baseConfig, patterns, ctx });
+      assert.equal(res.ok, true);
+      assert.equal(globalCalled, true, "direct global fetch should be used");
+      assert.equal(networkCalled, false, "ctx.network.fetch must not be used");
+    });
+
     it("keeps usage summary out of advisor prompts unless explicitly enabled", async () => {
       let sentBody = null;
       globalThis.fetch = async (_url, opts) => { sentBody = opts.body; return jsonResponse(); };

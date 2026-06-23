@@ -42,11 +42,12 @@ export class FakeEventBus {
   }
 }
 
-export function createFakeRuntimeContext({ pluginDir, bus = new FakeEventBus() } = {}) {
+export function createFakeRuntimeContext({ pluginDir, dataDir = null, bus = new FakeEventBus() } = {}) {
   const logs = [];
   const configUpdates = [];
   return {
     pluginDir,
+    ...(dataDir ? { dataDir } : {}),
     bus,
     logs,
     configUpdates,

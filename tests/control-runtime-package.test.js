@@ -4,8 +4,9 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "node:url";
-import { execute as executeControl } from "../tools/control.js";
-import { openDirectoryCommand } from "../tools/open-dir.js";
+import { execute as executeControl, sessionPermission as controlSessionPermission } from "../tools/control.js";
+import { openDirectoryCommand, sessionPermission as openDirSessionPermission } from "../tools/open-dir.js";
+import { parseToolResult } from "./_test-utils.js";
 
 function tmp(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -46,7 +47,7 @@ test("control release_readiness resolves source root metadata from a trimmed run
   const runtime = copyRuntimePackageFixture(sourceRoot);
   write(path.join(runtime, ".source-root.json"), JSON.stringify({ sourceRoot }, null, 2));
   try {
-    const result = JSON.parse(await executeControl({ action: "release_readiness", format: "json" }, { pluginDir: runtime }));
+    const result = parseToolResult(await executeControl({ action: "release_readiness", format: "json" }, { pluginDir: runtime }));
     assert.equal(result.ok, true);
     assert.equal(result.projectRoot, sourceRoot);
     assert.equal(result.projectRootSource, "metadata");
@@ -59,7 +60,7 @@ test("control release_readiness resolves source root metadata from a trimmed run
 test("control release_readiness reports unavailable instead of blocked when only a trimmed runtime package is available", async () => withHome(async () => {
   const runtime = copyRuntimePackageFixture(sourceRoot);
   try {
-    const result = JSON.parse(await executeControl({ action: "release_readiness", format: "json" }, { pluginDir: runtime }));
+    const result = parseToolResult(await executeControl({ action: "release_readiness", format: "json" }, { pluginDir: runtime }));
     assert.equal(result.ok, false);
     assert.equal(result.status, "unavailable");
     assert.match(result.reason, /Runtime plugin packages are intentionally trimmed/);
@@ -73,7 +74,7 @@ test("control run_benchmarks uses source root metadata and writes a non-empty re
   write(path.join(runtime, ".source-root.json"), JSON.stringify({ sourceRoot }, null, 2));
   const outputDir = path.join(home, "bench-out");
   try {
-    const result = JSON.parse(await executeControl({ action: "run_benchmarks", benchmarkId: "quality.node_check_ok", benchmarkOutputDir: outputDir }, { pluginDir: runtime }));
+    const result = parseToolResult(await executeControl({ action: "run_benchmarks", benchmarkId: "quality.node_check_ok", benchmarkOutputDir: outputDir }, { pluginDir: runtime }));
     assert.equal(result.ok, true);
     assert.equal(result.projectRoot, sourceRoot);
     assert.equal(result.projectRootSource, "metadata");
@@ -88,4 +89,15 @@ test("open-dir uses argument-vector command construction on Windows", () => {
   const spec = openDirectoryCommand("C:\\Users\\me\\.hanako\\self-learning", "win32");
   assert.equal(spec.command, "cmd");
   assert.deepEqual(spec.args, ["/c", "start", "", "C:\\Users\\me\\.hanako\\self-learning"]);
+});
+
+test("tools declare auditable session side effects", () => {
+  assert.equal(openDirSessionPermission.describeSideEffect().kind, "open_system_file_manager");
+
+  assert.equal(controlSessionPermission.kind, "external_side_effect");
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "status" }).kind, "read");
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "preview_proposal" }).kind, "plugin_state_mutation");
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "run_model_advisor" }).kind, "external_model_or_benchmark_run");
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "release_readiness" }).kind, "plugin_output");
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "set_config" }).kind, "plugin_state_mutation");
 });

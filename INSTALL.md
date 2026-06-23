@@ -50,10 +50,10 @@ OK    skills/self-learning/SKILL.md
 
 ## 固定版本安装
 
-如需固定到某个 release，例如 `v4.3.17`：
+如需固定到某个 release，例如 `v4.3.22`：
 
 ```powershell
-git clone --branch v4.3.17 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v4.3.22 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm run install-plugin
 ```

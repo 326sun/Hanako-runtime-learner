@@ -1,18 +1,27 @@
 /**
  * Shared tool context — eliminates repeated path construction across tools.
  * Every tool needs learnerDir + config/patterns paths; this produces them once.
+ *
+ * v0.341+: tools receive (input, ctx) where ctx.dataDir is the official
+ * plugin data directory. We prefer ctx.dataDir when available, falling back
+ * to the legacy learnerDir() for older hosts.
  */
 
 import path from "path";
 import { hanakoHome, learnerDir, loadLearnerConfig, readJson } from "../lib/common.js";
+import { runtimeConfigPath, migrateRuntimeConfigFile } from "../lib/runtime-config-path.js";
 
 export function toolPaths(ctx = null) {
-  const dir = learnerDir();
+  const dir = ctx?.dataDir || learnerDir();
   const pluginDir = ctx?.pluginDir || path.join(hanakoHome(), "plugins", "hanako-runtime-learner");
+  // Reserve <dataDir>/config.json for the host's plugin config store; our flat
+  // runtime config lives in runtime-config.json. Migrate transparently in case a
+  // tool is the activation trigger before onload runs (idempotent, never throws).
+  try { migrateRuntimeConfigFile(dir); } catch { /* best-effort */ }
   return {
     learnerDir: dir,
     pluginDir,
-    configPath: path.join(dir, "config.json"),
+    configPath: runtimeConfigPath(dir),
     patternsPath: path.join(dir, "patterns.json"),
     historyDir: path.join(dir, "skill_history"),
     proposalsDir: path.join(dir, "proposals"),
@@ -22,6 +31,7 @@ export function toolPaths(ctx = null) {
     experiencePath: path.join(dir, "experience_log.jsonl"),
     errorPath: path.join(dir, "error_log.jsonl"),
     turnsPath: path.join(dir, "turns.jsonl"),
+    activityPath: path.join(dir, "activity_log.jsonl"),
   };
 }
 
