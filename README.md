@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.3.22-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-4.3.23-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
@@ -60,7 +60,7 @@ npm run install-plugin
 固定版本安装：
 
 ```powershell
-git clone --branch v4.3.22 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v4.3.23 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm run install-plugin
 ```
@@ -210,10 +210,10 @@ npm run perf -- --json
 npm run release:check
 ```
 
-`v4.3.22` 的预期结果：
+`v4.3.23` 的预期结果：
 
 ```text
-package version: 4.3.22
+package version: 4.3.23
 npm run check: passed
 npm test: 665 tests, 660 passed, 5 skipped
 npm run benchmark: passed, 17 scenarios
@@ -240,7 +240,7 @@ npm run release:check: Score 100
 | [docs/MIGRATION_v3_to_v4.md](docs/MIGRATION_v3_to_v4.md) | v3 到 v4 迁移说明。 |
 | [docs/LTS_MAINTENANCE_PLAN.md](docs/LTS_MAINTENANCE_PLAN.md) | v4.x LTS 维护策略。 |
 | [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v4.3.22.md](docs/ACCEPTANCE-v4.3.22.md) | 当前版本验收记录。 |
+| [docs/ACCEPTANCE-v4.3.23.md](docs/ACCEPTANCE-v4.3.23.md) | 当前版本验收记录。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
 
 ## 许可证

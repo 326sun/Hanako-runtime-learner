@@ -2,6 +2,14 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.x` 为 LTS 维护线，因此该阶段的记录重点放在缺陷修复、审计加固、性能整理和发布治理，不再扩张自动化边界。
 
+## 4.3.23
+
+- 新增复杂度治理门：`lib/complexity.js` 定义 hard limit / soft target，`npm run complexity:check` 在超出 hard limit 时失败，`npm run complexity:report` 生成 `docs/COMPLEXITY_REPORT.md`。
+- 发布门纳入 `complexity.within_budget` 检查，并补充 `docs/COMPLEXITY_BUDGET.md` / `docs/COMPLEXITY_DEBT.md`，把 v4.x LTS 的模块数、单文件 LOC、import/export 数和 TODO/FIXME 预算写成可审计规则。
+- 拆分控制面热点复杂度：新增 `tools/control-parameters.js`、`tools/control-summaries.js` 和 `tools/control-handlers/*`，让 `tools/control.js` 从 712 LOC 收敛到 602 LOC，并保留行为特征回归。
+- 测试总数 `606 -> 665`：新增控制面参数、摘要、脱敏、handler characterization 与 release-readiness 复杂度门回归；README 徽章和发布门默认测试基线同步到 665。
+- 边界未放宽：本版只增加本地静态治理、文档和控制面结构整理，无新增自动放行、网络、发布或外部副作用能力。
+
 ## 4.3.22
 
 - **新增自学习控制台（`chat.surface`，Hanako v0.344+）**：新增只读工具 `self_learning_console`，把"最近活动 + 待处理提案"快照投递进一条插件自有的 `plugin_private` 会话，并以原生 `chat.surface` transcript 卡片在当前聊天内嵌展示，可点开滚动查看历史快照。这是 UX/呈现层的可选增强，**不扩张自动化边界**：控台只读、由用户显式调用工具触发，不自动应用任何动作、不在后台主动推送。
