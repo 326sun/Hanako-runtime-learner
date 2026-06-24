@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-4.3.22-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-4.3.23-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.293%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A518-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-606%2F606-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-665%2F665-success" alt="tests">
 </p>
 
 Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
@@ -60,7 +60,7 @@ npm run install-plugin
 固定版本安装：
 
 ```powershell
-git clone --branch v4.3.22 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v4.3.23 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm run install-plugin
 ```
@@ -176,10 +176,12 @@ flowchart LR
 
 ```powershell
 npm run check          # 语法与源代码检查
-npm test               # 606 个测试
+npm test               # 665 个测试
 npm run benchmark      # 17 个内置基准场景
 npm run perf           # 热路径微基准
-npm run release:check  # 发布元数据与 LTS 契约检查
+npm run complexity:check   # 复杂度预算门禁（超 hard limit 即失败）
+npm run complexity:report  # 生成 docs/COMPLEXITY_REPORT.md
+npm run release:check  # 发布元数据与 LTS 契约检查（含复杂度预算）
 ```
 
 当前热路径基线（以有界运行规模 `N=100 = MAX_PATTERN_COUNT * 2` 为准）：
@@ -208,12 +210,12 @@ npm run perf -- --json
 npm run release:check
 ```
 
-`v4.3.22` 的预期结果：
+`v4.3.23` 的预期结果：
 
 ```text
-package version: 4.3.22
+package version: 4.3.23
 npm run check: passed
-npm test: 606 tests, 601 passed, 5 skipped
+npm test: 665 tests, 665 passed, 0 skipped
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100
@@ -238,7 +240,7 @@ npm run release:check: Score 100
 | [docs/MIGRATION_v3_to_v4.md](docs/MIGRATION_v3_to_v4.md) | v3 到 v4 迁移说明。 |
 | [docs/LTS_MAINTENANCE_PLAN.md](docs/LTS_MAINTENANCE_PLAN.md) | v4.x LTS 维护策略。 |
 | [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v4.3.22.md](docs/ACCEPTANCE-v4.3.22.md) | 当前版本验收记录。 |
+| [docs/ACCEPTANCE-v4.3.23.md](docs/ACCEPTANCE-v4.3.23.md) | 当前版本验收记录。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
 
 ## 许可证

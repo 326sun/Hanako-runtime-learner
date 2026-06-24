@@ -7,12 +7,12 @@ import { listProposals, readProposal, rejectProposal, previewProposalDiff, verif
 import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
 import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
-import { readEvents, appendEvent, replayEventState, verifyEventLog } from "../lib/event-log.js";
+import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
 import { loadFacts } from "../lib/facts.js";
-import { applyPolicyProfile, listPolicyProfiles } from "../lib/policy-profiles.js";
+import { applyPolicyProfile } from "../lib/policy-profiles.js";
 import { buildAuditBundle, exportAuditBundle } from "../lib/audit-bundle.js";
 import { buildAuditDashboard, exportAuditDashboard } from "../lib/audit-dashboard.js";
 import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
@@ -26,6 +26,10 @@ import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/rel
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths } from "./_shared.js";
+import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks, validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
+import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
+import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
+import { eventHandlers } from "./control-handlers/events.js";
 
 const MAX_SKILL_HISTORY = 20;
 
@@ -54,52 +58,6 @@ function redactConfig(config = {}) {
 
 function readPluginVersion(pluginDir) {
   try { return JSON.parse(fs.readFileSync(path.join(pluginDir, "package.json"), "utf-8")).version; } catch { return "unknown"; }
-}
-
-function countByStatus(rows = [], field = "status") {
-  const counts = {};
-  for (const row of rows) {
-    const key = row?.[field] || "unknown";
-    counts[key] = (counts[key] || 0) + 1;
-  }
-  return counts;
-}
-
-function summarizeDecoratedPatterns(patterns = []) {
-  const summary = { total: 0, injectable: 0, pending: 0, approved: 0, rejected: 0 };
-  for (const pattern of patterns) {
-    summary.total += 1;
-    if (pattern.injectable) summary.injectable += 1;
-    if (pattern.status === "pending") summary.pending += 1;
-    else if (pattern.status === "approved") summary.approved += 1;
-    else if (pattern.status === "rejected") summary.rejected += 1;
-  }
-  return summary;
-}
-
-function countWaitingAgentTasks(tasks = []) {
-  let waiting = 0;
-  for (const task of tasks) {
-    if (task.state === "waiting_for_human") waiting += 1;
-  }
-  return waiting;
-}
-
-function validationNextAction(validation) {
-  return validation?.ok
-    ? "approve_review then apply_review"
-    : "fix proposal or reject_proposal";
-}
-
-function reviewPanelNextActions(panel = {}) {
-  const actions = [];
-  const blocked = panel.counts?.blockedReviews || 0;
-  const pending = panel.counts?.pendingReviews || 0;
-  if (blocked > 0) actions.push("validate blocked reviews, then fix or reject them");
-  if (pending > 0) actions.push("preview queued reviews, then approve_review or reject_review");
-  if (panel.counts?.pendingProposals > 0) actions.push("validate_proposal for pending proposals not yet reviewed");
-  if (!actions.length) actions.push("no review action needed");
-  return actions;
 }
 
 const HANDLERS = {
@@ -321,19 +279,9 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, reviews, nextAction: "show_proposal then preview_proposal" }, null, 2);
   },
 
-  list_events(input, p) {
-    return JSON.stringify({ ok: true, events: readEvents(p.learnerDir, { limit: input.limit || 50, entityId: input.id || null }) }, null, 2);
-  },
-
-  event_summary(input, p) {
-    const events = readEvents(p.learnerDir, { limit: input.limit || 5000, entityId: input.id || null });
-    return JSON.stringify({ ok: true, summary: replayEventState(events) }, null, 2);
-  },
-
-  verify_event_log(input, p) {
-    const result = verifyEventLog(p.learnerDir);
-    return JSON.stringify({ ...result, nextAction: result.ok ? "export_audit_bundle or continue" : "inspect event_log.jsonl and restore from trusted backup" }, null, 2);
-  },
+  // Event-log read-only handlers live in control-handlers/events.js
+  // (C-001 HANDLERS split — events domain): list_events, event_summary, verify_event_log.
+  ...eventHandlers,
 
   list_agent_tasks(input, p) {
     const tasks = listAgentTaskStates(p.learnerDir, { limit: input.limit || 50 });
@@ -440,24 +388,13 @@ const HANDLERS = {
     return JSON.stringify({ ok: result.ok, counts: result.counts, autoSkillFileWriteBlocked: result.autoSkillFileWriteBlocked, nextAction: "list_skill_candidates or export_audit_bundle" }, null, 2);
   },
 
-  list_skill_candidates(input, p) {
-    const store = loadSkillCandidates(p.learnerDir);
-    const candidates = store.candidates.slice(0, input.limit || 50).map((c) => ({ id: c.id, status: c.status, rule: c.rule, evidence: c.evidence, scope: c.scope, updatedAt: c.updatedAt }));
-    return JSON.stringify({ ok: true, candidates, nextAction: "run_skill_promotion_loop or list_active_skills" }, null, 2);
-  },
-
-  list_active_skills(input, p) {
-    const registry = loadActiveSkills(p.learnerDir);
-    return JSON.stringify({ ok: true, skills: registry.skills.slice(0, input.limit || 50), nextAction: "export_audit_bundle" }, null, 2);
-  },
+  // Skill-promotion & policy read-only handlers live in control-handlers/skill-policy.js
+  // (C-001 HANDLERS split pilot): list_skill_candidates, list_active_skills, list_policy_profiles.
+  ...skillPolicyHandlers,
 
   doctor(input, p) {
     const report = runDoctorFromDisk(p.learnerDir);
     return input.format === "json" ? JSON.stringify(report, null, 2) : formatReport(report);
-  },
-
-  list_policy_profiles(input, p, config) {
-    return JSON.stringify({ ok: true, profiles: listPolicyProfiles(), current: config.governanceProfile || "balanced" }, null, 2);
   },
 
   set_policy_profile(input, p, config, patterns) {
@@ -642,55 +579,7 @@ export const parameters = {
       enum: Object.keys(HANDLERS),
       description: "Control action to run.",
     },
-    id: { type: "string", description: "Pattern id for approve/reject." },
-    proposalId: { type: "string", description: "Proposal id for show/apply/reject proposal actions." },
-    taskId: { type: "string", description: "Agent task id for agent task show/approve/reject/resume actions." },
-    candidateId: { type: "string", description: "Cross-project transfer candidate id for transfer registry actions." },
-    benchmarkId: { type: "string", description: "Optional benchmark scenario id for run_benchmarks." },
-    benchmarkOutputDir: { type: "string", description: "Optional output directory for benchmark reports." },
-    benchmarkRunsDir: { type: "string", description: "Optional benchmark-runs directory for audit dashboard lookup." },
-    benchmarkReportPath: { type: "string", description: "Optional explicit benchmark-report.json path for audit dashboard lookup." },
-    releaseOutputDir: { type: "string", description: "Optional output directory for release readiness reports." },
-    projectRoot: { type: "string", description: "Optional source checkout root for release/benchmark actions." },
-    sourceRoot: { type: "string", description: "Alias of projectRoot for runtime package source checkout resolution." },
-    candidate: { type: "object", description: "Cross-project transfer candidate object for register_transfer_candidate." },
-    validationStatus: { type: "string", enum: ["passed", "failed"], description: "Target validation status for record_transfer_validation." },
-    evidence: { type: "array", items: { type: "string" }, description: "Validation evidence lines for transfer registry actions." },
-    requestId: { type: "string", description: "Approval request id for agent task approval actions." },
-    reason: { type: "string", description: "Optional reason for proposal rejection." },
-    status: { type: "string", description: "Optional proposal status filter: pending, applied, or rejected." },
-    format: { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." },
-    governanceProfile: { type: "string", enum: ["conservative", "balanced", "autonomous"], description: "Governance policy profile to apply." },
-    limit: { type: "number", description: "Maximum number of events/reviews to return for list actions." },
-    autoInjectHighConfidence: { type: "boolean" },
-    autoApproveHighConfidence: { type: "boolean" },
-    minInjectScore: { type: "number" },
-    minInjectCount: { type: "number" },
-    decayHalfLifeDays: { type: "number" },
-    includePendingPreferences: { type: "boolean" },
-    learnFromUsage: { type: "boolean" },
-    includeUsageInAdvisorPrompt: { type: "boolean" },
-    officialMemoryBridgeEnabled: { type: "boolean" },
-    officialMemoryBridgeMaxResults: { type: "number" },
-    durableMemoryMaxCount: { type: "number" },
-    largeUsageTokenThreshold: { type: "number" },
-    officialUtilityModelDisplay: { type: "string" },
-    modelAdvisorEnabled: { type: "boolean" },
-    modelAdvisorSource: { type: "string", enum: ["official", "private", "off"] },
-    modelAdvisorBaseUrl: { type: "string" },
-    modelAdvisorApiKey: { type: "string" },
-    modelAdvisorModel: { type: "string" },
-    modelAdvisorMaxTokens: { type: "number" },
-    modelAdvisorMinIntervalMinutes: { type: "number" },
-    workStatusEnabled: { type: "boolean" },
-    workStatusText: { type: "string" },
-    proposalChatNotificationsEnabled: { type: "boolean" },
-    requireReviewForAutoApply: { type: "boolean" },
-    semanticSearchEnabled: { type: "boolean" },
-    semanticEmbeddingBaseUrl: { type: "string" },
-    semanticEmbeddingApiKey: { type: "string" },
-    semanticEmbeddingModel: { type: "string" },
-    semanticCacheMaxEntries: { type: "number" },
+    ...CONTROL_PARAM_PROPERTIES,
   },
   required: ["action"],
 };
