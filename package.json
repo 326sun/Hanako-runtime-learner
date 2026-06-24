@@ -25,6 +25,8 @@
     "test": "node scripts/run.js test",
     "benchmark": "node scripts/run-benchmarks.js",
     "perf": "node scripts/perf-bench.js",
+    "complexity:check": "node scripts/complexity-check.js",
+    "complexity:report": "node scripts/complexity-report.js",
     "release:check": "node scripts/release-readiness.js"
   }
 }
