@@ -21,6 +21,7 @@
   ],
   "scripts": {
     "install-plugin": "node install.cjs",
+    "build": "node scripts/build.js",
     "check": "node scripts/run.js check",
     "test": "node scripts/run.js test",
     "benchmark": "node scripts/run-benchmarks.js",
@@ -28,5 +29,11 @@
     "complexity:check": "node scripts/complexity-check.js",
     "complexity:report": "node scripts/complexity-report.js",
     "release:check": "node scripts/release-readiness.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
   }
 }

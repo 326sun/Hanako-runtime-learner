@@ -19,6 +19,18 @@
 - 测试总数 `665 -> 738`：新增 sample-text、schema、queue、extractor、worker、治理与接线回归；README 徽章与发布门默认测试基线同步到 738。
 - 范围纪律：本阶段**不含** M1 本地 embedding、M3-lite 后台调度、M4 Agent 执行、M5 自适应阈值；worker 的 task:* 调度留待 M3-lite。
 
+### M0 — esbuild 构建与 dist 打包
+
+- **新增构建步骤**：引入 `esbuild`（**devDependency，精确锁定 `0.28.1`**，仅构建期使用，不是运行时依赖）。`npm run build`（`scripts/build.js`）把源码打包为可安装的 `dist/`。源码仍以 `index.js` + `lib/**` + `tools/**` 为真源，测试 / `check` / `complexity` 继续跑源码。
+  - **开发态 vs 发布态**：开发与审计走源码（`npm run install-plugin` 直接拷贝源码目录）；发布态走预打包 `dist/` zip——终端用户拖入 zip、启用即可，**无需 `npm install`**。
+  - **多入口打包**：`index.js` 与 8 个 `self_learning_*` 工具各自打包为自洽 ESM bundle → `dist/index.js` + `dist/tools/*.js`（`lib/**` 内联，工具不再依赖 `../lib`）。保持宿主原有 `tools/` 目录约定，**未改 manifest 主入口、未新增 `main` 字段**。
+  - **子进程 runner**：`plugin-process-runner-child.js` 原样拷贝到 `dist/` 根（不打包），fork 目标在 dist 模式下按 `import.meta.url` 正确解析。
+  - **构建自检**（任一失败即构建失败）：`dist/` 必含主入口、8 个工具入口、manifest/README/LICENSE/child-runner；产物无未解析内部 import（`../lib`/`../tools`/`../index`）、无 sourcemap / dotfile / `node_modules` / 源码 `lib/`；发布 zip 根目录即插件本体（`index.js` + `manifest.json` + `tools/`，无嵌套 `dist/`）。
+  - `engines.node` 提升到 `>=22`；`dist/`、`release/` 为生成物，已 `.gitignore`，不参与复杂度扫描（扫描范围固定 `lib/scripts/tests/tools`）。新增 `docs/SUPPLY_CHAIN.md` 登记 esbuild。
+- **新增模块**：`lib/dist-verify.js`（纯构建自检逻辑）、`scripts/build.js`（esbuild 打包 + 拷贝 + 自检 + 零依赖 deflate zip 打包）。
+- 测试总数 `738 -> 764`：新增 `dist-verify`（纯自检）、`build`（真实打包结构/zip 根校验）、`install-smoke`（模拟安装：bundle onload 写 dataDir/SKILL.md、bundled 工具调用、child runner fork、默认关闭不触发 sampleText/不写 LLM 队列）回归；README 徽章与发布门默认测试基线同步到 764。
+- 范围纪律：M0 **不含** runtime dependency、原生 addon、embedding / wasm / 模型权重；版本号与 `minAppVersion` 仍待 M6 落定。
+
 ## 4.3.23
 
 - 新增复杂度治理门：`lib/complexity.js` 定义 hard limit / soft target，`npm run complexity:check` 在超出 hard limit 时失败，`npm run complexity:report` 生成 `docs/COMPLEXITY_REPORT.md`。
