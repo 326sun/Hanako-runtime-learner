@@ -2,6 +2,23 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.x` 为 LTS 维护线，因此该阶段的记录重点放在缺陷修复、审计加固、性能整理和发布治理，不再扩张自动化边界。
 
+## 5.0.0（进行中 · v5.0 现代化）
+
+> 本节随 v5.0 各阶段增量记录。版本号、`minAppVersion`、`docs/ACCEPTANCE-v5.0.0.md` 与发布门统一在 M6 收尾时落定；当前仍以 `4.3.23` 为已发布基线。
+
+### M2 — LLM 驱动 pattern 抽取（默认关闭）
+
+- **新增能力（默认 `llmExtractionEnabled: false`）**：可选地用宿主官方采样能力 `model:sample-text` 从**脱敏交互摘要**中归纳候选模式。它**只产出待人审的候选**，绝不直接写入 `patterns.json` / `facts.json`，也不触发任何自动执行。
+  - 数据流铁律：同步 flush 路径只 `enqueue` 候选 → 后台 async tick 消费 → 采样/解析/校验 → `pattern_candidate` 提案 → review-queue → validation-gate。关闭开关时全链路 no-op，行为与 v4 完全一致。
+  - 新增 `pattern_candidate` 提案类型为 **review-only**：`applyProposal` / `verifyProposal` 显式拒绝自动应用，永不能在无人审的情况下生成记忆。
+  - 安全降级：模型不可用、采样超时、坏 JSON、`type:none`、置信度过低、伪造 evidenceId 一律 fail-soft，不影响原启发式路径；失败任务指数退避（5min→30min→2h），超过 `llmExtractionMaxAttempts` 后丢弃。
+  - 风险保守：`suggestedRiskTier` 只能在 `R2` floor 之上**调高**，不能降低实际风险。
+- **新增模块**：`lib/sample-text.js`（与 model-advisor 共享的采样/能力探测/JSON 提取，消除漂移）、`lib/llm-extraction-schema.js`、`lib/llm-extraction-queue.js`、`lib/llm-extractor.js`、`lib/llm-extraction-worker.js`。
+- **新增配置（均安全默认）**：`llmExtractionEnabled=false`、`llmExtractionMinIntervalMinutes=30`、`llmExtractionMinConfidence=0.72`、`llmExtractionMaxAttempts=3`、`llmExtractionMaxJobsPerRun=5`、`llmExtractionTimeoutMs=15000`。`conservative` 治理档位强制关闭该能力。
+- **隐私说明**：开启后会把脱敏交互摘要发送给宿主配置的小模型；偏好（preference）与 durable 知识**永不外发**（沿用 model-advisor 的隐私边界）。凭证不经本插件，由宿主侧解析。
+- 测试总数 `665 -> 738`：新增 sample-text、schema、queue、extractor、worker、治理与接线回归；README 徽章与发布门默认测试基线同步到 738。
+- 范围纪律：本阶段**不含** M1 本地 embedding、M3-lite 后台调度、M4 Agent 执行、M5 自适应阈值；worker 的 task:* 调度留待 M3-lite。
+
 ## 4.3.23
 
 - 新增复杂度治理门：`lib/complexity.js` 定义 hard limit / soft target，`npm run complexity:check` 在超出 hard limit 时失败，`npm run complexity:report` 生成 `docs/COMPLEXITY_REPORT.md`。

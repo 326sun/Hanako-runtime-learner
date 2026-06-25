@@ -15,6 +15,7 @@ import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatter
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { runtimeConfigPath, migrateRuntimeConfigFile } from "./lib/runtime-config-path.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
+import { createExtractionRunner } from "./lib/llm-extraction-worker.js";
 import { buildSkillPatchProposal } from "./lib/proposals.js";
 import { applyProposalSafely } from "./lib/proposal-apply-safe.js";
 import { buildRepeatedCodePatchProposals } from "./lib/advisor-insights.js";
@@ -381,6 +382,15 @@ export default definePlugin({
       capabilitiesFile: CAPABILITIES_FILE,
     });
 
+    // v5.0 M2: LLM pattern extraction runner. Gated by llmExtractionEnabled
+    // (default false → no-op). Synchronously enqueues candidates then fires an
+    // async background tick; output is review-only pattern_candidate proposals.
+    const extractionRunner = createExtractionRunner({
+      getConfig: () => config,
+      dataDir: DATA_DIR,
+      ctx,
+    });
+
     try {
       if (fs.existsSync(PATTERNS_FILE)) {
         const saved = JSON.parse(fs.readFileSync(PATTERNS_FILE, "utf-8"));
@@ -455,6 +465,7 @@ export default definePlugin({
           persistPatterns,
           refreshSkill,
           maybeRunModelAdvisor: advisorRunner.maybeRun,
+          maybeRunExtraction: extractionRunner.maybeRun,
           reason: "usage",
           // Use the identity key (sid:/sref:/path) so resolveSessionTarget hits
           // the sessionTargets map the observer populated under the same key and
@@ -497,6 +508,7 @@ export default definePlugin({
       syncDiskStatus,
       pruneDataFiles,
       maybeRunModelAdvisor: advisorRunner.maybeRun,
+      maybeRunExtraction: extractionRunner.maybeRun,
 
       logActivity,
       recordUsage,
