@@ -1,13 +1,20 @@
-# v4.x LTS 维护计划
+# v4.3.x LTS 与 v5 主线维护计划
 
-`v4.3.0` 之后，Runtime Self-Learning 进入维护期。这个阶段的重点不是继续扩大功能面，而是保证边界、稳定性、性能和发布质量。
+`v5.0.0` 发布后，`v4.3.x` 成为长期维护线，`v5.x` 成为主线。旧用户可以继续停留在 v4.3.x；需要 Hanako `v0.345.x` task bus、发布 zip 自包含包和 v5 治理基线的用户再迁移到 v5。
 
-## 维护目标
+## v4.3.x LTS 维护目标
 
-1. 修复影响正确性和安全边界的缺陷。
-2. 清理冗余实现，降低维护成本。
-3. 维持热路径性能不倒退。
-4. 保持文档、验收记录和发布门一致。
+1. 修复影响正确性、安全边界或旧宿主兼容性的缺陷。
+2. 保持 v4.x 安装方式、`minAppVersion` 和冻结 API 不发生破坏性变化。
+3. 不引入 v5 的发布打包、LLM extraction 或 task:* 调度要求。
+4. 发布前继续执行 v4.x 对应 release gate。
+
+## v5 主线维护目标
+
+1. 保持 M0 的自包含 dist/zip 发布形态。
+2. 保持 M2 LLM extraction 默认关闭、fail-soft、proposal/review-only。
+3. 保持 M3-lite 后台任务 task:* 调度能力可关闭、可审计、可降级。
+4. 保持 M6 的治理文档、供应链说明和验收记录同步。
 
 ## 允许的变更
 
@@ -23,33 +30,34 @@
 
 - 放宽 R4 或外部副作用边界
 - 新增默认开启的外部网络能力
-- 改变冻结 API 语义却不升级大版本
 - 让发布门执行真实发布动作
+- 在 v4.3.x LTS 中引入 v5-only 宿主要求
+- 在 v5.0.0 发布收口中补做 M1/M4/M5
 
-## 发布前检查
-
-每个 LTS 版本发布前至少应完成：
+## v5 发布前检查
 
 ```powershell
+npm run build
 npm run check
 npm test
+npm run complexity:check
 npm run benchmark
 npm run perf
 npm run release:check
+npm audit
 ```
 
 ## 文档一致性要求
 
-以下文件必须与当前版本一致：
+以下文件必须与当前主线版本一致：
 
 - `package.json`
+- `package-lock.json`
 - `manifest.json`
 - `README.md`
+- `CHANGELOG.md`
 - `docs/DESIGN_GOAL_COMPLETION_MATRIX.md`
-- `docs/ACCEPTANCE-v<version>.md`
-
-## 建议节奏
-
-- 高频：小范围 hardening、缺陷修复、测试补齐
-- 中频：性能清理、文档对齐
-- 低频：仅在必要时更新冻结说明
+- `docs/ACCEPTANCE-v5.0.0.md`
+- `docs/SUPPLY_CHAIN.md`
+- `docs/MIGRATION_v4_to_v5.md`
+- `docs/SECURITY_REVIEW-v5.0.0.md`

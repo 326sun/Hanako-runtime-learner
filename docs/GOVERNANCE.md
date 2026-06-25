@@ -77,6 +77,8 @@ apply_review
 - 汇总当前状态
 - 导出审计材料
 
+v5.0.0 的 Hanako `task:*` 后台任务也写入同一审计路径：任务 complete、fail、cancel 和恢复失败标记都必须可回放。后台 schedule 不绕开 proposal/review 或 policy gate。
+
 ## Rollback
 
 `self_learning_control action=rollback` 会从 `skill_history/` 恢复上一版 `SKILL.md` 快照。当前以技能快照回滚为主，动作级回滚由事务链负责。
@@ -136,6 +138,8 @@ self_learning_control action=regenerate_memfs
 | `autonomous` | 开启 | 开启 | 开启 | 关闭 |
 
 外部网络相关能力在三种档位下都默认关闭，必须显式配置才会外发。
+
+LLM extraction 在 v5.0.0 中仍由 `llmExtractionEnabled=false` 默认关闭；即使启用，输出也只进入 proposal/review，不直接写入 patterns/facts。
 
 切换示例：
 

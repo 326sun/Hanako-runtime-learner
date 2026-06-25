@@ -1,6 +1,6 @@
 # 供应链说明（Supply Chain）
 
-本文件记录 Runtime Self-Learning 的依赖与构建供应链，作为 v5.0 放宽「零依赖」约束后的可审计依据。
+本文件记录 Runtime Self-Learning 的依赖与构建供应链，作为 v5.0 放宽「零构建依赖」约束后的可审计依据。
 
 ## 运行时依赖：无
 
@@ -16,7 +16,11 @@
 
 - 版本以 `--save-exact` 精确锁定，并提交 `package-lock.json`，保证可复现构建。
 - esbuild 自带平台原生二进制（由其 optionalDependencies 解析）。这是**构建机**上的工具链，**不**进入发布产物，也**不**是插件运行时依赖。
-- v5.0 **不引入**任何需要编译的原生 addon（faiss-node / hnswlib-node / native sqlite-vss 等）；M0 也不引入 transformers / embedding / wasm / 模型权重。
+- License：MIT。
+- 原生 addon：插件运行时无原生 addon；esbuild 的平台二进制仅用于开发/构建期。
+- `npm audit`：M6 release gate 必跑；高危或严重漏洞为发布阻断。
+- M6 本地结果：`npm audit --omit=dev --cache .\.npm-cache` 返回 `found 0 vulnerabilities`。完整 devDependency audit 已执行，但当前受限环境对 npm registry audit endpoint 返回 `EACCES`，未获得 advisory 结果；正式发布环境应重跑完整 `npm audit`。
+- v5.0 **不引入**任何需要编译的原生 addon（faiss-node / hnswlib-node / native sqlite-vss 等）；M1 的 transformers / embedding / wasm / 模型权重未进入本次发布。
 
 ## 构建与发布产物
 
@@ -43,3 +47,11 @@
 ## 审计产物
 
 - `release/esbuild-meta.json`：esbuild metafile，供审计构建图与产物体积；**不进入发布 zip**。
+
+## 排除项
+
+- `dependencies`：无。
+- `node_modules/`：不进入 `dist/` 或 release zip。
+- `lib/` 源码目录：由 esbuild 内联进 bundle，不随 zip 分发。
+- `tests/`、`release/`、嵌套 `dist/`、sourcemap、dotfile：不进入 zip。
+- M1 本地 embedding / vector index、M4 Agent 编排、M5 adaptive thresholds：不属于 v5.0.0 发布范围。

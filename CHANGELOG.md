@@ -1,46 +1,43 @@
-# 更新日志
+# Changelog
 
-本文档记录 Runtime Self-Learning 的版本演进。`v4.x` 为 LTS 维护线，因此该阶段的记录重点放在缺陷修复、审计加固、性能整理和发布治理，不再扩张自动化边界。
+本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
-## 5.0.0（进行中 · v5.0 现代化）
+## 5.0.0 - 2026-06-25
 
-> 本节随 v5.0 各阶段增量记录。版本号、`minAppVersion`、`docs/ACCEPTANCE-v5.0.0.md` 与发布门统一在 M6 收尾时落定；当前仍以 `4.3.23` 为已发布基线。
+`v5.0.0` 正式收口 M0、M2、M3-lite 和 M6。版本号同步至 `5.0.0`，`manifest.minAppVersion` 提升至 `0.345.0`，测试总数保持 `773`（`768 passed`、`5 skipped`、`0 failed`）。
 
-### M3-lite — task:* 后台任务最小迁移
+### M6 - governance release
 
-- **新增 host task 适配层**：`lib/host-tasks.js` 封装 Hanako `task:*` bus 协议（`task:register-handler` / `task:unregister-handler` / `task:register` / `task:update` / `task:complete` / `task:fail` / `task:cancel` / `task:remove` / `task:schedule` / `task:list-schedules` / `task:list`），能力探测优先 `ctx.bus.getCapability()`，回退 `ctx.bus.hasHandler()`。
-- **后台整理迁移到 schedule**：task 可用时注册稳定 schedule：`hanako-runtime-learner.advisor-maintenance`、`hanako-runtime-learner.log-retention`、`hanako-runtime-learner.llm-extraction-worker`。重复 onload 会通过 `task:list-schedules` 去重，不重复生成 schedule；插件重启会重新注册 handler。
-- **安全降级与审计**：旧宿主或 task:* 不可用时自动保持 v4/M2/M0 的机会式路径，并写入 `background_tasks_unavailable` 审计事件；任务完成、失败、取消、recovering 标记失败均写 event-log。
-- **幂等 / 可恢复**：每个 handler 通过 single-flight guard 防同任务并发；onload 查询 recovering/running 旧任务并按宿主协议标记失败，避免悬挂状态。
-- **LLM 抽取保持 M2 治理链**：scheduled tick 只调用 M2 worker；`llmExtractionEnabled` 仍默认 `false`，关闭时不采样、不写队列，输出仍只进入 proposal/review。
-- **新增配置（安全默认）**：`backgroundTasksEnabled=true`、`backgroundAdvisorIntervalMinutes=360`、`backgroundRetentionIntervalMinutes=1440`、`backgroundLlmExtractionIntervalMinutes=30`。task 不可用时自动降级；未改变版本号或 `minAppVersion`。
-- 测试总数 `764 -> 773`：新增 host task adapter / background setup 回归，覆盖 fake bus 注册与 schedule、不可用降级、single-flight、防重复 schedule、complete/fail/cancel 审计、recovering fail、LLM scheduled tick 默认关闭。
-- 范围纪律：本阶段不含 M1 embedding/vector index、M4 Agent 编排、M5 adaptive thresholds、M6 发布治理；未启用 `resource.watch`，未新增真实自动执行面。
+- 版本收口：`package.json`、`package-lock.json`、`manifest.json` 统一为 `5.0.0`。
+- 兼容线收口：`manifest.minAppVersion` 抬升至 `0.345.0`，对应 Hanako `v0.345.x` task bus 基线。
+- 文档收口：新增 `docs/MIGRATION_v4_to_v5.md`、`docs/PRIVACY.md`、`docs/SECURITY_REVIEW-v5.0.0.md`、`docs/ACCEPTANCE-v5.0.0.md`，更新 API freeze、LTS 维护、供应链、README 和设计矩阵。
+- release readiness：检查 v5 版本、manifest、`minAppVersion`、README 测试数、必需文档、dist/zip、benchmark corpus 和复杂度预算。
+- 范围纪律：本发布不包含 M1 本地 embedding / vector index、M4 Agent 编排、M5 adaptive thresholds、`resource.watch` 自动学习或新的真实自动执行面。
 
-### M2 — LLM 驱动 pattern 抽取（默认关闭）
+### M3-lite - task:* 后台任务最小迁移
 
-- **新增能力（默认 `llmExtractionEnabled: false`）**：可选地用宿主官方采样能力 `model:sample-text` 从**脱敏交互摘要**中归纳候选模式。它**只产出待人审的候选**，绝不直接写入 `patterns.json` / `facts.json`，也不触发任何自动执行。
-  - 数据流铁律：同步 flush 路径只 `enqueue` 候选 → 后台 async tick 消费 → 采样/解析/校验 → `pattern_candidate` 提案 → review-queue → validation-gate。关闭开关时全链路 no-op，行为与 v4 完全一致。
-  - 新增 `pattern_candidate` 提案类型为 **review-only**：`applyProposal` / `verifyProposal` 显式拒绝自动应用，永不能在无人审的情况下生成记忆。
-  - 安全降级：模型不可用、采样超时、坏 JSON、`type:none`、置信度过低、伪造 evidenceId 一律 fail-soft，不影响原启发式路径；失败任务指数退避（5min→30min→2h），超过 `llmExtractionMaxAttempts` 后丢弃。
-  - 风险保守：`suggestedRiskTier` 只能在 `R2` floor 之上**调高**，不能降低实际风险。
-- **新增模块**：`lib/sample-text.js`（与 model-advisor 共享的采样/能力探测/JSON 提取，消除漂移）、`lib/llm-extraction-schema.js`、`lib/llm-extraction-queue.js`、`lib/llm-extractor.js`、`lib/llm-extraction-worker.js`。
-- **新增配置（均安全默认）**：`llmExtractionEnabled=false`、`llmExtractionMinIntervalMinutes=30`、`llmExtractionMinConfidence=0.72`、`llmExtractionMaxAttempts=3`、`llmExtractionMaxJobsPerRun=5`、`llmExtractionTimeoutMs=15000`。`conservative` 治理档位强制关闭该能力。
-- **隐私说明**：开启后会把脱敏交互摘要发送给宿主配置的小模型；偏好（preference）与 durable 知识**永不外发**（沿用 model-advisor 的隐私边界）。凭证不经本插件，由宿主侧解析。
-- 测试总数 `665 -> 738`：新增 sample-text、schema、queue、extractor、worker、治理与接线回归；README 徽章与发布门默认测试基线同步到 738。
-- 范围纪律：本阶段**不含** M1 本地 embedding、M3-lite 后台调度、M4 Agent 执行、M5 自适应阈值；worker 的 task:* 调度留待 M3-lite。
+- 新增 `lib/host-tasks.js` host task 适配层，封装 Hanako `task:*` bus 协议：`task:register-handler`、`task:unregister-handler`、`task:register`、`task:update`、`task:complete`、`task:fail`、`task:cancel`、`task:remove`、`task:schedule`、`task:list-schedules`、`task:list`。
+- capability 探测优先走 `ctx.bus.getCapability("task:schedule")`，回退 `ctx.bus.hasHandler("task:schedule")`；task bus 不可用时返回 `unavailable/skipped` 并保持旧机会式后台整理路径。
+- 将 advisor、prune、log-retention 与 M2 LLM extraction worker 纳入可调度后台任务；schedule 注册按 ID 去重，不在每次 onload 生成重复 schedule。
+- 所有后台 task handler 使用 single-flight 防并发，complete/fail/cancel/recovering-fail 写入 `event_log.jsonl`；失败 fail-soft，不中断插件加载。
+- LLM extraction scheduled tick 继续遵守 M2 治理：`llmExtractionEnabled=false` 默认关闭，disabled 时不调用 `sampleText`，模型失败 fail-soft，输出只进 proposal/review。
+- 新增测试覆盖 fake bus handler 注册与 schedule、不可用降级、single-flight、防重复 schedule、complete/fail/cancel 审计、recovering fail、LLM scheduled tick 默认关闭。
+- 测试总数 `764 -> 773`。
 
-### M0 — esbuild 构建与 dist 打包
+### M2 - default-off LLM extraction
 
-- **新增构建步骤**：引入 `esbuild`（**devDependency，精确锁定 `0.28.1`**，仅构建期使用，不是运行时依赖）。`npm run build`（`scripts/build.js`）把源码打包为可安装的 `dist/`。源码仍以 `index.js` + `lib/**` + `tools/**` 为真源，测试 / `check` / `complexity` 继续跑源码。
-  - **开发态 vs 发布态**：开发与审计走源码（`npm run install-plugin` 直接拷贝源码目录）；发布态走预打包 `dist/` zip——终端用户拖入 zip、启用即可，**无需 `npm install`**。
-  - **多入口打包**：`index.js` 与 8 个 `self_learning_*` 工具各自打包为自洽 ESM bundle → `dist/index.js` + `dist/tools/*.js`（`lib/**` 内联，工具不再依赖 `../lib`）。保持宿主原有 `tools/` 目录约定，**未改 manifest 主入口、未新增 `main` 字段**。
-  - **子进程 runner**：`plugin-process-runner-child.js` 原样拷贝到 `dist/` 根（不打包），fork 目标在 dist 模式下按 `import.meta.url` 正确解析。
-  - **构建自检**（任一失败即构建失败）：`dist/` 必含主入口、8 个工具入口、manifest/README/LICENSE/child-runner；产物无未解析内部 import（`../lib`/`../tools`/`../index`）、无 sourcemap / dotfile / `node_modules` / 源码 `lib/`；发布 zip 根目录即插件本体（`index.js` + `manifest.json` + `tools/`，无嵌套 `dist/`）。
-  - `engines.node` 提升到 `>=22`；`dist/`、`release/` 为生成物，已 `.gitignore`，不参与复杂度扫描（扫描范围固定 `lib/scripts/tests/tools`）。新增 `docs/SUPPLY_CHAIN.md` 登记 esbuild。
-- **新增模块**：`lib/dist-verify.js`（纯构建自检逻辑）、`scripts/build.js`（esbuild 打包 + 拷贝 + 自检 + 零依赖 deflate zip 打包）。
-- 测试总数 `738 -> 764`：新增 `dist-verify`（纯自检）、`build`（真实打包结构/zip 根校验）、`install-smoke`（模拟安装：bundle onload 写 dataDir/SKILL.md、bundled 工具调用、child runner fork、默认关闭不触发 sampleText/不写 LLM 队列）回归；README 徽章与发布门默认测试基线同步到 764。
-- 范围纪律：M0 **不含** runtime dependency、原生 addon、embedding / wasm / 模型权重；版本号与 `minAppVersion` 仍待 M6 落定。
+- 新增默认关闭的 LLM extraction worker，使用宿主 `model:sample-text` / `sampleText` 能力时先做 capability 探测，旧宿主或模型失败均 fail-soft。
+- LLM 输出只进入 proposal/review，不直接写入 `patterns.json`、`facts.json` 或 `SKILL.md`。
+- `llmExtractionEnabled=false` 时不采样、不外发、不改变 M0/v4 默认行为。
+- 范围纪律：不包含 M1 本地 embedding / vector index、M3-lite 后台调度、M4 Agent 执行、M5 自适应阈值。
+
+### M0 - dist package
+
+- 引入 `esbuild@0.28.1` 作为 devDependency，仍无 runtime dependencies。
+- `npm run build` 生成自包含 `dist/` 与 `release/hanako-runtime-learner-dist.zip`。
+- release zip 根目录直接包含插件文件，不含 `node_modules`、源码 `lib/`、sourcemap、dotfile、测试目录或嵌套 `dist/`。
+- `engines.node` 提升到 `>=22`；`dist/`、`release/` 为生成物并已 `.gitignore`。
+- 范围纪律：M0 不引入 transformers、embedding、wasm、模型权重或原生 addon。
 
 ## 4.3.23
 
