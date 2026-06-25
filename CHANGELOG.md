@@ -6,6 +6,17 @@
 
 > 本节随 v5.0 各阶段增量记录。版本号、`minAppVersion`、`docs/ACCEPTANCE-v5.0.0.md` 与发布门统一在 M6 收尾时落定；当前仍以 `4.3.23` 为已发布基线。
 
+### M3-lite — task:* 后台任务最小迁移
+
+- **新增 host task 适配层**：`lib/host-tasks.js` 封装 Hanako `task:*` bus 协议（`task:register-handler` / `task:unregister-handler` / `task:register` / `task:update` / `task:complete` / `task:fail` / `task:cancel` / `task:remove` / `task:schedule` / `task:list-schedules` / `task:list`），能力探测优先 `ctx.bus.getCapability()`，回退 `ctx.bus.hasHandler()`。
+- **后台整理迁移到 schedule**：task 可用时注册稳定 schedule：`hanako-runtime-learner.advisor-maintenance`、`hanako-runtime-learner.log-retention`、`hanako-runtime-learner.llm-extraction-worker`。重复 onload 会通过 `task:list-schedules` 去重，不重复生成 schedule；插件重启会重新注册 handler。
+- **安全降级与审计**：旧宿主或 task:* 不可用时自动保持 v4/M2/M0 的机会式路径，并写入 `background_tasks_unavailable` 审计事件；任务完成、失败、取消、recovering 标记失败均写 event-log。
+- **幂等 / 可恢复**：每个 handler 通过 single-flight guard 防同任务并发；onload 查询 recovering/running 旧任务并按宿主协议标记失败，避免悬挂状态。
+- **LLM 抽取保持 M2 治理链**：scheduled tick 只调用 M2 worker；`llmExtractionEnabled` 仍默认 `false`，关闭时不采样、不写队列，输出仍只进入 proposal/review。
+- **新增配置（安全默认）**：`backgroundTasksEnabled=true`、`backgroundAdvisorIntervalMinutes=360`、`backgroundRetentionIntervalMinutes=1440`、`backgroundLlmExtractionIntervalMinutes=30`。task 不可用时自动降级；未改变版本号或 `minAppVersion`。
+- 测试总数 `764 -> 773`：新增 host task adapter / background setup 回归，覆盖 fake bus 注册与 schedule、不可用降级、single-flight、防重复 schedule、complete/fail/cancel 审计、recovering fail、LLM scheduled tick 默认关闭。
+- 范围纪律：本阶段不含 M1 embedding/vector index、M4 Agent 编排、M5 adaptive thresholds、M6 发布治理；未启用 `resource.watch`，未新增真实自动执行面。
+
 ### M2 — LLM 驱动 pattern 抽取（默认关闭）
 
 - **新增能力（默认 `llmExtractionEnabled: false`）**：可选地用宿主官方采样能力 `model:sample-text` 从**脱敏交互摘要**中归纳候选模式。它**只产出待人审的候选**，绝不直接写入 `patterns.json` / `facts.json`，也不触发任何自动执行。
