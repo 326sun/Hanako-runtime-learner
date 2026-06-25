@@ -26,8 +26,8 @@ try {
     process.exit(0);
   }
   const result = args.outputDir
-    ? exportReleaseReadiness(args.projectRoot, path.resolve(args.outputDir), { minBenchmarkScenarios: args.minBenchmarkScenarios })
-    : buildReleaseReadiness(args.projectRoot, { minBenchmarkScenarios: args.minBenchmarkScenarios });
+    ? exportReleaseReadiness(args.projectRoot, path.resolve(args.outputDir), { minBenchmarkScenarios: args.minBenchmarkScenarios, requireDistPackage: true })
+    : buildReleaseReadiness(args.projectRoot, { minBenchmarkScenarios: args.minBenchmarkScenarios, requireDistPackage: true });
   console.log(formatReleaseReadinessReport(result));
   if (result.outputDir) console.log(`Reports written to: ${result.outputDir}`);
   process.exit(result.summary.ok ? 0 : 1);

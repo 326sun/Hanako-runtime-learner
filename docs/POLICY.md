@@ -43,3 +43,7 @@
 ## 与事务的关系
 
 策略门决定“能否尝试执行”，事务模型决定“执行时如何可回滚”。两者不能互相替代。
+
+## v5.0.0 边界
+
+Hanako `task:*` 后台调度只负责触发 advisor、prune、log-retention 和 LLM extraction tick 这类整理任务。它不会改变 R0-R4 分级，不会授权外部写请求，也不会把 Execute / Repair / release / publish 变成自动行为。

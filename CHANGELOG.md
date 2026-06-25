@@ -1,6 +1,43 @@
-# 更新日志
+# Changelog
 
-本文档记录 Runtime Self-Learning 的版本演进。`v4.x` 为 LTS 维护线，因此该阶段的记录重点放在缺陷修复、审计加固、性能整理和发布治理，不再扩张自动化边界。
+本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
+
+## 5.0.0 - 2026-06-25
+
+`v5.0.0` 正式收口 M0、M2、M3-lite 和 M6。版本号同步至 `5.0.0`，`manifest.minAppVersion` 提升至 `0.345.0`，测试总数保持 `773`（`768 passed`、`5 skipped`、`0 failed`）。
+
+### M6 - governance release
+
+- 版本收口：`package.json`、`package-lock.json`、`manifest.json` 统一为 `5.0.0`。
+- 兼容线收口：`manifest.minAppVersion` 抬升至 `0.345.0`，对应 Hanako `v0.345.x` task bus 基线。
+- 文档收口：新增 `docs/MIGRATION_v4_to_v5.md`、`docs/PRIVACY.md`、`docs/SECURITY_REVIEW-v5.0.0.md`、`docs/ACCEPTANCE-v5.0.0.md`，更新 API freeze、LTS 维护、供应链、README 和设计矩阵。
+- release readiness：检查 v5 版本、manifest、`minAppVersion`、README 测试数、必需文档、dist/zip、benchmark corpus 和复杂度预算。
+- 范围纪律：本发布不包含 M1 本地 embedding / vector index、M4 Agent 编排、M5 adaptive thresholds、`resource.watch` 自动学习或新的真实自动执行面。
+
+### M3-lite - task:* 后台任务最小迁移
+
+- 新增 `lib/host-tasks.js` host task 适配层，封装 Hanako `task:*` bus 协议：`task:register-handler`、`task:unregister-handler`、`task:register`、`task:update`、`task:complete`、`task:fail`、`task:cancel`、`task:remove`、`task:schedule`、`task:list-schedules`、`task:list`。
+- capability 探测优先走 `ctx.bus.getCapability("task:schedule")`，回退 `ctx.bus.hasHandler("task:schedule")`；task bus 不可用时返回 `unavailable/skipped` 并保持旧机会式后台整理路径。
+- 将 advisor、prune、log-retention 与 M2 LLM extraction worker 纳入可调度后台任务；schedule 注册按 ID 去重，不在每次 onload 生成重复 schedule。
+- 所有后台 task handler 使用 single-flight 防并发，complete/fail/cancel/recovering-fail 写入 `event_log.jsonl`；失败 fail-soft，不中断插件加载。
+- LLM extraction scheduled tick 继续遵守 M2 治理：`llmExtractionEnabled=false` 默认关闭，disabled 时不调用 `sampleText`，模型失败 fail-soft，输出只进 proposal/review。
+- 新增测试覆盖 fake bus handler 注册与 schedule、不可用降级、single-flight、防重复 schedule、complete/fail/cancel 审计、recovering fail、LLM scheduled tick 默认关闭。
+- 测试总数 `764 -> 773`。
+
+### M2 - default-off LLM extraction
+
+- 新增默认关闭的 LLM extraction worker，使用宿主 `model:sample-text` / `sampleText` 能力时先做 capability 探测，旧宿主或模型失败均 fail-soft。
+- LLM 输出只进入 proposal/review，不直接写入 `patterns.json`、`facts.json` 或 `SKILL.md`。
+- `llmExtractionEnabled=false` 时不采样、不外发、不改变 M0/v4 默认行为。
+- 范围纪律：不包含 M1 本地 embedding / vector index、M3-lite 后台调度、M4 Agent 执行、M5 自适应阈值。
+
+### M0 - dist package
+
+- 引入 `esbuild@0.28.1` 作为 devDependency，仍无 runtime dependencies。
+- `npm run build` 生成自包含 `dist/` 与 `release/hanako-runtime-learner-dist.zip`。
+- release zip 根目录直接包含插件文件，不含 `node_modules`、源码 `lib/`、sourcemap、dotfile、测试目录或嵌套 `dist/`。
+- `engines.node` 提升到 `>=22`；`dist/`、`release/` 为生成物并已 `.gitignore`。
+- 范围纪律：M0 不引入 transformers、embedding、wasm、模型权重或原生 addon。
 
 ## 4.3.23
 

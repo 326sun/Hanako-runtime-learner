@@ -2,11 +2,11 @@
   "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "4.3.23",
+  "version": "5.0.0",
   "description": "运行时自学习引擎：观察本地交互，归纳重复工作流、偏好与错误，并生成保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
-  "minAppVersion": "0.330.0",
+  "minAppVersion": "0.345.0",
   "permissions": [
     "usage.read"
   ],
@@ -239,6 +239,52 @@
           "minimum": 0,
           "maximum": 10000,
           "default": 1000
+        },
+        "llmExtractionEnabled": {
+          "type": "boolean",
+          "title": "启用 LLM 模式抽取（默认关闭，会向宿主小模型发送脱敏交互摘要）",
+          "description": "开启后仅在后台生成待人审的候选模式（pattern_candidate），绝不直接写入记忆或自动执行。",
+          "default": false
+        },
+        "llmExtractionMinIntervalMinutes": {
+          "type": "number",
+          "title": "LLM 抽取最小间隔（分钟）",
+          "description": "有效范围 1–1440 分钟。后台抽取触发的限频。",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 30
+        },
+        "llmExtractionMinConfidence": {
+          "type": "number",
+          "title": "LLM 抽取最低置信度",
+          "description": "有效范围 0–1。低于此置信度的抽取结果被丢弃。",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.72
+        },
+        "llmExtractionMaxAttempts": {
+          "type": "number",
+          "title": "LLM 抽取单任务最大重试次数",
+          "description": "有效范围 1–10。超过后丢弃，不阻塞主流程。",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        },
+        "llmExtractionMaxJobsPerRun": {
+          "type": "number",
+          "title": "每次后台抽取处理任务数上限",
+          "description": "有效范围 1–100。",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 5
+        },
+        "llmExtractionTimeoutMs": {
+          "type": "number",
+          "title": "LLM 抽取单次采样超时（毫秒）",
+          "description": "有效范围 1000–120000。超时按 fail-soft 处理。",
+          "minimum": 1000,
+          "maximum": 120000,
+          "default": 15000
         }
       }
     }

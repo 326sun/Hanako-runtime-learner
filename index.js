@@ -15,6 +15,7 @@ import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatter
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { runtimeConfigPath, migrateRuntimeConfigFile } from "./lib/runtime-config-path.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
+import { createExtractionRunner } from "./lib/llm-extraction-worker.js";
 import { buildSkillPatchProposal } from "./lib/proposals.js";
 import { applyProposalSafely } from "./lib/proposal-apply-safe.js";
 import { buildRepeatedCodePatchProposals } from "./lib/advisor-insights.js";
@@ -30,6 +31,7 @@ import { createActivityLogger } from "./lib/activity-log.js";
 import { createJsonlRetentionPruner } from "./lib/log-retention.js";
 import { createSessionMessenger } from "./lib/session-messenger.js";
 import { createSeenIdStore } from "./lib/seen-id-store.js";
+import { setupBackgroundTasks } from "./lib/host-tasks.js";
 
 const DEFAULT_DATA_DIR = learnerDir();
 
@@ -381,6 +383,15 @@ export default definePlugin({
       capabilitiesFile: CAPABILITIES_FILE,
     });
 
+    // v5.0 M2: LLM pattern extraction runner. Gated by llmExtractionEnabled
+    // (default false → no-op). Synchronously enqueues candidates then fires an
+    // async background tick; output is review-only pattern_candidate proposals.
+    const extractionRunner = createExtractionRunner({
+      getConfig: () => config,
+      dataDir: DATA_DIR,
+      ctx,
+    });
+
     try {
       if (fs.existsSync(PATTERNS_FILE)) {
         const saved = JSON.parse(fs.readFileSync(PATTERNS_FILE, "utf-8"));
@@ -428,6 +439,35 @@ export default definePlugin({
       return { count, allPatterns };
     };
 
+    const noopBackground = async () => {};
+    let backgroundTasks = { ok: false, useLegacyPath: true };
+    const currentPatterns = () => {
+      try { return detector.all(); } catch { return []; }
+    };
+    try {
+      backgroundTasks = await setupBackgroundTasks({
+        ctx,
+        dataDir: DATA_DIR,
+        config,
+        registerDispose: typeof register === "function" ? register : null,
+        runAdvisor: async () => advisorRunner.maybeRun("scheduled", null, currentPatterns()),
+        runRetention: async () => {
+          syncDiskStatus();
+          detector.pruneMemory();
+          const allPatterns = currentPatterns();
+          flushPersist();
+          await pruneDataFiles();
+          refreshSkill(false, null, allPatterns);
+          return { ok: true, patterns: allPatterns.length };
+        },
+        runLlmExtraction: async () => extractionRunner.maybeRun("scheduled", null, currentPatterns()),
+      });
+    } catch (err) {
+      ctx.log.debug?.(`runtime-learner: background task setup skipped: ${err?.message || err}`);
+      backgroundTasks = { ok: false, useLegacyPath: true };
+    }
+    const useScheduledBackground = backgroundTasks.ok && backgroundTasks.useLegacyPath === false;
+
     const recordUsage = (entry, sessionHandle = null) => {
       if (!config.learnFromUsage) return;
       const session = normalizeSessionTarget(sessionHandle, entry?.attribution, entry?.source?.actor, entry?.session);
@@ -454,7 +494,8 @@ export default definePlugin({
           autoApprovePatterns,
           persistPatterns,
           refreshSkill,
-          maybeRunModelAdvisor: advisorRunner.maybeRun,
+          maybeRunModelAdvisor: useScheduledBackground ? noopBackground : advisorRunner.maybeRun,
+          maybeRunExtraction: useScheduledBackground ? noopBackground : extractionRunner.maybeRun,
           reason: "usage",
           // Use the identity key (sid:/sref:/path) so resolveSessionTarget hits
           // the sessionTargets map the observer populated under the same key and
@@ -464,6 +505,7 @@ export default definePlugin({
           ctx,
           learnerDir: DATA_DIR,
           config,
+          skipPrune: useScheduledBackground,
         });
       } catch (err) {
         ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
@@ -495,8 +537,9 @@ export default definePlugin({
       refreshSkill,
       autoApprovePatterns,
       syncDiskStatus,
-      pruneDataFiles,
-      maybeRunModelAdvisor: advisorRunner.maybeRun,
+      pruneDataFiles: useScheduledBackground ? noopBackground : pruneDataFiles,
+      maybeRunModelAdvisor: useScheduledBackground ? noopBackground : advisorRunner.maybeRun,
+      maybeRunExtraction: useScheduledBackground ? noopBackground : extractionRunner.maybeRun,
 
       logActivity,
       recordUsage,
@@ -504,6 +547,7 @@ export default definePlugin({
       ctx,
       paths: { DATA_DIR, TURNS_FILE, EPISODES_FILE, EXPERIENCE_LOG, ERROR_LOG, CONFIG_FILE },
       MAX_SESSIONS,
+      skipPrune: useScheduledBackground,
     });
 
     observer.subscribe(ctx.bus, config);
@@ -544,9 +588,9 @@ export default definePlugin({
       syncDiskStatus();
       const { allPatterns } = autoApprovePatterns();
       flushPersist();
-      pruneDataFiles().catch(() => {});
+      if (!useScheduledBackground) pruneDataFiles().catch(() => {});
       refreshSkill(true, null, allPatterns);
-      advisorRunner.maybeRun("startup", null, allPatterns).catch(() => {});
+      if (!useScheduledBackground) advisorRunner.maybeRun("startup", null, allPatterns).catch(() => {});
     } catch (err) {
       ctx.log.warn(`runtime-learner: initial refresh failed: ${err.message}`);
     }
