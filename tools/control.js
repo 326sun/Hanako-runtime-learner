@@ -8,7 +8,7 @@ import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
 import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
 import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
-import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected } from "../lib/feedback-signals.js";
+import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected, summarizeFeedback } from "../lib/feedback-signals.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -89,6 +89,16 @@ const HANDLERS = {
       skillPromotion: { candidates: loadSkillCandidates(p.learnerDir).candidates.length, active: loadActiveSkills(p.learnerDir).skills.length },
       dataDir: p.learnerDir,
     }, null, 2);
+  },
+
+  // Read-only diagnostic (M5b): surface the local feedback signal tallies.
+  // Pure read — no file writes, no thresholds, no adaptive suggestions, and
+  // nothing here participates in any current decision. Observation only.
+  feedback_summary(input, p) {
+    const n = Number(input.sinceDays);
+    const sinceDays = Number.isFinite(n) && n > 0 ? n : 30;
+    const { counts, injectedIdTotal } = summarizeFeedback(p.learnerDir, { sinceDays });
+    return { ok: true, sinceDays, ...counts, injectedIdTotal };
   },
 
   list(input, p, config, patterns) {
@@ -509,7 +519,7 @@ const READ_ONLY_CONTROL_ACTIONS = new Set([
   "status", "list", "list_proposals", "show_proposal", "review_panel", "list_reviews",
   "list_events", "event_summary", "verify_event_log", "list_agent_tasks", "show_agent_task",
   "list_transfer_candidates", "show_transfer_candidate", "list_skill_candidates", "list_active_skills",
-  "doctor", "list_policy_profiles", "diagnose_bus",
+  "doctor", "list_policy_profiles", "diagnose_bus", "feedback_summary",
 ]);
 
 const EXTERNAL_MODEL_ACTIONS = new Set([

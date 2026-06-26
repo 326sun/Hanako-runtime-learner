@@ -31,6 +31,7 @@ export const CONTROL_PARAM_PROPERTIES = {
   format: { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." },
   governanceProfile: { type: "string", enum: ["conservative", "balanced", "autonomous"], description: "Governance policy profile to apply." },
   limit: { type: "number", description: "Maximum number of events/reviews to return for list actions." },
+  sinceDays: { type: "number", description: "Look-back window in days for feedback_summary (read-only). Default 30." },
   autoInjectHighConfidence: { type: "boolean" },
   autoApproveHighConfidence: { type: "boolean" },
   minInjectScore: { type: "number" },
