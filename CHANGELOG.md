@@ -2,9 +2,11 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
-## [Unreleased] - main (install freeze + release freeze)
+## 5.1.0 - 2026-06-26（内部安装候选 / install smoke candidate，**非 GitHub Release**）
 
-主线在 `v5.0.0` 之上累积了一批**实验性、默认关闭、零副作用、未接入主流程**的能力，外加 M1 的正式 defer。**未发布**：install freeze + release freeze 持续，未 tag / 未 Release / 未上传 asset / 未安装 Hanako。版本号保持 `5.0.0`（未 bump）。完整审计见 `docs/FINAL_INSTALL_READINESS.md`。
+> 这是一个**内部安装冒烟候选版本**，仅用于在真实 Hanako 上做安装/加载冒烟，**不是 GitHub Release**：release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset。版本号从 `5.0.0` 升至 `5.1.0`（package.json / package-lock / manifest 同步）。
+
+主线在 `v5.0.0` 之上累积了一批**实验性、默认关闭、零副作用、未接入主流程**的能力，外加 M1 的正式 defer。完整审计见 `docs/FINAL_INSTALL_READINESS.md`，候选验收见 `docs/ACCEPTANCE-v5.1.0.md`。
 
 - **M5 / M5b - feedback signals + diagnostic（observation only）**：`lib/feedback-signals.js` 记录 `memory_injected/injection_revoked/memory_closed` 到本地 hash 链 event-log；`self_learning_control` 只读 `feedback_summary` action。零自适应、不参与任何当前决策。
 - **M5c - adaptive threshold DESIGN GATE（design only）**：`docs/M5_ADAPTIVE_THRESHOLD_GATE.md`，纸面安全包络，无代码、无 flag、无阈值变更。

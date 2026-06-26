@@ -7,8 +7,9 @@
 
 - **Date:** 2026-06-26
 - **Audited commit (pre-audit main):** `7c862da`
-- **Version:** `5.0.0` (not bumped — frozen; main carries unreleased experimental
-  additions on top of the v5.0.0 release point)
+- **Version:** `5.1.0` — **internal install smoke candidate, not a GitHub
+  Release**. Bumped from `5.0.0` to mark the candidate the real-Hanako smoke test
+  will load; release freeze still active (no tag / Release / asset).
 - **Audit branch:** `audit/final-install-readiness`
 
 ## 1. Current main
