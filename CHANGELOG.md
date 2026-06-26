@@ -8,6 +8,9 @@
 
 主线在 `v5.0.0` 之上累积了一批**实验性、默认关闭、零副作用、未接入主流程**的能力，外加 M1 的正式 defer。完整审计见 `docs/FINAL_INSTALL_READINESS.md`，候选验收见 `docs/ACCEPTANCE-v5.1.0.md`。
 
+- **✅ Hanako GUI 安装冒烟通过（2026-06-26）**：`5.1.0` dist 在真实 Hanako（`v0.345.x`）加载——`onload` 成功、`self_learning_*` 工具注册、只读 `feedback_summary` 与 `agent_graph_preview` 可用、无 failed 诊断。完整记录见 `docs/INSTALL_SMOKE_RESULT-v5.1.0.md`。冒烟通过**不改变 release freeze**：仍未 tag / 未 Release / 未传 asset。
+- **安装注意项**：正式安装应**替换旧社区版 v5.0.0**，而非并存。在 dev-slot 与旧 v5.0.0 并存时，宿主可能用**旧 v5.0.0 schema** 遮蔽 v5.0.0 之后新增的 action（尤其 M4b 的 `agent_graph_preview`）；替换后可在 `self_learning_control` 的 action 列表确认 `agent_graph_preview` 存在，以验证生效的是新 schema。
+
 - **M5 / M5b - feedback signals + diagnostic（observation only）**：`lib/feedback-signals.js` 记录 `memory_injected/injection_revoked/memory_closed` 到本地 hash 链 event-log；`self_learning_control` 只读 `feedback_summary` action。零自适应、不参与任何当前决策。
 - **M5c - adaptive threshold DESIGN GATE（design only）**：`docs/M5_ADAPTIVE_THRESHOLD_GATE.md`，纸面安全包络，无代码、无 flag、无阈值变更。
 - **M1 - local embedding 正式 defer（Route C）**：改判 `deferred-for-current-release`（非通过、非完成），失败证据保留于 `docs/BLOCKERS.md` BLK-1 + `docs/M1_BLOCKER_RESOLUTION_PLAN.md`；`tools/search.js` 不改、PoC 不合并。

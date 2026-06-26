@@ -99,13 +99,19 @@ Engineering-side: **nothing blocking.** main is gate-green, dist builds clean,
 Remaining steps are **owner decisions / manual, freeze-gated**:
 
 1. **Maintainer go/no-go** to lift install + release freeze.
-2. **Real-Hanako GUI smoke test** (manual, `v0.345.x`): load the dist zip, enable
-   the plugin, confirm `self_learning_*` tools load, exercise the read-only
-   `feedback_summary` and `agent_graph_preview` actions, verify no failed
-   diagnostics. This is the one thing automated gates cannot cover.
+2. ✅ **Real-Hanako GUI smoke test (DONE — passed, 2026-06-26).** The `5.1.0` dist
+   was loaded in the real Hanako GUI (`v0.345.x`): plugin `onload` succeeded,
+   `self_learning_*` tools registered, the read-only `feedback_summary` and
+   `agent_graph_preview` actions worked, and no failed diagnostics appeared. Full
+   record in [INSTALL_SMOKE_RESULT-v5.1.0.md](INSTALL_SMOKE_RESULT-v5.1.0.md).
+   **Known boundary:** in a dev slot shadowing an older community v5.0.0, the old
+   schema can mask the post-v5.0.0 `agent_graph_preview` action — a proper install
+   must **replace** v5.0.0, not run beside it.
 3. If a real release is later wanted: decide version bump, then (only after the
    freeze is lifted) tag / Release / asset.
 
 **Audit verdict:** main is a **final-install candidate** from an engineering
-standpoint. Recommended next step is the manual real-Hanako smoke test under
-maintainer authorization — automated readiness is met; no code blocker found.
+standpoint, and the manual real-Hanako GUI smoke test has now **passed**.
+Automated readiness met, no code blocker found. The remaining gate is purely the
+maintainer's go/no-go to lift the install + release freeze; until then no tag /
+Release / asset is produced.
