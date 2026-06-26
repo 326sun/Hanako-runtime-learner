@@ -226,3 +226,38 @@ explicit deferral of Route C).
 
 Gates run for this docs-only change: `npm run check`, `npm test`,
 `npm run complexity:check`.
+
+---
+
+## 5. FINAL DECISION (2026-06-26): Route C — defer M1
+
+**The maintainer has chosen Route C.** M1 local-embedding semantic retrieval is
+**formally deferred / descoped out of the current release**.
+
+This decision is explicit and recorded — it is **not** a performance pass and
+**not** a feature completion:
+
+- M1 did **not** clear its bar (MRR +2.3% vs +8% target; recall@3 +0.0%). The
+  failing benchmark evidence stands and is preserved (§1.1, [BLOCKERS.md](BLOCKERS.md)).
+- BM25-bigram + synonym + RRF is accepted as the **final retrieval stack for this
+  release**; the external-endpoint embeddings path (`lib/embeddings.js`, opt-in)
+  remains the available semantic option.
+- **Routes A and B are not executed**: no bge-base/e5 time-boxed re-test, no
+  larger-corpus re-test.
+
+Concretely, this decision changes **nothing in the runtime**:
+
+- `tools/search.js` is **not** modified.
+- Local embedding is **not** wired in.
+- `localSemanticEnabled` is **not** added/enabled.
+- The PoC branch `poc/v5.1-m1-local-embedding` is **not** merged into `main`.
+- The PoC + benchmark harness are **retained** as reproducible assets.
+
+**Reversibility.** M1 may be reopened in a future release only if a restart
+condition in BLOCKERS.md is met (a model/corpus that clears +8% MRR within the
+asset budget). Until then M1 stays deferred and out of install scope.
+
+BLK-1 is moved from **open / hard blocker** to **deferred-for-current-release
+(resolved-by-descope)** in [BLOCKERS.md](BLOCKERS.md). With no other open
+blocker, this resolves the M1 blocker; the install/release freeze itself remains
+in force and is governed separately.

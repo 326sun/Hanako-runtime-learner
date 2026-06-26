@@ -16,6 +16,12 @@ Status vocabulary used here:
 - **blocked-by-performance** — feature is technically implementable and a PoC
   exists, but it does not meet its acceptance performance bar. It is **not**
   `done`, **not** `skipped`, **not** `accepted`. It blocks release.
+- **deferred-for-current-release (resolved-by-descope)** — the maintainer has
+  made an explicit, recorded decision to take the feature **out of the current
+  release scope**. This is **not** a performance pass and **not** a feature
+  completion; it is a formal deferral. The feature no longer blocks release. The
+  failing evidence and restart conditions are preserved so it can be reopened in
+  a future release.
 
 ---
 
@@ -23,12 +29,12 @@ Status vocabulary used here:
 
 | Field | Value |
 |---|---|
-| **Status** | **blocked-by-performance** (not done / not skipped / not accepted) |
+| **Status** | **deferred-for-current-release (resolved-by-descope)** — *was* blocked-by-performance; descoped by maintainer 2026-06-26 (Route C). **Not** a performance pass, **not** a feature completion. |
 | **Feature** | Local-embedding semantic retrieval wired into the main search path |
-| **Plan ref** | v5.0 modernization plan §9.1 "M1 — 本地 embedding + wasm 向量索引", acceptance criterion #5 |
-| **PoC branch** | `poc/v5.1-m1-local-embedding` (kept, not merged) |
+| **Plan ref** | v5.0 modernization plan §9.1 "M1 — 本地 embedding + wasm 向量索引", acceptance criterion #5; decision in [M1_BLOCKER_RESOLUTION_PLAN.md](M1_BLOCKER_RESOLUTION_PLAN.md) §5 |
+| **PoC branch** | `poc/v5.1-m1-local-embedding` (kept, **not merged**) |
 | **PoC doc** | `docs/POC-v5.1-local-semantic.md` (on the PoC branch) |
-| **Release impact** | **YES — blocks final release** under the all-features-complete policy |
+| **Release impact** | **No longer blocks release** — formally deferred out of the current final install scope. The failing benchmark evidence below is retained. |
 
 ### Feature name (precise)
 
@@ -101,16 +107,35 @@ Both are **fallbacks, not the accepted feature**: shipping a fallback does **not
 clear BLK-1. The blocker clears only when the primary bar is met, or the
 maintainer formally re-scopes the feature out of the release.
 
-### Exit criteria (to clear BLK-1)
+### Resolution (2026-06-26): descoped via Route C
 
-One of:
+The maintainer chose **Route C** from
+[M1_BLOCKER_RESOLUTION_PLAN.md](M1_BLOCKER_RESOLUTION_PLAN.md): M1 is **formally
+deferred out of the current release**, accepting BM25-bigram + synonym + RRF as
+the final retrieval stack (external-endpoint embeddings in `lib/embeddings.js`
+remains the opt-in semantic path). Routes A/B (larger-model / larger-corpus
+re-tests) were **not** executed.
 
-- [ ] A model/config meets **≥ +8% MRR** (and improved recall@3) offline within
-      the asset budget, wired into `tools/search.js`, default-safe gating; **or**
-- [ ] The maintainer formally re-scopes M1 out of the release (recorded here),
-      explicitly accepting BM25-only (or the external-endpoint fallback) as final.
+This resolution is a **deferral, not a pass and not a completion**:
 
-Until then BLK-1 is **open** and release is **frozen**.
+- M1 did **not** clear its bar — the failing data above (MRR +2.3% vs +8%,
+  recall@3 +0.0%) stands and is deliberately retained as evidence.
+- `tools/search.js` is **not** modified; local embedding is **not** wired in;
+  `localSemanticEnabled` is **not** added/enabled.
+- The PoC branch `poc/v5.1-m1-local-embedding` is **not** merged; the PoC +
+  benchmark harness are **retained** for a future re-test.
+
+**Reopen conditions (future release only).** BLK-1 may be reopened if any holds:
+
+- [ ] A model/config meets **≥ +8% MRR** (and a non-trivial recall@3 lift) offline
+      within the ≤ 35 MB asset budget; **or**
+- [ ] A documented, representative larger Chinese corpus shows the same; **or**
+- [ ] The asset budget is formally relaxed to admit a bge-base/e5-class model that
+      clears the bar.
+
+Until such a reopen, **BLK-1 is closed as deferred** and M1 is **out of the
+current final install scope**. (The install/release freeze itself is a separate,
+still-active governance state — see the policy header above.)
 
 ---
 

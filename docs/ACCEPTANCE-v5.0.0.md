@@ -13,6 +13,8 @@ v5.0.0 收口 M0、M2、M3-lite 和 M6：
 
 本版本不包含 M1 本地 embedding / vector index、M4 Agent 编排、M5 adaptive thresholds，也不启用 `resource.watch` 自动学习或新的真实自动执行面。
 
+> **M1 deferred（2026-06-26）**：M1 本地 embedding 经 blocker 审查后正式 defer（Route C，见 [BLOCKERS.md](BLOCKERS.md) BLK-1 / [M1_BLOCKER_RESOLUTION_PLAN.md](M1_BLOCKER_RESOLUTION_PLAN.md)）——非性能通过、非功能完成，不在当前最终 install 范围；PoC 保留，未来满足重启条件才重开。
+
 ## 版本与兼容
 
 - `package.json`：`5.0.0`
