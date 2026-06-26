@@ -2,6 +2,8 @@
 
 日期：2026-06-25
 
+> **主线后续（2026-06-26，未发布）**：`v5.0.0` 之上的 main 累积了一批实验性、默认关闭、零副作用、未接入主流程的能力（M5/M5b/M5c/M5d/M4a/M4b）与 M1 的正式 defer。这些**不在 v5.0.0 发布范围内**，版本号未 bump，install + release freeze 持续。最终安装前候选态审计见 [FINAL_INSTALL_READINESS.md](FINAL_INSTALL_READINESS.md)；变更清单见 `CHANGELOG.md` 的 `[Unreleased]`。
+
 ## 范围
 
 v5.0.0 收口 M0、M2、M3-lite 和 M6：

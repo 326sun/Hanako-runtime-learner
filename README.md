@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-773%2F773-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-827%2F827-success" alt="tests">
 </p>
 
 Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
@@ -236,7 +236,7 @@ npm run release:check
 ```text
 package version: 5.0.0
 npm run check: passed
-npm test: 773 tests, 768 passed, 5 skipped
+npm test: 827 tests, 822 passed, 5 skipped
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100

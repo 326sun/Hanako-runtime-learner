@@ -2,6 +2,18 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## [Unreleased] - main (install freeze + release freeze)
+
+主线在 `v5.0.0` 之上累积了一批**实验性、默认关闭、零副作用、未接入主流程**的能力，外加 M1 的正式 defer。**未发布**：install freeze + release freeze 持续，未 tag / 未 Release / 未上传 asset / 未安装 Hanako。版本号保持 `5.0.0`（未 bump）。完整审计见 `docs/FINAL_INSTALL_READINESS.md`。
+
+- **M5 / M5b - feedback signals + diagnostic（observation only）**：`lib/feedback-signals.js` 记录 `memory_injected/injection_revoked/memory_closed` 到本地 hash 链 event-log；`self_learning_control` 只读 `feedback_summary` action。零自适应、不参与任何当前决策。
+- **M5c - adaptive threshold DESIGN GATE（design only）**：`docs/M5_ADAPTIVE_THRESHOLD_GATE.md`，纸面安全包络，无代码、无 flag、无阈值变更。
+- **M1 - local embedding 正式 defer（Route C）**：改判 `deferred-for-current-release`（非通过、非完成），失败证据保留于 `docs/BLOCKERS.md` BLK-1 + `docs/M1_BLOCKER_RESOLUTION_PLAN.md`；`tools/search.js` 不改、PoC 不合并。
+- **M5d - adaptive threshold 最小实现（默认 OFF、recommendation-only）**：`lib/adaptive-thresholds.js` 纯函数，对 `minInjectScore` 产单步 clamp 提案，`apply` 恒 false、不改 config、无人 import；新增 `adaptiveThresholdsEnabled`（默认 false）。`docs/ADAPTIVE_THRESHOLDS.md`。
+- **M4a - experimental readonly agent graph skeleton**：`lib/agent-graph-readonly.js` 六只读节点（Observe/Plan/Policy/Verify/Learn/Finalize），只产 plan/report，零执行/写文件/shell；不 import fs/child_process。`docs/AGENT_GRAPH_READONLY.md`。
+- **M4b - readonly agent graph diagnostic entry**：`self_learning_control` 只读 action `agent_graph_preview`，调用 M4a graph 返回 report；不新增 self_learning_* 工具（dist 仍 8 工具 / 13 文件）。
+- **文档一致性修复（final audit）**：README 测试徽章与文案、`lib/release-readiness.js` 的 `expectedTestCount` 默认（两处）、`tests/release-readiness.test.js` fixture 默认由 `773` 校正为真实 `827`（`822 passed` / `5 skipped` / `0 failed`），消除自 v5.0.0 起累积的计数漂移。
+
 ## 5.0.0 - 2026-06-25
 
 `v5.0.0` 正式收口 M0、M2、M3-lite 和 M6。版本号同步至 `5.0.0`，`manifest.minAppVersion` 提升至 `0.345.0`，测试总数保持 `773`（`768 passed`、`5 skipped`、`0 failed`）。
