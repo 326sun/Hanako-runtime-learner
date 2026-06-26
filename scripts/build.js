@@ -20,8 +20,12 @@ import { fileURLToPath } from "node:url";
 import { verifyDistStructure, verifyZipRoot, REQUIRED_TOOL_FILES } from "../lib/dist-verify.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const DIST = path.join(ROOT, "dist");
-const RELEASE = path.join(ROOT, "release");
+// Output dirs are overridable so tests can build into a private temp location
+// instead of racing on the shared <root>/dist (Windows file-lock contention
+// between concurrent test files). `npm run build` with no env is unchanged:
+// the real plugin still ships from <root>/dist + <root>/release.
+const DIST = path.resolve(ROOT, process.env.LEARNER_BUILD_DIST_DIR || "dist");
+const RELEASE = path.resolve(ROOT, process.env.LEARNER_BUILD_RELEASE_DIR || "release");
 const ZIP_NAME = "hanako-runtime-learner-dist.zip";
 
 // Copied verbatim beside the bundle (relative source path → dist filename).

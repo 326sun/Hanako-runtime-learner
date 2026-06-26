@@ -13,8 +13,13 @@ import { runtimeConfigPath } from "../lib/runtime-config-path.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
-const dist = path.join(root, "dist");
-const tmp = path.join(os.tmpdir(), "learner-smoke-" + Date.now());
+// Build into a PRIVATE temp dist, never the shared <root>/dist: build.test.js
+// rm+rebuilds <root>/dist in parallel, and importing/forking from a directory
+// being deleted races on Windows file locks. Isolation removes the shared state.
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "learner-smoke-"));
+const dist = path.join(work, "dist");
+const release = path.join(work, "release");
+const tmp = path.join(work, "scratch");
 
 async function esbuildAvailable() {
   try { await import("esbuild"); return true; } catch { return false; }
@@ -41,13 +46,15 @@ describe("install smoke · bundled dist", () => {
   before(async () => {
     available = await esbuildAvailable();
     if (!available) return;
-    if (!fs.existsSync(path.join(dist, "index.js"))) {
-      const res = spawnSync(process.execPath, [path.join(root, "scripts", "build.js")], { cwd: root, encoding: "utf-8" });
-      assert.equal(res.status, 0, res.stderr || res.stdout);
-    }
+    const res = spawnSync(process.execPath, [path.join(root, "scripts", "build.js")], {
+      cwd: root,
+      encoding: "utf-8",
+      env: { ...process.env, LEARNER_BUILD_DIST_DIR: dist, LEARNER_BUILD_RELEASE_DIR: release },
+    });
+    assert.equal(res.status, 0, res.stderr || res.stdout);
     fs.mkdirSync(tmp, { recursive: true });
   });
-  after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  after(() => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* best-effort temp cleanup */ } });
 
   it("loads onload from the bundle, writes dataDir, and stays default-off for LLM extraction", async (t) => {
     if (!available) return t.skip("esbuild not installed");

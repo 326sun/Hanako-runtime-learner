@@ -1,6 +1,7 @@
-import { describe, it, before } from "node:test";
+import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs";
+import os from "os";
 import path from "path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -8,8 +9,14 @@ import { verifyDistStructure, verifyZipRoot, REQUIRED_TOOL_FILES, scanUnresolved
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "..");
-const dist = path.join(root, "dist");
-const zipPath = path.join(root, "release", "hanako-runtime-learner-dist.zip");
+// Build into a PRIVATE temp dir, never the shared <root>/dist: parallel test
+// files (install-smoke.test.js) import/fork from <root>/dist, and a concurrent
+// rm+rebuild there races on Windows file locks → build exits non-zero → these
+// subtests get cancelled. Isolation removes the shared mutable state.
+const work = fs.mkdtempSync(path.join(os.tmpdir(), "learner-build-"));
+const dist = path.join(work, "dist");
+const release = path.join(work, "release");
+const zipPath = path.join(release, "hanako-runtime-learner-dist.zip");
 
 async function esbuildAvailable() {
   try { await import("esbuild"); return true; } catch { return false; }
@@ -42,9 +49,15 @@ describe("esbuild build → dist package", () => {
   before(async () => {
     available = await esbuildAvailable();
     if (!available) return;
-    const res = spawnSync(process.execPath, [path.join(root, "scripts", "build.js")], { cwd: root, encoding: "utf-8" });
+    const res = spawnSync(process.execPath, [path.join(root, "scripts", "build.js")], {
+      cwd: root,
+      encoding: "utf-8",
+      env: { ...process.env, LEARNER_BUILD_DIST_DIR: dist, LEARNER_BUILD_RELEASE_DIR: release },
+    });
     assert.equal(res.status, 0, `build failed: ${res.stderr || res.stdout}`);
   });
+
+  after(() => { try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* best-effort temp cleanup */ } });
 
   it("produces a clean, self-contained dist that passes structure verification", (t) => {
     if (!available) return t.skip("esbuild not installed");
