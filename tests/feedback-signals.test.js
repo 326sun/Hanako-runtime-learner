@@ -42,12 +42,20 @@ describe("feedback-signals · recordMemoryInjected", () => {
     assert.equal(readEvents(dir, { type: FEEDBACK_TYPES.injected }).length, 0);
   });
 
-  it("never leaks an absolute skillPath — only a relative ref or basename", () => {
+  it("never leaks an absolute skillPath — reduces any OS-absolute path to its basename", () => {
     const dir = tmp();
-    recordMemoryInjected(dir, { patternIds: ["x"], skillRef: "C:\\\\Users\\\\secret\\\\plugin\\\\SKILL.md" });
-    const [ev] = readEvents(dir, { type: FEEDBACK_TYPES.injected });
-    assert.ok(!path.isAbsolute(ev.data.skillRef), `skillRef must not be absolute: ${ev.data.skillRef}`);
-    assert.ok(!/secret/.test(ev.data.skillRef), "absolute path segments must not leak");
+    // A Windows-style (drive-letter) AND a POSIX-style absolute path must both
+    // reduce to the basename on EVERY platform — a Windows path must not leak in
+    // full when sanitized on Linux (the CI regression), and vice versa.
+    recordMemoryInjected(dir, { patternIds: ["x"], skillRef: "C:\\Users\\secret\\plugin\\SKILL.md" });
+    recordMemoryInjected(dir, { patternIds: ["y"], skillRef: "/home/secret/plugin/SKILL.md" });
+    const evs = readEvents(dir, { type: FEEDBACK_TYPES.injected });
+    assert.equal(evs.length, 2);
+    for (const ev of evs) {
+      assert.equal(ev.data.skillRef, "SKILL.md", `absolute skillRef must reduce to basename, got: ${ev.data.skillRef}`);
+      assert.ok(!/secret/.test(ev.data.skillRef), "absolute path segments must not leak");
+      assert.ok(!path.isAbsolute(ev.data.skillRef), `skillRef must not be absolute: ${ev.data.skillRef}`);
+    }
   });
 });
 
