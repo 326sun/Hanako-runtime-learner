@@ -8,6 +8,7 @@ import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
 import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
 import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
+import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected } from "../lib/feedback-signals.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -119,6 +120,12 @@ const HANDLERS = {
     patterns[idx] = { ...patterns[idx], status: "rejected", reviewedAt: new Date().toISOString() };
     writeJson(p.patternsPath, patterns);
     appendEvent(p.learnerDir, { type: "pattern.rejected", entityType: "pattern", entityId: id, summary: `Rejected pattern: ${patterns[idx].desc}` });
+    // Feedback signals (M5, instrumentation only, fail-soft): the user closed a
+    // memory; if it had been injected, its injection is now revoked.
+    if (config.feedbackSignalsEnabled !== false) {
+      recordMemoryClosed(p.learnerDir, { patternId: id, actor: "user", reason: "rejected" });
+      if (wasRecentlyInjected(p.learnerDir, id)) recordInjectionRevoked(p.learnerDir, { patternId: id, reason: "rejected" });
+    }
     regenerateSkill(p, patterns, config);
     return JSON.stringify({ ok: true, id, status: "rejected" }, null, 2);
   },

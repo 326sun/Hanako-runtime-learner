@@ -18,6 +18,7 @@ import { createAdvisorRunner } from "./lib/model-advisor.js";
 import { createExtractionRunner } from "./lib/llm-extraction-worker.js";
 import { buildSkillPatchProposal } from "./lib/proposals.js";
 import { applyProposalSafely } from "./lib/proposal-apply-safe.js";
+import { recordMemoryInjected } from "./lib/feedback-signals.js";
 import { buildRepeatedCodePatchProposals } from "./lib/advisor-insights.js";
 import { summarizeUsageEntry, updateUsageSummary, snapshotHostCapabilities } from "./lib/usage-pipeline.js";
 import { usageDedupKey, absorbDiskPatternState, normalizeSessionTarget, sessionIdentityKey } from "./lib/helpers.js";
@@ -341,12 +342,16 @@ export default definePlugin({
           if (config.requireReviewForAutoApply && !isProposalReviewApproved(DATA_DIR, proposal.id)) {
             ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
           } else {
-            applyProposalSafely(DATA_DIR, proposal.id, {
+            const applied = applyProposalSafely(DATA_DIR, proposal.id, {
               configPath: CONFIG_FILE,
               requireReview: !!config.requireReviewForAutoApply,
               allowedSkillRoots: [ctx.pluginDir],
             });
             pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
+            // Feedback signal: SKILL.md actually changed and was written. Fail-soft.
+            if (config.feedbackSignalsEnabled && applied?.status === "applied" && applied?.result?.ok) {
+              recordMemoryInjected(DATA_DIR, { patternIds: triggerPatternIds, skillRef: "skills/self-learning/SKILL.md" });
+            }
           }
         }
       }
