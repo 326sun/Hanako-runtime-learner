@@ -9,6 +9,7 @@ import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
 import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
 import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected, summarizeFeedback } from "../lib/feedback-signals.js";
+import { runReadonlyAgentGraph } from "../lib/agent-graph-readonly.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
@@ -99,6 +100,16 @@ const HANDLERS = {
     const sinceDays = Number.isFinite(n) && n > 0 ? n : 30;
     const { counts, injectedIdTotal } = summarizeFeedback(p.learnerDir, { sinceDays });
     return { ok: true, sinceDays, ...counts, injectedIdTotal };
+  },
+
+  // Read-only diagnostic entry (M4b): run the experimental read-only agent graph
+  // (lib/agent-graph-readonly.js) over a caller-supplied context + plan and return
+  // its report. Pure: it executes no node side effect, writes no event-log /
+  // config / patterns / memory, runs no shell, and never auto-applies. Forbidden
+  // (Execute/Repair/Rollback/HumanApproval/Apply) and side-effecting nodes are
+  // rejected by the graph's Policy node. See docs/AGENT_GRAPH_READONLY.md.
+  agent_graph_preview(input) {
+    return runReadonlyAgentGraph({ context: input.context, plan: input.plan });
   },
 
   list(input, p, config, patterns) {
@@ -520,6 +531,7 @@ const READ_ONLY_CONTROL_ACTIONS = new Set([
   "list_events", "event_summary", "verify_event_log", "list_agent_tasks", "show_agent_task",
   "list_transfer_candidates", "show_transfer_candidate", "list_skill_candidates", "list_active_skills",
   "doctor", "list_policy_profiles", "diagnose_bus", "feedback_summary",
+  "agent_graph_preview",
 ]);
 
 const EXTERNAL_MODEL_ACTIONS = new Set([

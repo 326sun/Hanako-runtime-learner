@@ -89,6 +89,33 @@ Rejection is the **only** consequence — nothing is executed either way.
 }
 ```
 
+## Diagnostic entry: `self_learning_control` → `agent_graph_preview` (M4b)
+
+The graph is reachable as a **read-only** action on the existing
+`self_learning_control` tool (no new `self_learning_*` tool is added, so the
+manifest / dist tool contract is unchanged). It is registered in
+`READ_ONLY_CONTROL_ACTIONS` and writes nothing.
+
+```jsonc
+// self_learning_control
+{
+  "action": "agent_graph_preview",
+  "context": { "summary": "session had 3 failed tool calls",
+               "observations": ["timeout on build", "lint error"] },
+  "plan": { "nodes": [
+    { "type": "Plan",    "title": "analyze failures", "riskTier": "R1" },
+    { "type": "Observe", "title": "summarize logs",   "riskTier": "R0" }
+  ] }
+}
+```
+
+The action returns the graph report (the schema above) under `details`. It runs
+no node side effect, writes no event-log / config / patterns / memory, runs no
+shell, and never auto-applies. A plan containing an Execute / Repair / Rollback /
+HumanApproval / Apply node — or any `sideEffect:true` / `readonly:false` node —
+comes back with `status: "rejected"` and `humanReviewRequired: true`. Empty or
+malformed input fail-softs (`status: "failed-soft"`).
+
 ## Fail-soft behavior
 
 The graph never throws on bad input:
