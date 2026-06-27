@@ -101,3 +101,15 @@ test("tools declare auditable session side effects", () => {
   assert.equal(controlSessionPermission.describeSideEffect({ action: "release_readiness" }).kind, "plugin_output");
   assert.equal(controlSessionPermission.describeSideEffect({ action: "set_config" }).kind, "plugin_state_mutation");
 });
+
+test("diagnose_bus declares a side effect when it will send a session message", () => {
+  // Capability-only probe (no session target) is genuinely read-only.
+  assert.equal(controlSessionPermission.describeSideEffect({ action: "diagnose_bus" }).kind, "read");
+  // With a session target the handler calls session:send — that is an external
+  // side effect and must NOT be declared "read" (the host auto-allows read kinds
+  // without review, which would let the message bypass the permission gate).
+  for (const target of [{ sessionId: "s1" }, { sessionRef: "r1" }, { sessionPath: "/p" }]) {
+    const kind = controlSessionPermission.describeSideEffect({ action: "diagnose_bus", ...target }).kind;
+    assert.equal(kind, "external_side_effect", `diagnose_bus with ${Object.keys(target)[0]} should declare a side effect`);
+  }
+});

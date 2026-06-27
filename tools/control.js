@@ -560,6 +560,20 @@ const LOCAL_STATE_MUTATION_ACTIONS = new Set([
 
 function describeControlSideEffect(input = {}) {
   const action = typeof input.action === "string" ? input.action : "unknown";
+  // diagnose_bus is a read-only capability probe UNLESS a session target is
+  // supplied — in that case its handler calls session:send (an external side
+  // effect). Declaring it "read" then would let the host auto-allow the message
+  // without review, so report the side effect precisely when it will occur.
+  if (action === "diagnose_bus") {
+    const target = normalizeSessionTarget(input);
+    if (target.sessionId || target.sessionRef || target.sessionPath) {
+      return {
+        kind: "external_side_effect",
+        summary: "Send a diagnostic session:send test message to the target session.",
+        ruleId: "runtime-learner-control-diagnose_bus",
+      };
+    }
+  }
   if (READ_ONLY_CONTROL_ACTIONS.has(action)) {
     return {
       kind: "read",
