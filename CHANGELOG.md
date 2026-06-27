@@ -2,6 +2,16 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.1 - 2026-06-27（model advisor 可观测性补强，**非 GitHub Release**）
+
+> 在 `5.1.0` 之上对 model advisor 的「静默失败」做可见性补强。release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset、未安装。版本号 `5.1.0` → `5.1.1`（manifest / package.json / package-lock 同步）。
+
+背景：official 模式在 Hanako `v0.345.x` 上凭证链由宿主侧自洽（utility 模型缺省回退主聊天模型），根因不在凭证缺失，而在 advisor 跳过/失败时**无声无息**。本版只让真实状态可见，不改 official 架构。
+
+- **advisor 运行状态持久化（`lib/model-advisor.js`）**：`maybeRun` 的三个出口（success / skipped / error）写入 `model_advisor_status.json`。新增纯函数 `buildAdvisorStatus()` 负责 `consecutiveFailures` 记账（success 归零、error 递增、skipped 保留），抽出以便单测。
+- **doctor 诊断（`tools/doctor.js`）**：`modelAdvisorEnabled=true` 时按运行状态报告——从未运行 → `advisor_never_run`(info)；error 单次瞬时 → `advisor_error`(warning)，连续 ≥3 次 → (high)；config 类跳过 → `advisor_skipped`(warning)；良性跳过（pattern 不够 / 冷却 / 无候选）→ (info)，不再把正常空闲态拉成 Warning；`modelAdvisorEnabled=false` 全程静默。
+- **测试**：新增 11 条（doctor 7 + `buildAdvisorStatus` 4）。测试总数 `827` → `838`（`833 passed` / `5 skipped` / `0 failed`）；同步 README 徽章/计数文案与 `lib/release-readiness.js` 的 `expectedTestCount` 默认。
+
 ## 5.1.0 - 2026-06-26（内部安装候选 / install smoke candidate，**非 GitHub Release**）
 
 > 这是一个**内部安装冒烟候选版本**，仅用于在真实 Hanako 上做安装/加载冒烟，**不是 GitHub Release**：release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset。版本号从 `5.0.0` 升至 `5.1.0`（package.json / package-lock / manifest 同步）。

@@ -202,6 +202,34 @@ describe("model advisor", () => {
     });
   });
 
+  describe("buildAdvisorStatus", () => {
+    it("resets consecutiveFailures to 0 on success", () => {
+      const s = advisor.buildAdvisorStatus({ outcome: "success", prev: { consecutiveFailures: 4 }, lastRunAt: "T", source: "official-bus", suggestionCount: 3 });
+      assert.equal(s.status, "success");
+      assert.equal(s.consecutiveFailures, 0);
+      assert.equal(s.suggestionCount, 3);
+      assert.equal(s.source, "official-bus");
+    });
+
+    it("counts the first error as one failure when there is no prior status", () => {
+      const s = advisor.buildAdvisorStatus({ outcome: "error", prev: null, lastRunAt: "T", reason: "boom" });
+      assert.equal(s.status, "error");
+      assert.equal(s.consecutiveFailures, 1);
+      assert.equal(s.reason, "boom");
+    });
+
+    it("increments consecutiveFailures on a repeated error", () => {
+      const s = advisor.buildAdvisorStatus({ outcome: "error", prev: { consecutiveFailures: 2 }, lastRunAt: "T", reason: "boom" });
+      assert.equal(s.consecutiveFailures, 3);
+    });
+
+    it("preserves the failure streak across a benign skip", () => {
+      const s = advisor.buildAdvisorStatus({ outcome: "skipped", prev: { consecutiveFailures: 2 }, lastRunAt: "T", reason: "rate limited" });
+      assert.equal(s.status, "skipped");
+      assert.equal(s.consecutiveFailures, 2);
+    });
+  });
+
   describe("model:sample-text bus sampling (Hanako ≥ 0.305)", () => {
     const officialConfig = {
       modelAdvisorEnabled: true,

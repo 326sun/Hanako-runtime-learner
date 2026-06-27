@@ -265,6 +265,77 @@ describe("doctor · evidence_missing", () => {
   });
 });
 
+describe("doctor · advisor status", () => {
+  const enabled = { modelAdvisorEnabled: true };
+  const at = (h) => new Date(NOW - h * 3600_000).toISOString();
+
+  it("notes advisor_never_run (info) when enabled but no status exists yet", () => {
+    const r = diagnose({ patterns: [], config: enabled, advisorStatus: null, now: NOW });
+    const issue = r.issues.find((i) => i.type === "advisor_never_run");
+    assert.equal(issue?.severity, "info");
+  });
+
+  it("stays silent about the advisor when disabled, even with an error status", () => {
+    const r = diagnose({
+      patterns: [], config: { modelAdvisorEnabled: false },
+      advisorStatus: { status: "error", reason: "boom", consecutiveFailures: 5, lastRunAt: at(0) },
+      now: NOW,
+    });
+    assert.ok(!types(r).some((t) => t.startsWith("advisor_")));
+  });
+
+  it("reports no advisor issue on a successful run", () => {
+    const r = diagnose({
+      patterns: [], config: enabled,
+      advisorStatus: { status: "success", reason: null, source: "official-bus", suggestionCount: 2, consecutiveFailures: 0, lastRunAt: at(0) },
+      now: NOW,
+    });
+    assert.ok(!types(r).some((t) => t.startsWith("advisor_")));
+  });
+
+  it("treats a benign skip (not enough patterns) as info, not warning", () => {
+    const r = diagnose({
+      patterns: [], config: enabled,
+      advisorStatus: { status: "skipped", reason: "only 2 new pattern(s), need 3", consecutiveFailures: 0, lastRunAt: at(0) },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "advisor_skipped");
+    // info (penalty 3) — a normal idle advisor must not raise a warning-level issue.
+    assert.equal(issue?.severity, "info");
+    assert.match(issue.message, /not enough new patterns/);
+  });
+
+  it("flags a config-driven skip (incomplete endpoint) as a warning", () => {
+    const r = diagnose({
+      patterns: [], config: enabled,
+      advisorStatus: { status: "skipped", reason: "model advisor endpoint incomplete", consecutiveFailures: 0, lastRunAt: at(0) },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "advisor_skipped");
+    assert.equal(issue?.severity, "warning");
+  });
+
+  it("treats a single advisor error as a transient warning, not high", () => {
+    const r = diagnose({
+      patterns: [], config: enabled,
+      advisorStatus: { status: "error", reason: "session busy", consecutiveFailures: 1, lastRunAt: at(0) },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "advisor_error");
+    assert.equal(issue?.severity, "warning");
+  });
+
+  it("escalates an advisor error to high after repeated consecutive failures", () => {
+    const r = diagnose({
+      patterns: [], config: enabled,
+      advisorStatus: { status: "error", reason: "HTTP 401", consecutiveFailures: 3, lastRunAt: at(0) },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "advisor_error");
+    assert.equal(issue?.severity, "high");
+  });
+});
+
 describe("doctor · formatReport", () => {
   it("renders a human-readable report and never claims to modify files", () => {
     const r = diagnose({

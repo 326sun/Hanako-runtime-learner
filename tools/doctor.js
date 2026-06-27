@@ -41,7 +41,7 @@ const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
  * @param {object} opts.events     event summary
  * @param {number} opts.now
  */
-export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS } = {}) {
+export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS, advisorStatus = null } = {}) {
   const cfg = mergeConfig(config);
   const decorated = decoratePatterns(patterns, cfg);
   const issues = [];
@@ -71,6 +71,54 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
         `Run self_learning_control action=set_policy_profile governanceProfile=${profile.name}.`,
         { profile: profile.name, mismatches });
     }
+  }
+
+  // 1b) model_advisor_status — advisor enabled but not running successfully.
+  if (cfg.modelAdvisorEnabled && advisorStatus) {
+    const { status, reason: advReason, source, suggestionCount, lastRunAt } = advisorStatus;
+    const age = lastRunAt ? Math.round((now - Date.parse(lastRunAt)) / 3600_000) : null;
+    const ageText = age != null ? (age < 1 ? "just now" : age === 1 ? "1 hour ago" : `${age} hours ago`) : "unknown";
+
+    if (status === "error") {
+      // A single failure is usually a transient host/bus blip (busy session,
+      // timeout) and self-heals on the next run, so report it as a warning.
+      // Only a sustained streak (creds wrong, endpoint unreachable) escalates to
+      // high — the count comes from the advisor's persisted consecutiveFailures.
+      const failures = Number(advisorStatus.consecutiveFailures) || 0;
+      const persistent = failures >= 3;
+      add(persistent ? "high" : "warning", "advisor_error",
+        persistent
+          ? `model advisor has failed ${failures} runs in a row (last ${ageText}): ${advReason || "unknown error"}`
+          : `model advisor failed ${ageText}: ${advReason || "unknown error"} (transient — will retry)`,
+        persistent
+          ? "Check the plugin console log and verify the advisor endpoint/credentials are reachable."
+          : "Likely a transient host/bus hiccup; it retries automatically. Investigate only if it persists.",
+        { advisorStatus: { status, reason: advReason, consecutiveFailures: failures, lastRunAt } });
+    } else if (status === "skipped") {
+      // Benign skips are the advisor's normal idle states (waiting for new
+      // patterns, cooling down, nothing eligible) — info, so they don't drag a
+      // healthy report to Warning. Anything else is a config/endpoint problem
+      // the user should act on — warning.
+      const benign = /rate limited|only \d+ new pattern|no candidate/i.test(advReason);
+      const friendly = /rate limited/i.test(advReason) ? "cooling down"
+        : /only \d+ new pattern/i.test(advReason) ? "not enough new patterns"
+        : /no candidate/i.test(advReason) ? "no eligible patterns"
+        : advReason;
+      add(benign ? "info" : "warning", "advisor_skipped",
+        `model advisor not running (${friendly}, ${ageText})`,
+        friendly === "not enough new patterns"
+          ? "Wait for more interactions to accumulate; minimum new patterns required before advisor runs."
+          : friendly === "cooling down"
+            ? "The advisor is rate-limited; it will run again after the cooldown period."
+            : "Review the advisor configuration and ensure the endpoint is reachable.",
+        { advisorStatus: { status, reason: advReason, lastRunAt } });
+    }
+    // success — no issue to report, but useful for context.
+  } else if (cfg.modelAdvisorEnabled && !advisorStatus) {
+    add("info", "advisor_never_run",
+      "model advisor is enabled but has never run yet",
+      "The advisor runs periodically after enough new patterns accumulate. No action needed if the plugin was just installed.",
+      { advisorStatus: null });
   }
 
   // 2) duplicate_patterns — same desc+fix surviving as separate records.
@@ -359,7 +407,8 @@ export function runDoctorFromDisk(learnerDir = resolveLearnerDir(), { configPath
   const reviews = listReviews(learnerDir, { limit: 500 });
   const events = eventSummary(learnerDir);
   const memfsIndex = readMemFSIndex(learnerDir);
-  return diagnose({ patterns, config, proposals, facts, logs, reviews, events, memfsIndex });
+  const advisorStatus = readJson(path.join(learnerDir, "model_advisor_status.json"), null);
+  return diagnose({ patterns, config, proposals, facts, logs, reviews, events, memfsIndex, advisorStatus });
 }
 
 export function formatReport(report) {

@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.0-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.1-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-827%2F827-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-838%2F838-success" alt="tests">
 </p>
 
 Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
@@ -70,7 +70,7 @@ npm run install-plugin
 固定版本安装：
 
 ```powershell
-git clone --branch v5.1.0 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v5.1.1 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm install
 npm run build
@@ -234,9 +234,9 @@ npm run release:check
 `v5.0.0` 的预期结果：
 
 ```text
-package version: 5.0.0
+package version: 5.1.1
 npm run check: passed
-npm test: 827 tests, 822 passed, 5 skipped
+npm test: 838 tests, 833 passed, 5 skipped
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100
