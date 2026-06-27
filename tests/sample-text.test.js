@@ -65,6 +65,7 @@ describe("sample-text shared helpers (extracted from model-advisor)", () => {
     it("requests the capability with messages/maxTokens/timeout and normalizes the result", async () => {
       const calls = [];
       const ctx = {
+        pluginId: "hanako-runtime-learner",
         bus: {
           request(type, payload, opts) {
             calls.push({ type, payload, opts });
@@ -85,6 +86,7 @@ describe("sample-text shared helpers (extracted from model-advisor)", () => {
       assert.equal(calls[0].payload.operation, "test-op");
       assert.deepEqual(calls[0].payload.messages, [{ role: "user", content: "hi" }]);
       assert.equal(calls[0].payload.maxTokens, 123);
+      assert.equal(calls[0].payload.pluginId, "hanako-runtime-learner");
       assert.equal(calls[0].opts.timeout, 9000);
     });
 
