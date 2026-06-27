@@ -8,6 +8,7 @@ import { AGENT_STATES, createAgentState, restoreAgentState, serializeAgentState,
 import { AgentController, runAgentController } from "../lib/agent-controller.js";
 import { latestPendingApproval, resolveApprovalRequest } from "../lib/human-interrupt.js";
 import { loadAuditTrace, summarizeAuditTrace } from "../lib/audit-trace.js";
+import { loadAgentTaskState, saveAgentTaskState } from "../lib/agent-task-store.js";
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agent-controller-"));
@@ -45,6 +46,35 @@ test("agent controller runs a safe graph to completion and writes audit trace", 
   assert.equal(summary.taskId, result.state.taskId);
   assert.ok(summary.eventCount > 0);
   assert.ok(summary.byType["node.completed"] >= 1);
+});
+
+test("agent controller force-fails and persists state/audit when a node throws", async () => {
+  const learnerDir = tmpdir();
+  const controller = new AgentController({
+    handlers: { [TASK_GRAPH_NODES.OBSERVE]: () => { throw new Error("boom in observe"); } },
+  });
+  const result = await controller.run({ title: "exploding task", input: "x" }, { learnerDir });
+  // Run must not reject; it converts the crash into a terminal FAILED state.
+  assert.equal(result.ok, false);
+  assert.equal(result.state.state, AGENT_STATES.FAILED);
+  // The crash is auditable.
+  const crash = (result.trace.events || []).find((e) => e.type === "state.crashed");
+  assert.ok(crash, "expected a state.crashed audit event");
+  assert.match(String(crash.summary || ""), /boom in observe/);
+  // The failed state is persisted to disk (so a later resume sees FAILED, not a stale state).
+  const persisted = loadAgentTaskState(learnerDir, result.state.taskId);
+  assert.ok(persisted, "expected agent task state to be persisted");
+  assert.equal(persisted.state, AGENT_STATES.FAILED);
+});
+
+test("agent task store distinguishes a corrupt state file from a missing one", () => {
+  const learnerDir = tmpdir();
+  // Missing task → null (silent, expected).
+  assert.equal(loadAgentTaskState(learnerDir, "never-saved"), null);
+  // Corrupt task file → throws a distinguishable error (not a silent null).
+  const saved = saveAgentTaskState(learnerDir, { taskId: "corrupt-task", state: "created" });
+  fs.writeFileSync(saved.path, "{ this is not valid json", "utf-8");
+  assert.throws(() => loadAgentTaskState(learnerDir, "corrupt-task"), /corrupt/i);
 });
 
 test("agent controller pauses for human approval on R4 action plan", async () => {
