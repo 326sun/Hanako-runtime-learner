@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-06-27T05:40:23.629Z
+Generated at: 2026-06-27T05:47:35.667Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
