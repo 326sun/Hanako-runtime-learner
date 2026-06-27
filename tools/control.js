@@ -7,31 +7,27 @@ import { listProposals, readProposal, rejectProposal, previewProposalDiff, verif
 import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
 import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
 import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
-import { readEvents, appendEvent, replayEventState } from "../lib/event-log.js";
+import { appendEvent } from "../lib/event-log.js";
 import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected, summarizeFeedback } from "../lib/feedback-signals.js";
-import { runReadonlyAgentGraph } from "../lib/agent-graph-readonly.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
-import { loadFacts } from "../lib/facts.js";
 import { applyPolicyProfile } from "../lib/policy-profiles.js";
-import { buildAuditBundle, exportAuditBundle } from "../lib/audit-bundle.js";
-import { buildAuditDashboard, exportAuditDashboard } from "../lib/audit-dashboard.js";
 import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
-import { listAgentTaskStates, readAgentTaskBundle } from "../lib/agent-task-store.js";
-import { approveAgentTask, cancelAgentTask, rejectAgentTask, resumeAgentTask } from "../lib/agent-resume.js";
+import { listAgentTaskStates } from "../lib/agent-task-store.js";
 import { expireTransferCandidate, listTransferCandidateRecords, loadTransferCandidateRecord, recordTransferValidation, registerTransferCandidate, summarizeTransferCandidate } from "../lib/transfer-registry.js";
-import { runBenchmarkCorpus } from "../lib/benchmark-corpus.js";
 import { loadActiveSkills, loadSkillCandidates, runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
 import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
-import { toolPaths } from "./_shared.js";
+import { toolPaths, readPluginVersion } from "./_shared.js";
 import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks, validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
 import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
 import { eventHandlers } from "./control-handlers/events.js";
+import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
+import { auditHandlers } from "./control-handlers/audit.js";
 
 const MAX_SKILL_HISTORY = 20;
 
@@ -58,9 +54,6 @@ function redactConfig(config = {}) {
   return safeConfig;
 }
 
-function readPluginVersion(pluginDir) {
-  try { return JSON.parse(fs.readFileSync(path.join(pluginDir, "package.json"), "utf-8")).version; } catch { return "unknown"; }
-}
 
 const HANDLERS = {
   status(input, p, config, patterns) {
@@ -108,10 +101,6 @@ const HANDLERS = {
   // config / patterns / memory, runs no shell, and never auto-applies. Forbidden
   // (Execute/Repair/Rollback/HumanApproval/Apply) and side-effecting nodes are
   // rejected by the graph's Policy node. See docs/AGENT_GRAPH_READONLY.md.
-  agent_graph_preview(input) {
-    return runReadonlyAgentGraph({ context: input.context, plan: input.plan });
-  },
-
   list(input, p, config, patterns) {
     return JSON.stringify(decoratePatterns(patterns, config).slice(0, 20).map((pat) => ({
       id: pat.id, type: pat.type, desc: pat.desc, count: pat.count, score: pat.score,
@@ -311,46 +300,9 @@ const HANDLERS = {
   // (C-001 HANDLERS split — events domain): list_events, event_summary, verify_event_log.
   ...eventHandlers,
 
-  list_agent_tasks(input, p) {
-    const tasks = listAgentTaskStates(p.learnerDir, { limit: input.limit || 50 });
-    return JSON.stringify({ ok: true, tasks, nextAction: "show_agent_task" }, null, 2);
-  },
-
-  show_agent_task(input, p) {
-    const taskId = input.taskId || input.id;
-    if (!taskId) throw new Error("taskId is required");
-    const bundle = readAgentTaskBundle(p.learnerDir, taskId);
-    if (!bundle) throw new Error(`agent task not found: ${taskId}`);
-    return JSON.stringify({ ok: true, ...bundle, nextAction: bundle.summary.pendingApprovals > 0 ? "approve_agent_task or reject_agent_task" : "resume_agent_task" }, null, 2);
-  },
-
-  approve_agent_task(input, p) {
-    const taskId = input.taskId || input.id;
-    if (!taskId) throw new Error("taskId is required");
-    const approved = approveAgentTask(p.learnerDir, taskId, { requestId: input.requestId || null, reason: input.reason || "approved through self_learning_control" });
-    return JSON.stringify({ ok: true, taskId, requestId: approved.requestId, state: approved.state.state, nextAction: "resume_agent_task" }, null, 2);
-  },
-
-  reject_agent_task(input, p) {
-    const taskId = input.taskId || input.id;
-    if (!taskId) throw new Error("taskId is required");
-    const rejected = rejectAgentTask(p.learnerDir, taskId, { requestId: input.requestId || null, reason: input.reason || "rejected through self_learning_control" });
-    return JSON.stringify({ ok: true, taskId, requestId: rejected.requestId, state: rejected.state.state, nextAction: "show_agent_task" }, null, 2);
-  },
-
-  cancel_agent_task(input, p) {
-    const taskId = input.taskId || input.id;
-    if (!taskId) throw new Error("taskId is required");
-    const cancelled = cancelAgentTask(p.learnerDir, taskId, { requestId: input.requestId || null, reason: input.reason || "cancelled through self_learning_control" });
-    return JSON.stringify({ ok: true, taskId, state: cancelled.state.state, nextAction: "show_agent_task" }, null, 2);
-  },
-
-  async resume_agent_task(input, p, config) {
-    const taskId = input.taskId || input.id;
-    if (!taskId) throw new Error("taskId is required");
-    const resumed = await resumeAgentTask(p.learnerDir, taskId, { learnerDir: p.learnerDir, config, workspaceRoot: p.pluginDir });
-    return JSON.stringify({ ok: resumed.ok, taskId, state: resumed.state.state, traceEvents: resumed.trace?.events?.length || 0, nextAction: resumed.state.state === "waiting_for_human" ? "show_agent_task then approve_agent_task or reject_agent_task" : "show_agent_task" }, null, 2);
-  },
+  // Agent-task handlers (agent_graph_preview, list/show/approve/reject/cancel/
+  // resume_agent_task) live in control-handlers/agent-tasks.js (C-001 split).
+  ...agentTaskHandlers,
 
   list_transfer_candidates(input, p) {
     const records = listTransferCandidateRecords(p.learnerDir, { status: input.status || null, limit: input.limit || 50 });
@@ -390,22 +342,9 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, summary: summarizeTransferCandidate(expired.record), nextAction: "list_transfer_candidates" }, null, 2);
   },
 
-  async run_benchmarks(input, p, config) {
-    const outputDir = input.benchmarkOutputDir || path.join(p.learnerDir, "benchmark-runs", new Date().toISOString().replace(/[:.]/g, "-"));
-    const root = resolveProjectRoot(input, p, { requireBenchmarkCorpus: true });
-    if (!root.ok) {
-      appendEvent(p.learnerDir, { type: "benchmark.unavailable", entityType: "benchmark", entityId: path.basename(outputDir), summary: "Benchmark corpus unavailable in runtime package", data: { outputDir, reason: root.reason, checked: root.checked } });
-      return JSON.stringify({ ok: false, status: "unavailable", outputDir, reason: root.reason, checked: root.checked, nextAction: "provide projectRoot/sourceRoot or install from a source checkout with .source-root.json" }, null, 2);
-    }
-    const result = await runBenchmarkCorpus({
-      projectRoot: root.projectRoot,
-      benchmarkRoot: path.join(root.projectRoot, "benchmarks"),
-      ids: input.benchmarkId || input.id ? [input.benchmarkId || input.id] : [],
-      outputDir,
-    }, { pluginDir: root.projectRoot, learnerDir: p.learnerDir, config });
-    appendEvent(p.learnerDir, { type: "benchmark.ran", entityType: "benchmark", entityId: path.basename(outputDir), summary: `Ran benchmark corpus: ${result.runs?.length || 0} scenario(s), ok=${result.ok}`, data: { outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, metrics: result.metrics, regressions: result.regressions || [] } });
-    return JSON.stringify({ ok: result.ok, outputDir, projectRoot: root.projectRoot, projectRootSource: root.source, metrics: result.metrics, regressions: result.regressions || [], nextAction: "review benchmark-report.md" }, null, 2);
-  },
+  // Audit/benchmark handlers (run_benchmarks, export_audit_bundle,
+  // generate_audit_dashboard) live in control-handlers/audit.js (C-001 split).
+  ...auditHandlers,
 
   run_skill_promotion_loop(input, p, config) {
     const result = runSkillPromotionLoop(p.learnerDir, {
@@ -433,31 +372,6 @@ const HANDLERS = {
     appendEvent(p.learnerDir, { type: "policy.applied", entityType: "config", entityId: "governanceProfile", summary: `Applied governance profile: ${result.profile}`, data: { profile: result.profile, changed: result.changed } });
     regenerateSkill(p, patterns, result.config);
     return JSON.stringify({ ok: true, profile: result.profile, changed: result.changed, config: result.config, nextAction: "doctor" }, null, 2);
-  },
-
-  export_audit_bundle(input, p, config, patterns) {
-    const proposals = listProposals(p.learnerDir, { limit: 500 });
-    const reviews = listReviews(p.learnerDir, { limit: 500 });
-    const events = readEvents(p.learnerDir, { limit: input.limit || 5000 });
-    const facts = loadFacts(p.learnerDir);
-    const doctorReport = runDoctorFromDisk(p.learnerDir);
-    const transferCandidates = listTransferCandidateRecords(p.learnerDir, { limit: 500 });
-    const version = readPluginVersion(p.pluginDir);
-    const bundle = buildAuditBundle({ version, config, patterns, facts, proposals, reviews, events, eventSummary: replayEventState(events), doctor: doctorReport, transferCandidates });
-    const written = exportAuditBundle(p.learnerDir, bundle);
-    appendEvent(p.learnerDir, { type: "audit.exported", entityType: "audit", entityId: path.basename(written.dir), summary: "Exported local audit bundle", data: { dir: written.dir, doctorStatus: doctorReport.status } });
-    return JSON.stringify({ ok: true, ...written, summary: bundle.summary, nextAction: "review audit-report.md" }, null, 2);
-  },
-
-  generate_audit_dashboard(input, p) {
-    const root = resolveProjectRoot(input, p, { requireBenchmarkCorpus: true });
-    const version = readPluginVersion(root.ok ? root.projectRoot : p.pluginDir);
-    const benchmarkRunsDir = input.benchmarkRunsDir || path.join(p.learnerDir, "benchmark-runs");
-    const dashboard = buildAuditDashboard(p.learnerDir, { version, limit: input.limit || 50, benchmarkRunsDir, benchmarkReportPath: input.benchmarkReportPath });
-    if (!dashboard.benchmark?.available && root.ok) dashboard.benchmark.sourceProjectRoot = root.projectRoot;
-    const written = exportAuditDashboard(p.learnerDir, dashboard, { name: input.id || undefined, version });
-    appendEvent(p.learnerDir, { type: "audit.dashboard_generated", entityType: "audit_dashboard", entityId: path.basename(written.dir), summary: `Generated audit dashboard: posture=${written.safetyPosture}`, data: { dir: written.dir, summary: written.summary, recommendations: written.recommendations } });
-    return JSON.stringify({ ok: true, ...written, nextAction: "review dashboard.md or export_audit_bundle" }, null, 2);
   },
 
   trust_project_scripts(input, p, config) {

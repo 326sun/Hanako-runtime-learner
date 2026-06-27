@@ -7,9 +7,15 @@
  * to the legacy learnerDir() for older hosts.
  */
 
+import fs from "fs";
 import path from "path";
 import { hanakoHome, learnerDir, loadLearnerConfig, readJson } from "../lib/common.js";
 import { runtimeConfigPath, migrateRuntimeConfigFile } from "../lib/runtime-config-path.js";
+
+/** Read a plugin's version from its package.json, or "unknown" on any error. */
+export function readPluginVersion(pluginDir) {
+  try { return JSON.parse(fs.readFileSync(path.join(pluginDir, "package.json"), "utf-8")).version; } catch { return "unknown"; }
+}
 
 export function toolPaths(ctx = null) {
   const dir = ctx?.dataDir || learnerDir();
