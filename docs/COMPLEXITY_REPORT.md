@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-06-27T03:47:46.576Z
+Generated at: 2026-06-27T05:03:17.157Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
@@ -11,10 +11,10 @@ Status: within budget
 
 | 指标 | 当前值 | hard limit | soft target |
 |---|---|---|---|
-| 文件数 | 212 | - | - |
-| lib 模块数 | 98 | 110 | 95 |
-| 总 LOC | 31427 | - | - |
-| 总代码 LOC | 26087 | - | - |
+| 文件数 | 215 | - | - |
+| lib 模块数 | 101 | 110 | 95 |
+| 总 LOC | 31455 | - | - |
+| 总代码 LOC | 26110 | - | - |
 | 单文件最大 LOC | 648 | 900 | 600 |
 | 单文件最大 imports | 34 | 35 | 20 |
 | 单文件最大 exports | 17 | 25 | 18 |
@@ -29,13 +29,13 @@ Status: within budget
 | tests/pattern-detector.test.js | 648 | 556 |
 | tools/control.js | 631 | 549 |
 | tests/common.test.js | 530 | 436 |
-| lib/observer.js | 501 | 383 |
 | tools/doctor.js | 479 | 398 |
-| lib/action-registry.js | 476 | 428 |
 | tests/observer.test.js | 456 | 365 |
-| lib/proposals.js | 448 | 394 |
+| lib/observer.js | 452 | 338 |
 | lib/scope-gate.js | 428 | 305 |
 | lib/pattern-detector.js | 406 | 274 |
+| tools/search.js | 397 | 322 |
+| tests/runtime-e2e.test.js | 383 | 308 |
 
 ## Top 10 import 最多文件
 
@@ -48,9 +48,9 @@ Status: within budget
 | tests/agent-resume.test.js | 12 |
 | lib/action-executor.js | 11 |
 | lib/evaluation-runner.js | 11 |
+| lib/observer.js | 11 |
 | tests/audit-dashboard.test.js | 11 |
 | tools/doctor.js | 11 |
-| tools/search.js | 11 |
 
 ## Top 10 export 最多文件
 
@@ -65,7 +65,7 @@ Status: within budget
 | lib/scoring.js | 10 |
 | lib/credentials.js | 9 |
 | lib/model-advisor.js | 9 |
-| lib/action-registry.js | 8 |
+| lib/action-runtime.js | 8 |
 
 ## TODO / FIXME 统计
 
@@ -77,6 +77,6 @@ Status: within budget
 
 - tests/pattern-detector.test.js has 648 LOC > soft target 600
 - tools/control.js has 631 LOC > soft target 600
-- lib module count 98 > soft target 95
+- lib module count 101 > soft target 95
 - tools/control.js has 34 imports > soft target 20
 
