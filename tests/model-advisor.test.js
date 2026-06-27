@@ -230,6 +230,59 @@ describe("model advisor", () => {
     });
   });
 
+  describe("createAdvisorRunner", () => {
+    it("caches rate-limit skips to avoid repeated status writes during the cooldown", async () => {
+      const dataDir = path.join(learnerDir(), "runner-rate-cache");
+      fs.rmSync(dataDir, { recursive: true, force: true });
+      fs.mkdirSync(dataDir, { recursive: true });
+
+      const patterns = [{ id: "error:cached-rate", type: "error", status: "pending", count: 4, score: 8, desc: "d", fix: "" }];
+      let fetchCalls = 0;
+      globalThis.fetch = async () => {
+        fetchCalls += 1;
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({ suggestions: [] }) } }] }) };
+      };
+
+      const runner = advisor.createAdvisorRunner({
+        getConfig: () => ({
+          modelAdvisorEnabled: true,
+          modelAdvisorSource: "private",
+          modelAdvisorBaseUrl: "https://api.example.com",
+          modelAdvisorModel: "small-1",
+          modelAdvisorApiKey: "sk-test",
+          modelAdvisorMinIntervalMinutes: 60,
+          minAdvisorNewPatterns: 0,
+        }),
+        detector: { all: () => patterns, patterns, invalidate: () => {} },
+        refreshSkill: () => {},
+        logActivity: () => {},
+        runtimeState: { advisorSkipReasons: new Map(), sessionActivityCount: 0 },
+        ctx: { log: { info: () => {}, warn: () => {}, debug: () => {} } },
+        notifyProposalReview: async () => {},
+        notifyWorkStatus: async () => {},
+        dataDir,
+        usageSummaryFile: path.join(dataDir, "usage.json"),
+        capabilitiesFile: path.join(dataDir, "capabilities.json"),
+      });
+
+      await runner.maybeRun("unit", null, patterns);
+      assert.equal(fetchCalls, 1);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await runner.maybeRun("unit", null, patterns);
+      assert.equal(fetchCalls, 1, "rate-limited run should not call the model");
+      const statusFile = path.join(dataDir, "model_advisor_status.json");
+      const statusAfterRateLimit = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+      assert.equal(statusAfterRateLimit.reason, "rate limited");
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await runner.maybeRun("unit", null, patterns);
+      assert.equal(fetchCalls, 1, "cached rate-limit run should not call the model");
+      const statusAfterCachedSkip = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+      assert.deepEqual(statusAfterCachedSkip, statusAfterRateLimit);
+    });
+  });
+
   describe("model:sample-text bus sampling (Hanako ≥ 0.305)", () => {
     const officialConfig = {
       modelAdvisorEnabled: true,
