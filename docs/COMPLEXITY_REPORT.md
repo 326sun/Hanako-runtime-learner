@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-06-27T05:03:17.157Z
+Generated at: 2026-06-27T05:06:27.472Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
@@ -11,10 +11,10 @@ Status: within budget
 
 | 指标 | 当前值 | hard limit | soft target |
 |---|---|---|---|
-| 文件数 | 215 | - | - |
-| lib 模块数 | 101 | 110 | 95 |
-| 总 LOC | 31455 | - | - |
-| 总代码 LOC | 26110 | - | - |
+| 文件数 | 216 | - | - |
+| lib 模块数 | 102 | 110 | 95 |
+| 总 LOC | 31473 | - | - |
+| 总代码 LOC | 26117 | - | - |
 | 单文件最大 LOC | 648 | 900 | 600 |
 | 单文件最大 imports | 34 | 35 | 20 |
 | 单文件最大 exports | 17 | 25 | 18 |
@@ -32,10 +32,10 @@ Status: within budget
 | tools/doctor.js | 479 | 398 |
 | tests/observer.test.js | 456 | 365 |
 | lib/observer.js | 452 | 338 |
-| lib/scope-gate.js | 428 | 305 |
 | lib/pattern-detector.js | 406 | 274 |
 | tools/search.js | 397 | 322 |
 | tests/runtime-e2e.test.js | 383 | 308 |
+| lib/model-advisor.js | 381 | 310 |
 
 ## Top 10 import 最多文件
 
@@ -77,6 +77,6 @@ Status: within budget
 
 - tests/pattern-detector.test.js has 648 LOC > soft target 600
 - tools/control.js has 631 LOC > soft target 600
-- lib module count 101 > soft target 95
+- lib module count 102 > soft target 95
 - tools/control.js has 34 imports > soft target 20
 
