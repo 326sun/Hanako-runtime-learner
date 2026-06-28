@@ -15,7 +15,6 @@ import { generateMemFS } from "../lib/memfs.js";
 import { applyPolicyProfile } from "../lib/policy-profiles.js";
 import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
 import { listAgentTaskStates } from "../lib/agent-task-store.js";
-import { expireTransferCandidate, listTransferCandidateRecords, loadTransferCandidateRecord, recordTransferValidation, registerTransferCandidate, summarizeTransferCandidate } from "../lib/transfer-registry.js";
 import { loadActiveSkills, loadSkillCandidates, runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
 import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
@@ -28,6 +27,7 @@ import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
 import { eventHandlers } from "./control-handlers/events.js";
 import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
 import { auditHandlers } from "./control-handlers/audit.js";
+import { countTransferCandidatesByStatus, transferHandlers } from "./control-handlers/transfer.js";
 
 const MAX_SKILL_HISTORY = 20;
 
@@ -64,7 +64,7 @@ const HANDLERS = {
     const proposalCounts = countByStatus(listProposals(p.learnerDir, { limit: 0 }));
     const reviewCounts = countByStatus(listReviews(p.learnerDir, { limit: 0 }));
     const agentTasks = listAgentTaskStates(p.learnerDir, { limit: 1000 });
-    const transferCounts = countByStatus(listTransferCandidateRecords(p.learnerDir, { limit: 1000 }));
+    const transferCounts = countTransferCandidatesByStatus(p.learnerDir, { limit: 1000 });
     return JSON.stringify({
       config: redactConfig(config),
       patterns: patternSummary.total,
@@ -304,43 +304,9 @@ const HANDLERS = {
   // resume_agent_task) live in control-handlers/agent-tasks.js (C-001 split).
   ...agentTaskHandlers,
 
-  list_transfer_candidates(input, p) {
-    const records = listTransferCandidateRecords(p.learnerDir, { status: input.status || null, limit: input.limit || 50 });
-    return JSON.stringify({ ok: true, candidates: records.map(summarizeTransferCandidate), nextAction: "show_transfer_candidate or record_transfer_validation" }, null, 2);
-  },
-
-  show_transfer_candidate(input, p) {
-    const candidateId = input.candidateId || input.id;
-    if (!candidateId) throw new Error("candidateId is required");
-    const record = loadTransferCandidateRecord(p.learnerDir, candidateId);
-    if (!record) throw new Error(`transfer candidate not found: ${candidateId}`);
-    const summary = summarizeTransferCandidate(record);
-    return JSON.stringify({ ok: true, summary, record, nextAction: summary.status === "transferred_candidate" || summary.status === "manual_confirm" ? "record_transfer_validation or expire_transfer_candidate" : "review promotion readiness" }, null, 2);
-  },
-
-  register_transfer_candidate(input, p) {
-    if (!input.candidate || typeof input.candidate !== "object") throw new Error("candidate object is required");
-    const registered = registerTransferCandidate(p.learnerDir, input.candidate);
-    return JSON.stringify({ ok: registered.ok, summary: summarizeTransferCandidate(registered.record), nextAction: "record_transfer_validation" }, null, 2);
-  },
-
-  record_transfer_validation(input, p) {
-    const candidateId = input.candidateId || input.id;
-    if (!candidateId) throw new Error("candidateId is required");
-    const recorded = recordTransferValidation(p.learnerDir, candidateId, {
-      status: input.validationStatus || input.status || "passed",
-      summary: input.reason || "target validation recorded through self_learning_control",
-      evidence: input.evidence || [],
-    });
-    return JSON.stringify({ ok: recorded.ok, summary: summarizeTransferCandidate(recorded.record), nextAction: recorded.ok ? "manual skill promotion review" : "fix target issue or expire_transfer_candidate" }, null, 2);
-  },
-
-  expire_transfer_candidate(input, p) {
-    const candidateId = input.candidateId || input.id;
-    if (!candidateId) throw new Error("candidateId is required");
-    const expired = expireTransferCandidate(p.learnerDir, candidateId, { reason: input.reason || "expired through self_learning_control" });
-    return JSON.stringify({ ok: true, summary: summarizeTransferCandidate(expired.record), nextAction: "list_transfer_candidates" }, null, 2);
-  },
+  // Cross-project transfer handlers live in control-handlers/transfer.js
+  // (S11.P2 split): list/show/register/record/expire transfer candidates.
+  ...transferHandlers,
 
   // Audit/benchmark handlers (run_benchmarks, export_audit_bundle,
   // generate_audit_dashboard) live in control-handlers/audit.js (C-001 split).
