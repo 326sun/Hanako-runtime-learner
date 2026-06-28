@@ -2,6 +2,18 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.2 - 2026-06-28（全面审计加固，**非 GitHub Release**）
+
+> 在 `5.1.1` 之上完成一轮 S1–S12 × 正确性/复杂度/性能三遍全面审计（36 单元格），修复审计发现的中/低危逻辑问题、治理复杂度热点。release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset、未安装。版本号 `5.1.1` → `5.1.2`（manifest / package.json / package-lock 同步）。审计计划书与结论存于仓库外 `D:\openhanako\test-plans\`。
+
+- **agent 崩溃落态（`lib/agent-controller.js`，中）**：`AgentController` step 异常会逃逸且不落 FAILED 态；现强制落 FAILED、写 `state.crashed` audit、持久化，并补测试。
+- **`diagnose_bus` 权限声明（`tools/control.js`，中）**：带 session target 时原声明为只读，可能绕过宿主 review/prompt；现按 target 区分 `external_side_effect` vs `read`，并补测试。
+- **发布门禁去假绿（`lib/release-readiness.js` / `lib/dist-verify.js`，中）**：测试数默认值陈旧可能误过 → 统一到 `843` 并补 fixture；zip 仅校验非空 → 新增 zip central directory root 校验（`verifyZipRoot`）。
+- **usage attribution（`lib/sample-text.js`，低）**：`sampleTextViaBus()` 补传 `ctx.pluginId` 到采样 payload，并断言。
+- **task-store 容错（`lib/agent-task-store.js`，低）**：区分缺失文件（ENOENT/null）与损坏文件（throw corrupt），并补测试。
+- **复杂度治理（等价重构，行为/导出面不变）**：`proposals.js` 448→338（拆 `proposal-diff-preview.js`）、`observer.js` 501→452（拆 `observer-adoption.js`）、`scope-gate.js` 428→274（拆 `scope-diff-preview.js`）、`agent-controller.js` 332→161（拆 `agent-controller-nodes.js`）、`audit-dashboard.js` 308→196（拆 `audit-dashboard-render.js`）、`tools/control.js` 631→524 / imports 34→30（拆 `control-handlers/transfer.js`，移除 LOC soft 告警）。
+- **测试**：测试总数 `838` → `843`（`838 passed` / `5 skipped` / `0 failed`）；同步 README 徽章/计数文案与 `lib/release-readiness.js` 的 `expectedTestCount` 默认。`complexity:check` OK（soft warnings 3 / 0 hard）；`release:check` ready / Score 100。
+
 ## 5.1.1 - 2026-06-27（model advisor 可观测性补强，**非 GitHub Release**）
 
 > 在 `5.1.0` 之上对 model advisor 的「静默失败」做可见性补强。release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset、未安装。版本号 `5.1.0` → `5.1.1`（manifest / package.json / package-lock 同步）。

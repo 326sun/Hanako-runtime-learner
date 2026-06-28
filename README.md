@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.1-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.2-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
@@ -70,7 +70,7 @@ npm run install-plugin
 固定版本安装：
 
 ```powershell
-git clone --branch v5.1.1 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v5.1.2 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm install
 npm run build
@@ -231,10 +231,10 @@ npm run perf -- --json
 npm run release:check
 ```
 
-`v5.1.1` 的预期结果：
+`v5.1.2` 的预期结果：
 
 ```text
-package version: 5.1.1
+package version: 5.1.2
 npm run check: passed
 npm test: 843 tests, 838 passed, 5 skipped
 npm run benchmark: passed, 17 scenarios
