@@ -6,12 +6,44 @@ import test from "node:test";
 import { REQUIRED_TOOL_FILES } from "../lib/dist-verify.js";
 import { buildReleaseReadiness, exportReleaseReadiness, formatReleaseReadinessReport, REQUIRED_RELEASE_DOCS } from "../lib/release-readiness.js";
 
+function writeZipEntryNames(filePath, entryNames = []) {
+  const local = [];
+  const central = [];
+  let offset = 0;
+  for (const name of entryNames) {
+    const nameBuf = Buffer.from(name, "utf8");
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(nameBuf.length, 26);
+    local.push(localHeader, nameBuf);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(nameBuf.length, 28);
+    centralHeader.writeUInt32LE(offset, 42);
+    central.push(centralHeader, nameBuf);
+    offset += localHeader.length + nameBuf.length;
+  }
+  const centralBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entryNames.length, 8);
+  eocd.writeUInt16LE(entryNames.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, Buffer.concat([...local, centralBuf, eocd]));
+}
+
 function write(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, "utf-8");
 }
 
-function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 838 } = {}) {
+function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 843, zipEntries = ["index.js", "manifest.json", ...REQUIRED_TOOL_FILES] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hanako-release-readiness-"));
   const baseVersion = version.replace(/-lts$/, "");
   write(path.join(root, "package.json"), JSON.stringify({ name: "hanako-runtime-learner", version }, null, 2));
@@ -36,7 +68,7 @@ function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16,
   for (const rel of ["index.js", "manifest.json", "README.md", "LICENSE", "plugin-process-runner-child.js", ...REQUIRED_TOOL_FILES]) {
     write(path.join(root, "dist", rel), rel.endsWith(".js") ? "export default {};\n" : "ok\n");
   }
-  write(path.join(root, "release", "hanako-runtime-learner-dist.zip"), "zip\n");
+  writeZipEntryNames(path.join(root, "release", "hanako-runtime-learner-dist.zip"), zipEntries);
   for (let i = 0; i < scenarios; i += 1) {
     write(path.join(root, "benchmarks", "scenarios", "quality", `scenario-${i}.json`), JSON.stringify({ id: `quality.scenario_${i}`, title: `Scenario ${i}`, steps: [{ type: "note", note: "ok" }] }, null, 2));
   }
@@ -58,6 +90,13 @@ test("release readiness blocks mismatched lockfile and missing acceptance report
   assert.equal(result.summary.status, "blocked");
   assert(result.summary.failedChecks.includes("package_lock.version_matches"));
   assert(result.summary.failedChecks.includes("docs.acceptance_current_version"));
+});
+
+test("release readiness blocks a release zip that nests the plugin under dist", () => {
+  const root = makeProject({ zipEntries: ["dist/index.js", "dist/manifest.json", ...REQUIRED_TOOL_FILES.map((file) => `dist/${file}`)] });
+  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true });
+  assert.equal(result.summary.status, "blocked");
+  assert(result.summary.failedChecks.includes("dist.package_verified"));
 });
 
 test("release readiness report can be exported as JSON and Markdown", () => {
