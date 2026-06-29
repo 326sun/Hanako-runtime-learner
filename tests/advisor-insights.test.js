@@ -8,6 +8,7 @@ import {
   buildRepeatedCodePatchProposals,
   mergeAdvisorSuggestions,
 } from "../lib/advisor-insights.js";
+import { isActionableCodePatchPattern } from "../lib/proposals.js";
 
 function tempLearnerDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "advisor-insights-"));
@@ -47,6 +48,18 @@ describe("advisor insights shared helpers", () => {
     assert.equal(patterns.get("error:syntax_error").fix, "quote the path before retrying");
   });
 
+  it("treats environmental / catch-all error buckets as non-actionable for code patches", () => {
+    // network_error is environmental (connectivity/timeouts — nothing to code-patch);
+    // tool_error is a catch-all bucket (matches generic /error|failed/), aggregating
+    // heterogeneous failures with no single code target — same noise rationale as
+    // error:unknown. Specific, code-addressable buckets stay actionable.
+    assert.equal(isActionableCodePatchPattern({ type: "error", id: "error:network_error" }), false);
+    assert.equal(isActionableCodePatchPattern({ type: "error", id: "error:tool_error" }), false);
+    assert.equal(isActionableCodePatchPattern({ type: "error", id: "error:unknown" }), false);
+    assert.equal(isActionableCodePatchPattern({ type: "error", id: "error:file_not_found" }), true);
+    assert.equal(isActionableCodePatchPattern({ type: "error", id: "error:path_error" }), true);
+  });
+
   it("builds repeated code patch proposals only for eligible unresolved error patterns", () => {
     const learnerDir = tempLearnerDir();
     try {
@@ -56,6 +69,8 @@ describe("advisor insights shared helpers", () => {
         patterns: [
           { id: "error:path_error", type: "error", count: 3, status: "pending", fix: "check path" },
           { id: "error:unknown", type: "error", count: 10, status: "pending", fix: "too vague" },
+          { id: "error:network_error", type: "error", count: 8, status: "pending", fix: "retry" },
+          { id: "error:tool_error", type: "error", count: 6, status: "pending", fix: "investigate" },
           { id: "error:approved", type: "error", count: 4, status: "approved", fix: "already handled" },
           { id: "usage:large_context:x", type: "usage", count: 5, status: "pending", fix: "split" },
         ],

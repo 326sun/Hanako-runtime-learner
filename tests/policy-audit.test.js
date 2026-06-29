@@ -13,17 +13,48 @@ test("policy profiles list stable built-in modes", () => {
   assert.deepEqual(names, ["autonomous", "balanced", "conservative"]);
 });
 
-test("conservative policy enables review-first defaults without enabling external services", () => {
+test("conservative policy sets the review-first posture without touching user-owned toggles", () => {
   const result = applyPolicyProfile({ ...DEFAULT_CONFIG, modelAdvisorEnabled: true, semanticSearchEnabled: true }, "conservative");
   assert.equal(result.ok, true);
   assert.equal(result.config.governanceProfile, "conservative");
   assert.equal(result.config.requireReviewForAutoApply, true);
   assert.equal(result.config.autoApproveHighConfidence, false);
-  assert.equal(result.config.includePendingPreferences, false);
-  assert.equal(result.config.includeUsageInAdvisorPrompt, false);
-  assert.equal(result.config.modelAdvisorEnabled, false);
-  assert.equal(result.config.semanticSearchEnabled, false);
+  assert.equal(result.config.autoInjectHighConfidence, false);
   assert.ok(result.changed.requireReviewForAutoApply);
+  // Capability/privacy toggles the user enabled explicitly are NOT forced off:
+  // they are orthogonal to the review/apply posture a profile governs.
+  assert.equal(result.config.modelAdvisorEnabled, true);
+  assert.equal(result.config.semanticSearchEnabled, true);
+  assert.equal(result.changed.modelAdvisorEnabled, undefined);
+  assert.equal(result.changed.semanticSearchEnabled, undefined);
+});
+
+// Profiles govern the review/apply posture (auto-inject / auto-approve /
+// require-review) plus the proposalChatNotifications flavour that distinguishes
+// autonomous from balanced. Capability, privacy and the pending-preference safety
+// gate are user-owned and must survive a profile switch untouched, so doctor's
+// policy_inconsistent check never nags about a user's explicit capability choice.
+const USER_OWNED_TOGGLES = [
+  "includePendingPreferences",
+  "includeUsageInAdvisorPrompt",
+  "modelAdvisorEnabled",
+  "semanticSearchEnabled",
+  "llmExtractionEnabled",
+  "workStatusEnabled",
+];
+
+test("policy profiles never override user-owned capability/privacy/UX toggles", () => {
+  for (const name of ["conservative", "balanced", "autonomous"]) {
+    for (const key of USER_OWNED_TOGGLES) {
+      const onResult = applyPolicyProfile({ ...DEFAULT_CONFIG, [key]: true }, name);
+      assert.equal(onResult.config[key], true, `${name} must preserve explicit ${key}=true`);
+      assert.equal(onResult.changed[key], undefined, `${name} must not record a change to ${key}`);
+
+      const offResult = applyPolicyProfile({ ...DEFAULT_CONFIG, [key]: false }, name);
+      assert.equal(offResult.config[key], false, `${name} must preserve explicit ${key}=false`);
+      assert.equal(offResult.changed[key], undefined, `${name} must not record a change to ${key}`);
+    }
+  }
 });
 
 test("unknown policy is rejected with available profile names", () => {

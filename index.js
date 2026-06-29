@@ -33,6 +33,7 @@ import { createJsonlRetentionPruner } from "./lib/log-retention.js";
 import { createSessionMessenger } from "./lib/session-messenger.js";
 import { createSeenIdStore } from "./lib/seen-id-store.js";
 import { setupBackgroundTasks } from "./lib/host-tasks.js";
+import { applyLiveConfig } from "./lib/live-config.js";
 
 const DEFAULT_DATA_DIR = learnerDir();
 
@@ -557,6 +558,39 @@ export default definePlugin({
 
     observer.subscribe(ctx.bus, config);
 
+    // Live settings-panel updates. The host writes our config.json and emits
+    // `plugin_config_changed` when the user edits the settings panel (see
+    // core/plugin-manager.ts setConfig); it does NOT reload the plugin. So we
+    // re-bridge the panel into the in-memory config and converge every holder
+    // (detector, refreshSkill/advisor closures, configRef) WITHOUT changing the
+    // config object's identity — replacing it would leave them on the old
+    // snapshot. Fields whose effect is wired at onload (learnFromUsage → the
+    // usage subscription below) cannot apply live and carry a reloadRequired
+    // note in the manifest instead.
+    const refreshConfigFromPanel = () => {
+      try {
+        const bridged = applyPanelConfig(loadConfig(paths).config, ctx.config);
+        // Persist the bridged view so config.json and the control tools stay in
+        // sync. applyPanelConfig drops credential keys, so this never writes
+        // plaintext secrets.
+        try { writeJson(CONFIG_FILE, bridged); } catch {}
+        // Capture any newly panel-entered credential into the encrypted store.
+        try {
+          const panelCreds = panelCredentialsToStore(ctx.config);
+          if (Object.keys(panelCreds).length > 0) saveCredentials({ ...loadCredentials(), ...panelCreds });
+        } catch {}
+        applyLiveConfig({ config, configRef, detector }, mergeCredentials(bridged));
+        ctx.log.info("runtime-learner: applied live settings-panel config update");
+      } catch (err) {
+        ctx.log.warn(`runtime-learner: live config refresh skipped: ${err?.message || err}`);
+      }
+    };
+    const unsubConfig = ctx.bus.subscribe?.((event) => {
+      if (event?.type === "plugin_config_changed" && (!ctx.pluginId || event.pluginId === ctx.pluginId)) {
+        refreshConfigFromPanel();
+      }
+    }, { types: ["plugin_config_changed"] });
+
     runtimeState.detector = detector;
     runtimeState.sessions = sessions;
     runtimeState.unsub = () => observer.unsubscribe();
@@ -568,6 +602,7 @@ export default definePlugin({
       register(() => { try { observer.unsubscribe(); } catch {} });
       register(() => { try { persistSeenIds(true); } catch {} });
       register(() => { try { flushPersist(); } catch {} });
+      if (typeof unsubConfig === "function") register(() => { try { unsubConfig(); } catch {} });
     }
 
     // Config fallback notification: let the user know when their config was

@@ -2,6 +2,16 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.3 - 2026-06-29（配置一致性 + 面板即时生效）
+
+> 三组改动：修复 profile 覆盖安全闸门的 bug、让设置面板改动即时生效、benchmark 产物移出 git 跟踪。版本号 `5.1.2` → `5.1.3`（manifest / package.json / package-lock 同步）。
+
+- **profile 只治理「审查/应用姿态」，不再覆盖用户私有开关（`lib/policy-profiles.js`，bugfix）**：profile 模板此前混入了安全闸门 `includePendingPreferences` 与一批能力/隐私开关（`modelAdvisorEnabled` / `semanticSearchEnabled` / `llmExtractionEnabled` / `includeUsageInAdvisorPrompt` / `workStatusEnabled`），导致用户显式开启后切到 `autonomous` 会被 doctor `policy_inconsistent` 报漂移、并催其关回去。现 profile.values 只保留治理姿态（auto-inject / auto-approve / require-review）+ 区分 autonomous 与 balanced 的 `proposalChatNotifications`；上述开关全部移出，仅由 UI / `set_config` 显式控制，doctor 不再就它们误报（mismatch 期望值从 `profile.values` 推导）。注：`conservative` 对高危能力的硬拦由 validation-gate（`config_conservative:*`）+ 高危告警承担，与本改动正交；移除后 `autonomous` 与 `balanced` 仅余 `proposalChatNotifications` 之别。
+- **设置面板配置即时生效（`index.js` + 新增 `lib/live-config.js`，feature）**：宿主在用户改面板时写 `config.json` 并广播 `plugin_config_changed`（`core/plugin-manager.ts`），但不重载插件。现订阅该事件、重桥接面板值并**原地更新**共享 config 对象（保持引用身份，detector / 闭包 / configRef / runner 同步生效），无需重启。唯一在 onload 建立订阅的 `learnFromUsage` 仍需重载——manifest 为它加了 `reloadRequired: true` 与说明文案。新增 `replaceConfigInPlace` / `applyLiveConfig` 纯函数。
+- **code_patch 工单只面向可修错误（`lib/proposals.js`，降噪 bugfix）**：重复错误模式会被铸成 high-risk「调查」工单（`code_patch`，无 filePatches、需人审）。`isActionableCodePatchPattern` 此前只挡 `error:unknown`，导致 `error:network_error`（环境性，无代码可修）与 `error:tool_error`（catch-all 杂烩桶，匹配泛 `/error|failed/`，无单一目标）也反复生成工单堆进队列。现将这两类与 `error:unknown` 一并排除；具体错误桶（file_not_found / permission_denied / syntax_error / path_error 等）仍可生成。已堆积的历史工单可用 `reject_proposal` 清理或随 decay 淘汰。
+- **benchmark 产物移出 git（`.gitignore`，repo 卫生）**：`benchmark-results/benchmark-report.{json,md}` 是 `npm run benchmark` 的生成产物，含每次运行的时间戳/延迟，跟踪它会在每次跑基准时弄脏工作区。改为 `.gitignore` 忽略 + `git rm --cached` 取消跟踪；可追踪的输入是 `benchmarks/` 下的 baseline，报告为本地派生物。
+- **测试**：净增 8 条（`live-config` 3 + `manifest-contract` 重启注 1 + `policy-audit` 用户私有开关泛化 + `doctor` autonomous+能力开关不误报 + `advisor-insights` code_patch 非可作错误桶排除等）。测试总数 `843` → `851`（`846 passed` / `5 skipped` / `0 failed`）；同步 README 徽章/计数与 `lib/release-readiness.js` 的 `expectedTestCount`。
+
 ## 5.1.2 - 2026-06-28（全面审计加固，**非 GitHub Release**）
 
 > 在 `5.1.1` 之上完成一轮 S1–S12 × 正确性/复杂度/性能三遍全面审计（36 单元格），修复审计发现的中/低危逻辑问题、治理复杂度热点。release freeze 持续——未 tag、未创建 GitHub Release、未上传 asset、未安装。版本号 `5.1.1` → `5.1.2`（manifest / package.json / package-lock 同步）。审计计划书与结论存于仓库外 `D:\openhanako\test-plans\`。

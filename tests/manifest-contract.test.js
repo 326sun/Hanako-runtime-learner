@@ -41,6 +41,12 @@ const RECOGNIZED_CAPABILITIES = new Set([
 // Fields that carry secrets and must be redacted by the host.
 const CREDENTIAL_KEYS = ["modelAdvisorApiKey", "semanticEmbeddingApiKey"];
 
+// Panel-exposed fields whose effect is established at onload (event/schedule
+// subscriptions), so a live config refresh cannot apply them — they need a
+// plugin reload. These MUST flag it to the user. `learnFromUsage` gates the
+// llm_usage subscription in observer.js (only subscribed when true at onload).
+const RESTART_REQUIRED_KEYS = ["learnFromUsage"];
+
 describe("manifest contract · host plugin schema", () => {
   it("credential fields declare sensitive:true (host ignores format:password)", () => {
     for (const key of CREDENTIAL_KEYS) {
@@ -62,6 +68,21 @@ describe("manifest contract · host plugin schema", () => {
       if (spec && spec.format === "password") {
         assert.fail(`"${key}" uses format:password (ignored by host); declare sensitive:true instead`);
       }
+    }
+  });
+
+  it("restart-required fields flag reloadRequired and warn the user in the description", () => {
+    for (const key of RESTART_REQUIRED_KEYS) {
+      const spec = props[key];
+      assert.ok(spec, `restart-required field "${key}" missing from manifest`);
+      assert.strictEqual(
+        spec.reloadRequired, true,
+        `"${key}" must declare "reloadRequired": true (host core/plugin-config.ts normalizes it)`,
+      );
+      assert.ok(
+        typeof spec.description === "string" && spec.description.includes("重载"),
+        `"${key}" description must tell the user the change needs a plugin reload`,
+      );
     }
   });
 

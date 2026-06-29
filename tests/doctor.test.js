@@ -114,15 +114,32 @@ describe("doctor · policy consistency", () => {
     assert.match(r.priorityActions[0].action, /set_policy_profile/);
   });
 
-  it("flags conservative profile when semanticSearchEnabled is true", () => {
+  it("does not flag a capability toggle (semanticSearchEnabled) as a profile mismatch", () => {
+    // Capability toggles are user-owned and orthogonal to the review/apply posture
+    // a profile governs, so enabling one is never a policy_inconsistent.
     const conservative = applyPolicyProfile(DEFAULT_CONFIG, "conservative").config;
     const r = diagnose({
       config: { ...conservative, semanticSearchEnabled: true },
       now: NOW,
     });
-    const issue = r.issues.find((i) => i.type === "policy_inconsistent");
-    assert.equal(issue?.severity, "high");
-    assert.ok(issue.mismatches.some((m) => m.key === "semanticSearchEnabled"));
+    assert.ok(!types(r).includes("policy_inconsistent"));
+  });
+
+  it("does not flag autonomous when the user has enabled capability/privacy/UX toggles", () => {
+    const autonomous = applyPolicyProfile(DEFAULT_CONFIG, "autonomous").config;
+    const r = diagnose({
+      config: {
+        ...autonomous,
+        modelAdvisorEnabled: true,
+        semanticSearchEnabled: true,
+        llmExtractionEnabled: true,
+        includeUsageInAdvisorPrompt: true,
+        workStatusEnabled: true,
+      },
+      now: NOW,
+    });
+    assert.ok(!types(r).includes("policy_inconsistent"),
+      "enabling user-owned toggles under autonomous must not be a policy mismatch");
   });
 
   it("does not flag balanced default policy config", () => {
@@ -134,6 +151,18 @@ describe("doctor · policy consistency", () => {
     const autonomous = applyPolicyProfile(DEFAULT_CONFIG, "autonomous").config;
     const r = diagnose({ config: autonomous, now: NOW });
     assert.ok(!types(r).includes("policy_inconsistent"));
+  });
+
+  it("does not flag autonomous when the user has explicitly disabled includePendingPreferences", () => {
+    // The safety gate is user-owned: autonomous + includePendingPreferences=false is
+    // a valid "safe autonomous" setup, not a profile drift to nag about.
+    const autonomous = applyPolicyProfile(DEFAULT_CONFIG, "autonomous").config;
+    const r = diagnose({ config: { ...autonomous, includePendingPreferences: false }, now: NOW });
+    const issue = r.issues.find((i) => i.type === "policy_inconsistent");
+    assert.ok(
+      !issue || !issue.mismatches.some((m) => m.key === "includePendingPreferences"),
+      "autonomous + includePendingPreferences=false must not be a policy mismatch",
+    );
   });
 });
 

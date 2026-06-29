@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "5.1.2",
+  "version": "5.1.3",
   "description": "运行时自学习引擎：观察本地交互，归纳重复工作流、偏好与错误，并生成保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
@@ -81,6 +81,8 @@
         "learnFromUsage": {
           "type": "boolean",
           "title": "从模型用量元数据学习",
+          "description": "⚠️ 改动后需重载插件（或重启 Hanako）才生效——用量事件订阅在插件加载时建立。其余设置改动即时生效。",
+          "reloadRequired": true,
           "default": true
         },
         "includeUsageInAdvisorPrompt": {

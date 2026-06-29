@@ -78,9 +78,13 @@ describe("M2 governance · validation gate", () => {
 });
 
 describe("M2 governance · policy profiles", () => {
-  it("conservative profile forces llmExtractionEnabled off", () => {
+  it("conservative profile does not touch the user-owned llmExtractionEnabled toggle", () => {
+    // Profiles govern only the review/apply posture; enabling llmExtraction under
+    // conservative is blocked by the validation gate (config_conservative:*), not by
+    // the profile template force-flipping a user's explicit capability choice.
     const r = applyPolicyProfile({ ...DEFAULT_CONFIG, llmExtractionEnabled: true }, "conservative");
-    assert.equal(r.config.llmExtractionEnabled, false);
+    assert.equal(r.config.llmExtractionEnabled, true);
+    assert.equal(r.changed.llmExtractionEnabled, undefined);
   });
 });
 
