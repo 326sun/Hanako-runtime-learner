@@ -65,6 +65,7 @@ function buildReport(scan) {
         ["单文件最大 exports", String(t.maxExports), String(scan.hardLimits.fileExports), String(scan.softTargets.fileExports)],
         ["TODO/FIXME 总数", String(t.todos), String(scan.hardLimits.totalTodos), String(scan.softTargets.totalTodos)],
         ["soft 警告数", String(scan.softWarnings.length), "-", "0"],
+        ["结构规则警告数", String(scan.structuralWarnings?.length || 0), "-", "0"],
         ["hard 违规数", String(scan.violations.length), "0", "-"],
       ],
     ),
@@ -109,6 +110,15 @@ function buildReport(scan) {
     lines.push("以下项目超出 soft target 但仍在 hard limit 内，是优先治理对象（参见 COMPLEXITY_DEBT.md）。");
     lines.push("");
     for (const w of scan.softWarnings.sort((a, b) => b.value - a.value)) lines.push(`- ${w.message}`);
+    lines.push("");
+  }
+
+  if ((scan.structuralWarnings?.length || 0) > 0) {
+    lines.push("## 结构规则警告");
+    lines.push("");
+    lines.push("以下项目不阻断发布，但说明结构约束正在漂移，应优先登记或治理。");
+    lines.push("");
+    for (const w of scan.structuralWarnings) lines.push(`- ${w.message}`);
     lines.push("");
   }
 

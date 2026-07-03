@@ -61,6 +61,16 @@ describe("complexity scan (simplify-S2 rootFiles)", () => {
     assert.ok(paths.includes("index.js"));
     assert.ok(!paths.includes("no-such-entry.js"));
   });
+
+  it("reports structural warnings without failing the complexity gate", () => {
+    write("index.js", 'import { saveCredentials } from "./lib/credentials.js";\nexport default saveCredentials;\n');
+    write("tools/control.js", "const CONFIG_ACTIONS = new Set();\nexport const name = 'control';\n");
+
+    const scan = scanComplexity(tmpRoot);
+    assert.equal(scan.ok, true);
+    assert.ok(scan.structuralWarnings.some((w) => w.rule === "index_runtime_wiring_aggregators"));
+    assert.ok(scan.structuralWarnings.some((w) => w.rule === "control_action_registry" && w.symbol === "CONFIG_ACTIONS"));
+  });
 });
 
 describe("analyzeSource", () => {

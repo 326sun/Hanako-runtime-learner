@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-07-03T02:21:56.454Z
+Generated at: 2026-07-03T02:25:01.437Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
@@ -13,13 +13,14 @@ Status: within budget
 |---|---|---|---|
 | 文件数 | 254 | - | - |
 | lib 模块数 | 109 | 118 | 105 |
-| 总 LOC | 36773 | - | - |
-| 总代码 LOC | 30446 | - | - |
+| 总 LOC | 36873 | - | - |
+| 总代码 LOC | 30538 | - | - |
 | 单文件最大 LOC | 588 | 900 | 600 |
 | 单文件最大 imports | 32 | 35 | 20 |
 | 单文件最大 exports | 18 | 25 | 18 |
 | TODO/FIXME 总数 | 0 | 40 | 10 |
 | soft 警告数 | 2 | - | 0 |
+| 结构规则警告数 | 0 | - | 0 |
 | hard 违规数 | 0 | 0 | - |
 
 ## Top 10 最大文件 (LOC)

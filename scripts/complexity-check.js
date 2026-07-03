@@ -44,6 +44,7 @@ function formatHuman(scan) {
   lines.push(`  max exports: ${t.maxExports} / hard ${scan.hardLimits.fileExports} / soft ${scan.softTargets.fileExports}`);
   lines.push(`  TODO/FIXME markers: ${t.todos} / hard ${scan.hardLimits.totalTodos} / soft ${scan.softTargets.totalTodos}`);
   lines.push(`  soft warnings: ${scan.softWarnings.length}`);
+  lines.push(`  structural warnings: ${scan.structuralWarnings?.length || 0}`);
   if (scan.violations.length > 0) {
     lines.push("  VIOLATIONS:");
     for (const v of scan.violations) lines.push(`    - ${v.message}`);

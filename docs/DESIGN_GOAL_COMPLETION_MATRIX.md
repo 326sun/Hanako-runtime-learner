@@ -21,7 +21,7 @@
 | 项目 | 预期 |
 |---|---|
 | `npm run check` | 通过 |
-| `npm test` | 942 个测试，937 通过，5 跳过 |
+| `npm test` | 943 个测试，938 通过，5 跳过 |
 | `npm run benchmark` | 17/17 通过 |
 | `npm run perf` | 无阈值越界 |
 | `npm run release:check` | Score 100 |

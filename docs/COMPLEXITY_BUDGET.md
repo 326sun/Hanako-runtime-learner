@@ -49,6 +49,21 @@ TODO/FIXME 仅统计约定式标记（`TODO:` / `FIXME:` / `TODO(author):`），
 超出 soft target 但在 hard limit 内的项，会在复杂度报告中列为 soft 警告，并应登记到
 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
+## 结构规则（报告模式）
+
+结构规则用于发现“LOC/import 数字尚未越界，但架构边界正在漂移”的情况。它们当前只在
+`complexity:report` / `complexity:check --json` 中报告为结构警告，不计入 hard failure。
+
+当前规则：
+
+- `index.js` 不应重新直接 import 已聚合到 `runtime-live-config` /
+  `runtime-skill-refresh` 的深层 wiring 模块。
+- `tools/control.js` 的 action 分类、side-effect 描述、config/pattern loading 需求应来自
+  `tools/control-action-registry.js`，不应恢复多组本地分类 Set。
+
+结构规则可先以报告模式运行；当规则稳定且无历史 accepted debt 误伤时，再评估是否升级为
+hard gate。
+
 ## 模块新增规则
 
 > **2026-07-03（C-005）更新**：lib 模块数轨迹 98→107；预算同步上调为 hard
