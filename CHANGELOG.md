@@ -2,6 +2,34 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.4 - 2026-07-03（性能护栏 + 简化治理收口）
+
+> 在已发布的 `5.1.3` 之上完成性能计划 P6-P10 与简化计划 S1-S6，收口 C-005
+> 复杂度预算决策。版本号 `5.1.3` → `5.1.4`（manifest / package.json /
+> package-lock 同步）。
+
+- **onload 结构简化（`index.js`，等价重构）**：`onload()` 从 552 行单函数拆为
+  27 行阶段调用链 + 17 个具名阶段函数（最大 87 行）。共享 `rt` 对象承载阶段状态，
+  保留 config 对象身份、语句顺序和 12 个 timer marks；runtime e2e 零改动通过。
+- **复杂度扫描补盲区（`lib/complexity.js`）**：新增 `rootFiles` 扫描，默认纳入
+  `index.js` 与 `install.cjs`，但不计入 `libModuleCount`。新增复杂度扫描测试，
+  避免入口文件继续脱离 `complexity:report/check`。
+- **测试文件拆分（`tests/pattern-detector*.test.js`）**：原
+  `pattern-detector.test.js` 666 LOC 按行为拆为 core store / ingest / prune 三件，
+  42 个用例总数不变，消除测试文件 LOC soft warning。
+- **复杂度预算治理（C-005）**：S3 对 30 个 <90 LOC 的 lib 文件做消费者普查，
+  证明零个可安全合并候选；维护者采纳推荐方案，将 `libModuleCount` hard
+  110→118、soft 95→105，并在 `docs/COMPLEXITY_BUDGET.md` 固化“新建文件是
+  最后手段”规则。`docs/COMPLEXITY_DEBT.md` 同步 C-005 resolved、C-006
+  accepted。
+- **性能计划 P6-P10 收口**：完成 observer 热路径、patterns dirty-sync 修复、
+  audit/event 缓存、advisor/extraction 可观测性与开发工具改进；发布前
+  `benchmark` 17/17、`perf` 全部在阈值内。
+- **测试与发布门**：测试总数 `851` → `938`（`933 passed` / `5 skipped` /
+  `0 failed`）。`npm run build`、`npm run check`、`npm test`、`npm run benchmark`、
+  `npm run perf`、`npm run release:check` 与 `npm audit --audit-level=high`
+  均通过。
+
 ## 5.1.3 - 2026-06-29（配置一致性 + 面板即时生效）
 
 > 三组改动：修复 profile 覆盖安全闸门的 bug、让设置面板改动即时生效、benchmark 产物移出 git 跟踪。版本号 `5.1.2` → `5.1.3`（manifest / package.json / package-lock 同步）。
