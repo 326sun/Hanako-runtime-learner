@@ -179,7 +179,7 @@ C-001 维持 `closed-low-risk` 状态不变。
 单一消费者函数留待未来专门重构再评估。验证：`check` / `test`(606) / `complexity:check` /
 `release:check`(100) 全绿。
 
-## C-005 — lib 模块数逼近 hard limit（治理决策待定）
+## C-005 — lib 模块数逼近 hard limit（已决策：上调预算）
 
 - **Area**: `lib/` 目录整体；`lib/complexity.js` 的 `COMPLEXITY_HARD_LIMITS.libModuleCount`。
 - **Symptom**: lib 模块数 98（v5.1.1 审计基线）→ **107**（2026-07-03，v5.1.3 + 性能/简化批次后），
@@ -208,8 +208,12 @@ C-001 维持 `closed-low-risk` 状态不变。
      是最后手段）固化进 `COMPLEXITY_BUDGET.md` 作为长期规则。
   无论选哪个，**"发现大文件默认拆新文件"的治理动作都应废止**（v5.1.1 审计
   P2 遍的默认动作把 98 推到 107 正是本条债务的直接成因）。
-- **Status**: **open（待维护者决策）** — 本条目由简化计划 simplify-S4 写入，
-  数据截至 2026-07-03；执行者按计划授权只整理证据与建议，不擅自改动 hard limit。
+- **Status**: **resolved（2026-07-03，维护者采纳推荐方案）** — 本条目由简化计划
+  simplify-S4 写入证据与建议，维护者确认采纳方案 1（上调）。已执行：
+  `lib/complexity.js` 的 `COMPLEXITY_HARD_LIMITS.libModuleCount` 110→118、
+  `COMPLEXITY_SOFT_TARGETS.libModuleCount` 95→105；`docs/COMPLEXITY_BUDGET.md`
+  表格同步，并新增规则 0（新建文件是最后手段）+「预算调整历史」记录本次变更。
+  CHANGELOG 条目待下次版本号变更时一并记录（本次调整未随版本发布）。
 
 ## C-006 — 入口文件 index.js 体量（已重构、已纳管、接受现状）
 
