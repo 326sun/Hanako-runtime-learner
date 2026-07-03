@@ -3,10 +3,7 @@ import path from "path";
 import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, buildSkillMdFromPatterns, mergeConfig } from "../lib/common.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
-import { listProposals, readProposal, rejectProposal, previewProposalDiff, verifyProposalReviewBinding } from "../lib/proposals.js";
-import { applyProposalSafely } from "../lib/proposal-apply-safe.js";
-import { validateConfigPatch, validateProposal } from "../lib/validation-gate.js";
-import { enqueueReviewForProposal, listReviews, readReview, reviewPanel, updateReviewStatus } from "../lib/review-queue.js";
+import { validateConfigPatch } from "../lib/validation-gate.js";
 import { appendEvent } from "../lib/event-log.js";
 import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected, summarizeFeedback } from "../lib/feedback-signals.js";
 import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
@@ -20,9 +17,9 @@ import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/rel
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths, readPluginVersion } from "./_shared.js";
-import { validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
 import { statusHandlers } from "./control-handlers/status.js";
+import { proposalReviewHandlers } from "./control-handlers/proposal-review.js";
 import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
 import { eventHandlers } from "./control-handlers/events.js";
 import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
@@ -174,102 +171,11 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, suggestions: result.advice?.suggestions?.length || 0, merged }, null, 2);
   },
 
-  list_proposals(input, p) {
-    const proposals = listProposals(p.learnerDir, { status: input.status || null, limit: input.limit || 50 });
-    return JSON.stringify({ ok: true, proposals, nextAction: "show_proposal or preview_proposal" }, null, 2);
-  },
-
-  show_proposal(input, p) {
-    if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-    const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
-    if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
-    return JSON.stringify(proposal, null, 2);
-  },
-
-  apply_proposal(input, p, config) {
-    if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-    if (config.governanceProfile === "conservative") {
-      throw new Error("conservative profile requires review-first flow: approve_review then apply_review");
-    }
-    const applied = applyProposalSafely(p.learnerDir, input.proposalId || input.id, {
-      configPath: p.configPath,
-      requireReview: !!config.requireReviewForAutoApply,
-      allowedSkillRoots: [p.pluginDir],
-    });
-    return JSON.stringify({ ok: true, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
-  },
-
-  reject_proposal(input, p) {
-    if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-    const rejected = rejectProposal(p.learnerDir, input.proposalId || input.id, input.reason || "");
-    return JSON.stringify({ ok: true, proposal: rejected, nextAction: "review_panel" }, null, 2);
-  },
-
-  review_panel(input, p) {
-    const report = runDoctorFromDisk(p.learnerDir);
-    const panel = reviewPanel(p.learnerDir, { proposals: listProposals(p.learnerDir, { limit: 100 }), doctorReport: report });
-    return JSON.stringify({ ...panel, recommendedNextActions: reviewPanelNextActions(panel) }, null, 2);
-  },
-
-  preview_proposal(input, p, config) {
-    if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-    const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
-    if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
-    const preview = previewProposalDiff(proposal, { configPath: p.configPath });
-    enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
-    appendEvent(p.learnerDir, { type: "proposal.previewed", entityType: "proposal", entityId: proposal.id, summary: `Previewed proposal: ${proposal.id}` });
-    return JSON.stringify({ ...preview, nextAction: "validate_proposal, then approve_review or reject_review" }, null, 2);
-  },
-
-  validate_proposal(input, p, config) {
-    if (!input.proposalId && !input.id) throw new Error("proposalId is required");
-    const proposal = readProposal(p.learnerDir, input.proposalId || input.id);
-    if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
-    const validation = validateProposal(proposal, { config, doctorReport: runDoctorFromDisk(p.learnerDir) });
-    const review = enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
-    if (review) updateReviewStatus(p.learnerDir, review.id, validation.ok ? "queued" : "blocked", { validation });
-    appendEvent(p.learnerDir, { type: "proposal.validated", entityType: "proposal", entityId: proposal.id, summary: `Validated proposal: ${proposal.id}`, data: { ok: validation.ok } });
-    return JSON.stringify({ ...validation, nextAction: validationNextAction(validation) }, null, 2);
-  },
-
-  approve_review(input, p) {
-    const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
-    if (!reviewId) throw new Error("id or proposalId is required");
-    const review = readReview(p.learnerDir, reviewId);
-    if (!review) throw new Error(`review not found: ${reviewId}`);
-    const proposal = readProposal(p.learnerDir, review.proposalId);
-    if (!proposal) throw new Error(`proposal not found: ${review.proposalId}`);
-    const binding = verifyProposalReviewBinding(proposal, review);
-    if (!binding.ok) throw new Error(binding.error);
-    const next = updateReviewStatus(p.learnerDir, reviewId, "approved");
-    return JSON.stringify({ ok: true, review: next, nextAction: "apply_review" }, null, 2);
-  },
-
-  reject_review(input, p) {
-    const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
-    if (!reviewId) throw new Error("id or proposalId is required");
-    const next = updateReviewStatus(p.learnerDir, reviewId, "rejected", { reason: input.reason || "" });
-    return JSON.stringify({ ok: true, review: next, nextAction: "reject_proposal or review_panel" }, null, 2);
-  },
-
-  apply_review(input, p) {
-    const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
-    if (!reviewId) throw new Error("id or proposalId is required");
-    const review = readReview(p.learnerDir, reviewId);
-    if (!review) throw new Error(`review not found: ${reviewId}`);
-    if (review.status !== "approved") throw new Error(`review must be approved before apply: ${reviewId}`);
-    const proposal = readProposal(p.learnerDir, review.proposalId);
-    if (!proposal) throw new Error(`proposal not found: ${review.proposalId}`);
-    const binding = verifyProposalReviewBinding(proposal, review);
-    if (!binding.ok) throw new Error(binding.error);
-    const applied = applyProposalSafely(p.learnerDir, review.proposalId, { configPath: p.configPath, requireReview: true, allowedSkillRoots: [p.pluginDir] });
-    return JSON.stringify({ ok: true, reviewId, proposal: applied, nextAction: "verify_event_log or export_audit_bundle" }, null, 2);
-  },
-
-  list_reviews(input, p) {
-    const reviews = listReviews(p.learnerDir, { limit: input.limit || 50 });
-    return JSON.stringify({ ok: true, reviews, nextAction: "show_proposal then preview_proposal" }, null, 2);
-  },
+  // Proposal/review workflow handlers live in control-handlers/proposal-review.js
+  // (S2.P2b split): list_proposals, show_proposal, apply_proposal, reject_proposal,
+  // review_panel, preview_proposal, validate_proposal, approve_review, reject_review,
+  // apply_review, list_reviews.
+  ...proposalReviewHandlers,
 
   // Event-log read-only handlers live in control-handlers/events.js
   // (C-001 HANDLERS split — events domain): list_events, event_summary, verify_event_log.
