@@ -72,6 +72,8 @@ const MAX_ACTIVITY_ENTRIES = 500;
 const LOG_RETENTION_DAYS = 30;
 const CODE_PROPOSAL_MIN_COUNT = 3;
 
+const noopBackground = async () => {};
+
 const runtimeState = {
   detector: null,
   sessions: null,
@@ -167,558 +169,643 @@ function scheduleCapabilitySnapshot(ctx, capabilitiesFile, onloadTimer = null) {
 // + rewrite the file on disk, but the in-memory detector re-persists its full
 // set on the next flush. Retention is centralised in PatternDetector.pruneMemory().
 
+/* ── Onload phases ──
+ *
+ * onload() runs these in strict sequence. Each phase reads and extends the
+ * shared `rt` (runtime wiring) object and marks its onloadTimer checkpoint;
+ * the boundaries follow the pre-existing timer marks, so the phase timing
+ * output is unchanged. `rt` starts as { register, timer } and accumulates
+ * the fields each phase documents below.
+ */
+
+/** Sets rt.paths / rt.logActivity / rt.pruneDataFiles; creates data dirs. */
+function initPathsAndDirs(ctx, rt) {
+  rt.paths = createRuntimePaths(ctx.dataDir);
+  const { logActivity, pruneDataFiles } = createRuntimeLoggers(rt.paths);
+  rt.logActivity = logActivity;
+  rt.pruneDataFiles = pruneDataFiles;
+  runtimeState.logActivity = logActivity;
+  ensureDir(rt.paths);
+  rt.timer.mark("paths_and_dirs");
+}
+
+/** Sets rt.config / rt.configSource from disk (after legacy-path migration). */
+function loadRuntimeConfig(ctx, rt) {
+  // v0.341+: the host owns <dataDir>/config.json for its plugin config store.
+  // Move our legacy flat config.json (from older hosts) to runtime-config.json
+  // exactly once so the two writers never clobber each other. Host-shaped
+  // config.json is left untouched. See lib/runtime-config-path.js.
+  try {
+    const migration = migrateRuntimeConfigFile(rt.paths.DATA_DIR);
+    if (migration.migrated) {
+      ctx.log.info(`runtime-learner: migrated legacy config.json to runtime-config.json (${migration.reason})`);
+    }
+  } catch { /* migration is best-effort; loadConfig falls back to defaults */ }
+
+  const { config, source } = loadConfig(rt.paths);
+  rt.config = config;
+  rt.configSource = source;
+  rt.timer.mark("config_load");
+}
+
+/**
+ * Bridges the settings panel into rt.config, routes panel/plaintext
+ * credentials into the encrypted store, and merges credentials back on top.
+ * rt.config's object identity is FINAL after this phase — later phases and
+ * applyLiveConfig only mutate it in place, never replace it.
+ */
+function bridgePanelConfig(ctx, rt) {
+  // Bridge the Hanako settings panel into the runtime config. v0.341+: ctx.config
+  // is a method-based store (getAll/setMany); applyPanelConfig handles both old
+  // and new API transparently. The panel is authoritative for the settings it
+  // exposes — see applyPanelConfig.
+  let config = rt.config;
+  const preBridge = JSON.stringify(config);
+  config = applyPanelConfig(config, ctx.config);
+  let configNeedsPersist = JSON.stringify(config) !== preBridge;
+
+  // Capture any API key the user typed into a settings-panel credential field.
+  // applyPanelConfig deliberately drops credential keys (they must never live
+  // in config.json plaintext), so route real panel-entered credentials into
+  // the encrypted store here — mergeCredentials() below then picks them up.
+  // Merge with the existing store so keys set via set_config aren't clobbered.
+  try {
+    const panelCreds = panelCredentialsToStore(ctx.config);
+    if (Object.keys(panelCreds).length > 0) {
+      saveCredentials({ ...loadCredentials(), ...panelCreds });
+      ctx.log.info(`runtime-learner: captured ${Object.keys(panelCreds).length} settings-panel credential(s) into the encrypted store`);
+    }
+  } catch {}
+
+  // One-time migration: move any plaintext API keys from old config.json into
+  // the encrypted credentials store. After migration the config file is
+  // rewritten with placeholder values so the keys never persist in plaintext.
+  try {
+    const plaintextKeys = detectPlaintextCredentials(config);
+    if (plaintextKeys.length > 0) {
+      const toEncrypt = {};
+      for (const key of plaintextKeys) toEncrypt[key] = config[key];
+      saveCredentials(toEncrypt);
+      // Rewrite config with sanitised values
+      for (const key of plaintextKeys) config[key] = "(stored in credentials.enc)";
+      configNeedsPersist = true;
+      ctx.log.info(`runtime-learner: migrated ${plaintextKeys.length} plaintext credential(s) to encrypted store`);
+    }
+  } catch {}
+
+  // Persist the bridged (and credential-sanitised) config so config.json on
+  // disk mirrors the panel for the runtime and the control tools alike. At
+  // this point config holds only credential placeholders, never plaintext.
+  if (configNeedsPersist) { try { writeJson(rt.paths.CONFIG_FILE, config); } catch {} }
+
+  // Merge encrypted credentials on top of the config — the encrypted store
+  // is the canonical source for API keys.
+  rt.config = mergeCredentials(config);
+  rt.timer.mark("config_bridge_credentials");
+}
+
+/** Sets rt.seenIds / rt.persistSeenIds / rt.detector / rt.actionPipelineState / rt.actionBudgetState. */
+function initDetectorState(ctx, rt) {
+  const seenIds = createSeenIdStore(readJson(rt.paths.USAGE_SEEN_FILE, []), {
+    cap: 5000,
+    persist: (ids) => writeJson(rt.paths.USAGE_SEEN_FILE, ids),
+  });
+  rt.seenIds = seenIds;
+  rt.persistSeenIds = (force = false) => {
+    try { seenIds.flush(force); } catch {}
+  };
+  runtimeState.persistSeenIds = () => rt.persistSeenIds(true);
+  rt.detector = new PatternDetector(rt.config);
+  rt.timer.mark("detector_init");
+
+  // P6.D: shared across every post-flush pipeline run this session so
+  // back-to-back turns coalesce into a single in-flight auto-action run
+  // instead of stacking up concurrent fire-and-forget calls, and so the
+  // per-session action budget (maxAutoActionsPerSession) actually
+  // accumulates instead of resetting on every flush.
+  rt.actionPipelineState = { inFlight: false };
+  rt.actionBudgetState = createBudgetState();
+}
+
+/** One-time migration: mark legacy preferences as durable knowledge. */
+function migrateLegacyPreferences(ctx, rt) {
+  try {
+    const patterns = readJson(rt.paths.PATTERNS_FILE, []);
+    let migrated = 0;
+    for (const p of patterns) {
+      if (p.type === "preference" && !p.knowledgeTier) {
+        p.knowledgeTier = "durable";
+        migrated += 1;
+      }
+    }
+    if (migrated > 0) {
+      writeJson(rt.paths.PATTERNS_FILE, patterns);
+      ctx.log.info(`runtime-learner: migrated ${migrated} preferences to durable tier`);
+    }
+  } catch {}
+}
+
+/** Sets rt.sessions / rt.syncDiskStatus / rt.persistPatterns / rt.flushPersist / rt.noteDiskMtime. */
+function initSessionsAndPersistence(ctx, rt) {
+  const { PATTERNS_FILE } = rt.paths;
+  const detector = rt.detector;
+
+  rt.sessions = new Map();
+  runtimeState.sessionStart = new Date().toISOString();
+  runtimeState.sessionActivityCount = 0;
+
+  // Sync disk status into in-memory detector (control.js may approve/reject)
+  // Called once per flush cycle instead of on every persist.
+  // Uses mtime cache: only re-reads patterns.json when it was modified by control.js.
+  let _patternsMtime = 0;
+  // For the restore phase: record the just-read file's mtime as "already seen".
+  rt.noteDiskMtime = () => {
+    try { _patternsMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
+  };
+  const syncDiskStatus = () => {
+    try {
+      if (!fs.existsSync(PATTERNS_FILE)) return;
+      const mtime = fs.statSync(PATTERNS_FILE).mtimeMs;
+      if (mtime === _patternsMtime) return; // no change, skip
+      _patternsMtime = mtime;
+      const disk = readJson(PATTERNS_FILE, []);
+      if (!disk.length) return;
+      // Reconcile each disk pattern into its in-memory twin. The per-pattern
+      // merge rules (manual approve/reject, durable promotion, autoApproved
+      // clearing, and a newer advisor-distilled fix from control.js's manual
+      // run_model_advisor) live in absorbDiskPatternState so they are unit
+      // tested independently of the plugin lifecycle.
+      const merged = new Map(detector.patterns);
+      let added = 0;
+      for (const p of disk) {
+        if (!p.id) continue;
+        const stored = merged.get(p.id);
+        if (!stored) {
+          merged.set(p.id, { ...p });
+          added += 1;
+          continue;
+        }
+        if (absorbDiskPatternState(stored, p)) detector.invalidate();
+      }
+      if (added > 0) {
+        // restore() is built for loading a trusted clean snapshot at onload and
+        // marks the store clean as a side effect. Here `merged` is disk ∪
+        // in-memory (a superset of what's actually on disk), so anything the
+        // runtime learned this session but hadn't flushed yet would otherwise
+        // be silently dropped on the next persist — re-dirty after restoring.
+        detector.restore([...merged.values()]);
+        detector.invalidate();
+        ctx.log.info(`runtime-learner: absorbed ${added} disk pattern(s)`);
+      }
+    } catch {}
+  };
+
+  const persistPatternsNow = () => {
+    syncDiskStatus();
+    let currentMtime = 0;
+    try { currentMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
+    if (!detector.isDirty?.() && currentMtime === _patternsMtime) return false;
+    const changed = writeJson(PATTERNS_FILE, [...detector.patterns.values()].map(p => ({ ...p })));
+    try { _patternsMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
+    detector.markClean?.();
+    return changed;
+  };
+
+  // Debounced persist: coalesce the many flush/usage writes in a busy session
+  // into at most one disk write per ~1.5s. onunload force-flushes via
+  // runtimeState.persistPatterns so nothing is lost on shutdown.
+  let _persistTimer = null;
+  const persistPatterns = () => {
+    if (_persistTimer) return;
+    _persistTimer = setTimeout(() => {
+      _persistTimer = null;
+      try { persistPatternsNow(); }
+      catch (err) { ctx.log.warn(`runtime-learner: persist failed: ${err.message}`); }
+    }, 1500);
+    _persistTimer.unref?.();
+  };
+  const flushPersist = () => {
+    if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
+    persistPatternsNow();
+  };
+
+  rt.syncDiskStatus = syncDiskStatus;
+  rt.persistPatterns = persistPatterns;
+  rt.flushPersist = flushPersist;
+}
+
+/** Sets rt.resolveSessionTarget / rt.notifyProposalReview / rt.notifyWorkStatus / rt.refreshSkill. */
+function createSkillRefresh(ctx, rt) {
+  const messenger = createSessionMessenger(ctx, {
+    proposalNotifiedIds: runtimeState.proposalNotifiedIds,
+    statusNotifiedAt: runtimeState.statusNotifiedAt,
+  });
+  rt.resolveSessionTarget = (sessionHandle) => runtimeState.sessionTargets.get(sessionHandle) || sessionHandle;
+  rt.notifyProposalReview = (sessionHandle, proposals = [], options = {}) => (
+    messenger.notifyProposalReview(rt.resolveSessionTarget(sessionHandle), proposals, rt.config, { ...options, sessionKey: sessionHandle })
+  );
+  rt.notifyWorkStatus = (sessionHandle, detail = "") => (
+    messenger.notifyWorkStatus(rt.resolveSessionTarget(sessionHandle), rt.config, detail, { sessionKey: sessionHandle })
+  );
+
+  let lastSkillRefresh = 0;
+  let lastSkillRenderFingerprint = null;
+  let lastSkillRenderStatKey = null;
+  rt.refreshSkill = (force = false, sessionHandle = null, cachedAll = null) => {
+    const now = Date.now();
+    if (!force && now - lastSkillRefresh < SKILL_REFRESH_MIN_MS) return;
+    const allPatterns = cachedAll || rt.detector.all();
+    const skillDir = path.join(ctx.pluginDir, "skills", "self-learning");
+    fs.mkdirSync(skillDir, { recursive: true });
+    const skillPath = path.join(skillDir, "SKILL.md");
+    const renderOptions = {
+      turnCount: rt.detector.turnCount,
+      dataDir: rt.paths.DATA_DIR,
+    };
+    const currentFingerprint = skillRenderFingerprint(allPatterns, rt.config, renderOptions);
+    const currentStatKey = fileStatKey(skillPath);
+    const shouldRenderSkill = currentFingerprint !== lastSkillRenderFingerprint || currentStatKey !== lastSkillRenderStatKey;
+    if (shouldRenderSkill) {
+      const content = buildSkillMdFromPatterns(allPatterns, rt.config, renderOptions);
+      let current = null;
+      try { current = fs.readFileSync(skillPath, "utf-8"); } catch {}
+      if (skipObservedLine(current) !== skipObservedLine(content)) {
+        snapshotSkill(skillPath, rt.paths.HISTORY_DIR, { keep: MAX_SKILL_HISTORY });
+        const triggerPatternIds = allPatterns.filter(p => p.injectable).slice(0, 8).map(p => p.id);
+        const proposal = buildSkillPatchProposal({
+          learnerDir: rt.paths.DATA_DIR,
+          skillPath,
+          content,
+          triggerPatternIds,
+        });
+        if (proposal.autoApply && proposal.status !== "applied") {
+          if (rt.config.requireReviewForAutoApply && !isProposalReviewApproved(rt.paths.DATA_DIR, proposal.id)) {
+            ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
+          } else {
+            const applied = applyProposalSafely(rt.paths.DATA_DIR, proposal.id, {
+              configPath: rt.paths.CONFIG_FILE,
+              requireReview: !!rt.config.requireReviewForAutoApply,
+              allowedSkillRoots: [ctx.pluginDir],
+            });
+            pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
+            // Feedback signal: SKILL.md actually changed and was written. Fail-soft.
+            if (rt.config.feedbackSignalsEnabled && applied?.status === "applied" && applied?.result?.ok) {
+              recordMemoryInjected(rt.paths.DATA_DIR, { patternIds: triggerPatternIds, skillRef: "skills/self-learning/SKILL.md" });
+            }
+          }
+        }
+      }
+      lastSkillRenderFingerprint = currentFingerprint;
+      lastSkillRenderStatKey = fileStatKey(skillPath);
+    }
+    const { proposals, created } = buildRepeatedCodePatchProposals({
+      learnerDir: rt.paths.DATA_DIR, patterns: allPatterns, minCount: CODE_PROPOSAL_MIN_COUNT,
+    });
+    if (proposals.length > 0) {
+      if (created > 0) {
+        const sessionTarget = normalizeSessionTarget(rt.resolveSessionTarget(sessionHandle));
+        rt.logActivity({
+          type: "proposal_created",
+          summary: `Created ${created} high-risk code improvement proposal(s) for review`,
+          sessionId: sessionTarget.sessionId,
+          sessionRef: sessionTarget.sessionRef,
+          sessionPath: sessionTarget.sessionPath,
+        });
+      }
+      void rt.notifyProposalReview(sessionHandle, proposals);
+    }
+    lastSkillRefresh = now;
+  };
+}
+
+/** Sets rt.advisorRunner / rt.extractionRunner. */
+function createModelRunners(ctx, rt) {
+  rt.advisorRunner = createAdvisorRunner({
+    getConfig: () => rt.config,
+    detector: rt.detector,
+    refreshSkill: rt.refreshSkill,
+    logActivity: rt.logActivity,
+    runtimeState,
+    ctx,
+    notifyProposalReview: rt.notifyProposalReview,
+    notifyWorkStatus: rt.notifyWorkStatus,
+    dataDir: rt.paths.DATA_DIR,
+    usageSummaryFile: path.join(rt.paths.DATA_DIR, "usage_summary.json"),
+    capabilitiesFile: rt.paths.CAPABILITIES_FILE,
+  });
+
+  // v5.0 M2: LLM pattern extraction runner. Gated by llmExtractionEnabled
+  // (default false → no-op). Synchronously enqueues candidates then fires an
+  // async background tick; output is review-only pattern_candidate proposals.
+  rt.extractionRunner = createExtractionRunner({
+    getConfig: () => rt.config,
+    dataDir: rt.paths.DATA_DIR,
+    ctx,
+  });
+}
+
+/** Restores the detector's pattern store from patterns.json. */
+function restorePatternsFromDisk(ctx, rt) {
+  try {
+    if (fs.existsSync(rt.paths.PATTERNS_FILE)) {
+      const saved = JSON.parse(fs.readFileSync(rt.paths.PATTERNS_FILE, "utf-8"));
+      rt.detector.restore(saved);
+      rt.noteDiskMtime();
+      ctx.log.info(`runtime-learner: restored ${saved.length} patterns`);
+    }
+  } catch (err) {
+    ctx.log.warn(`runtime-learner: load failed: ${err.message}`);
+  }
+  rt.timer.mark("patterns_restore");
+}
+
+/** Sets rt.autoApprovePatterns. */
+function createAutoApprove(ctx, rt) {
+  rt.autoApprovePatterns = (sessionHandle = null, cachedAll = null) => {
+    if (!rt.config.autoApproveHighConfidence) return { count: 0, allPatterns: cachedAll || rt.detector.all() };
+    const allPatterns = cachedAll || rt.detector.all();
+    let count = 0;
+    for (const p of allPatterns) {
+      if (p.status === "pending" && p.injectable && p.type !== "preference") {
+        const stored = rt.detector.patterns.get(p.id);
+        if (stored && stored.status === "pending") {
+          stored.status = "approved";
+          stored.autoApproved = true;
+          stored.reviewedAt = new Date().toISOString();
+          count += 1;
+        }
+      }
+    }
+    if (count > 0) {
+      const sessionTarget = normalizeSessionTarget(rt.resolveSessionTarget(sessionHandle));
+      rt.logActivity({
+        type: "auto_approved",
+        summary: `Auto-approved ${count} high-confidence pattern(s)`,
+        sessionId: sessionTarget.sessionId,
+        sessionRef: sessionTarget.sessionRef,
+        sessionPath: sessionTarget.sessionPath,
+      });
+      ctx.log.info(`runtime-learner: auto-approved ${count} pattern(s)`);
+      rt.detector.invalidate();
+      return { count, allPatterns: rt.detector.all() };
+    }
+    return { count, allPatterns };
+  };
+}
+
+/** Sets rt.useScheduledBackground after trying to register host task:* schedules. */
+async function setupBackground(ctx, rt) {
+  let backgroundTasks = { ok: false, useLegacyPath: true };
+  const currentPatterns = () => {
+    try { return rt.detector.all(); } catch { return []; }
+  };
+  try {
+    backgroundTasks = await setupBackgroundTasks({
+      ctx,
+      dataDir: rt.paths.DATA_DIR,
+      config: rt.config,
+      registerDispose: typeof rt.register === "function" ? rt.register : null,
+      runAdvisor: async () => rt.advisorRunner.maybeRun("scheduled", null, currentPatterns()),
+      runRetention: async () => {
+        rt.syncDiskStatus();
+        rt.detector.pruneMemory();
+        const allPatterns = currentPatterns();
+        rt.flushPersist();
+        await rt.pruneDataFiles();
+        rt.refreshSkill(false, null, allPatterns);
+        return { ok: true, patterns: allPatterns.length };
+      },
+      runLlmExtraction: async () => rt.extractionRunner.maybeRun("scheduled", null, currentPatterns()),
+    });
+  } catch (err) {
+    ctx.log.debug?.(`runtime-learner: background task setup skipped: ${err?.message || err}`);
+    backgroundTasks = { ok: false, useLegacyPath: true };
+  }
+  rt.useScheduledBackground = backgroundTasks.ok && backgroundTasks.useLegacyPath === false;
+  rt.timer.mark("background_setup");
+}
+
+/** Sets rt.recordUsage — the llm_usage ingestion + post-flush pipeline entry. */
+function createRecordUsage(ctx, rt) {
+  rt.recordUsage = (entry, sessionHandle = null) => {
+    if (!rt.config.learnFromUsage) return;
+    const session = normalizeSessionTarget(sessionHandle, entry?.attribution, entry?.source?.actor, entry?.session);
+    const summaryEntry = summarizeUsageEntry(entry, session);
+    const dedupKey = usageDedupKey(entry, summaryEntry);
+    if (dedupKey && !rt.seenIds.add(dedupKey)) return;
+    try {
+      updateUsageSummary(summaryEntry, path.join(rt.paths.DATA_DIR, "usage_summary.json"));
+      rt.persistSeenIds();
+      const usageChanges = rt.detector.ingestUsage?.(summaryEntry) || [];
+      for (const change of usageChanges) {
+        if (!change.isNew) continue;
+        rt.logActivity({
+          type: "usage_pattern_discovered",
+          summary: `New usage pattern: ${change.pattern.desc}`,
+          sessionId: session.sessionId,
+          sessionRef: session.sessionRef,
+          sessionPath: session.sessionPath,
+        });
+        runtimeState.sessionActivityCount += 1;
+      }
+      runPostFlushPipeline({
+        detector: rt.detector,
+        autoApprovePatterns: rt.autoApprovePatterns,
+        persistPatterns: rt.persistPatterns,
+        refreshSkill: rt.refreshSkill,
+        maybeRunModelAdvisor: rt.useScheduledBackground ? noopBackground : rt.advisorRunner.maybeRun,
+        maybeRunExtraction: rt.useScheduledBackground ? noopBackground : rt.extractionRunner.maybeRun,
+        reason: "usage",
+        // Use the identity key (sid:/sref:/path) so resolveSessionTarget hits
+        // the sessionTargets map the observer populated under the same key and
+        // round-trips the full target. Passing the raw sessionPath misses the
+        // map whenever sessionId/sessionRef exist and silently drops them.
+        sessionHandle: sessionIdentityKey(session),
+        ctx,
+        learnerDir: rt.paths.DATA_DIR,
+        config: rt.config,
+        skipPrune: rt.useScheduledBackground,
+        actionPipelineState: rt.actionPipelineState,
+        budgetState: rt.actionBudgetState,
+      });
+    } catch (err) {
+      ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
+    }
+  };
+}
+
+/** Replays recent usage entries from the host since the last bootstrap cursor. */
+async function bootstrapUsage(ctx, rt) {
+  try {
+    const usageCapability = ctx.bus.getCapability?.("usage:list");
+    if (rt.config.learnFromUsage && (usageCapability?.available || ctx.bus.hasHandler?.("usage:list"))) {
+      const usageBootstrapFile = usageBootstrapStatePath(rt.paths.DATA_DIR);
+      const since = usageBootstrapSince(usageBootstrapFile);
+      const result = await ctx.bus.request("usage:list", { since, limit: 50 });
+      const entries = result?.entries || [];
+      for (const entry of entries) rt.recordUsage(entry, entry.attribution || entry.source?.actor || entry.session || null);
+      recordUsageBootstrap(usageBootstrapFile, entries, { requestedSince: since });
+      rt.persistSeenIds(true); // flush now so a hard kill won't re-count on next start
+      ctx.log.info(`runtime-learner: bootstrapped ${entries.length} usage records since ${since}`);
+    }
+  } catch (err) {
+    ctx.log.warn(`runtime-learner: usage bootstrap skipped: ${err.message}`);
+  }
+  rt.timer.mark("usage_bootstrap");
+}
+
+/** Sets rt.configRef / rt.observer and subscribes to the host EventBus. */
+function subscribeObserver(ctx, rt) {
+  rt.configRef = { current: rt.config };
+
+  rt.observer = createObserver({
+    detector: rt.detector,
+    sessions: rt.sessions,
+    runtimeState,
+    persistPatterns: rt.persistPatterns,
+    refreshSkill: rt.refreshSkill,
+    autoApprovePatterns: rt.autoApprovePatterns,
+    syncDiskStatus: rt.syncDiskStatus,
+    pruneDataFiles: rt.useScheduledBackground ? noopBackground : rt.pruneDataFiles,
+    maybeRunModelAdvisor: rt.useScheduledBackground ? noopBackground : rt.advisorRunner.maybeRun,
+    maybeRunExtraction: rt.useScheduledBackground ? noopBackground : rt.extractionRunner.maybeRun,
+
+    logActivity: rt.logActivity,
+    recordUsage: rt.recordUsage,
+    configRef: rt.configRef,
+    ctx,
+    paths: {
+      DATA_DIR: rt.paths.DATA_DIR,
+      TURNS_FILE: rt.paths.TURNS_FILE,
+      EPISODES_FILE: rt.paths.EPISODES_FILE,
+      EXPERIENCE_LOG: rt.paths.EXPERIENCE_LOG,
+      ERROR_LOG: rt.paths.ERROR_LOG,
+      CONFIG_FILE: rt.paths.CONFIG_FILE,
+    },
+    MAX_SESSIONS,
+    skipPrune: rt.useScheduledBackground,
+    actionPipelineState: rt.actionPipelineState,
+    actionBudgetState: rt.actionBudgetState,
+  });
+
+  rt.observer.subscribe(ctx.bus, rt.config);
+  rt.timer.mark("observer_subscribe");
+}
+
+/** Wires live settings-panel updates, runtimeState handles, and register() disposables. */
+function wireLiveConfigAndDisposal(ctx, rt) {
+  // Live settings-panel updates. The host writes our config.json and emits
+  // `plugin_config_changed` when the user edits the settings panel (see
+  // core/plugin-manager.ts setConfig); it does NOT reload the plugin. So we
+  // re-bridge the panel into the in-memory config and converge every holder
+  // (detector, refreshSkill/advisor closures, configRef) WITHOUT changing the
+  // config object's identity — replacing it would leave them on the old
+  // snapshot. Fields whose effect is wired at onload (learnFromUsage → the
+  // usage subscription below) cannot apply live and carry a reloadRequired
+  // note in the manifest instead.
+  const refreshConfigFromPanel = () => {
+    try {
+      const bridged = applyPanelConfig(loadConfig(rt.paths).config, ctx.config);
+      // Persist the bridged view so config.json and the control tools stay in
+      // sync. applyPanelConfig drops credential keys, so this never writes
+      // plaintext secrets.
+      try { writeJson(rt.paths.CONFIG_FILE, bridged); } catch {}
+      // Capture any newly panel-entered credential into the encrypted store.
+      try {
+        const panelCreds = panelCredentialsToStore(ctx.config);
+        if (Object.keys(panelCreds).length > 0) saveCredentials({ ...loadCredentials(), ...panelCreds });
+      } catch {}
+      applyLiveConfig({ config: rt.config, configRef: rt.configRef, detector: rt.detector }, mergeCredentials(bridged));
+      ctx.log.info("runtime-learner: applied live settings-panel config update");
+    } catch (err) {
+      ctx.log.warn(`runtime-learner: live config refresh skipped: ${err?.message || err}`);
+    }
+  };
+  const unsubConfig = ctx.bus.subscribe?.((event) => {
+    if (event?.type === "plugin_config_changed" && (!ctx.pluginId || event.pluginId === ctx.pluginId)) {
+      refreshConfigFromPanel();
+    }
+  }, { types: ["plugin_config_changed"] });
+
+  runtimeState.detector = rt.detector;
+  runtimeState.sessions = rt.sessions;
+  runtimeState.unsub = () => rt.observer.unsubscribe();
+  runtimeState.persistPatterns = rt.flushPersist;
+  runtimeState.refreshSkill = rt.refreshSkill;
+
+  // Register disposable cleanup via the host's register() callback (v0.341+).
+  if (typeof rt.register === "function") {
+    rt.register(() => { try { rt.observer.unsubscribe(); } catch {} });
+    rt.register(() => { try { rt.persistSeenIds(true); } catch {} });
+    rt.register(() => { try { rt.flushPersist(); } catch {} });
+    if (typeof unsubConfig === "function") rt.register(() => { try { unsubConfig(); } catch {} });
+  }
+  rt.timer.mark("runtime_state_registered");
+}
+
+/** Startup notifications + first sync/approve/persist/skill-refresh pass. */
+function runInitialRefresh(ctx, rt) {
+  // Config fallback notification: let the user know when their config was
+  // corrupt or missing and the plugin reverted to defaults.
+  if (rt.configSource !== "file") {
+    const reason = rt.configSource === "corrupt"
+      ? "config.json was corrupt (JSON syntax error) — renamed to .corrupt.bak and reverted to defaults"
+      : "config.json was missing — wrote DEFAULT_CONFIG";
+    rt.logActivity({
+      type: "config_fallback",
+      summary: reason,
+    });
+    ctx.log.warn(`runtime-learner: ${reason}`);
+  }
+
+  // Session startup activity entry
+  rt.logActivity({
+    type: "session_start",
+    summary: `Self-learning runtime started with ${rt.detector.all().length} existing patterns`,
+  });
+
+  try {
+    rt.syncDiskStatus();
+    const { allPatterns } = rt.autoApprovePatterns();
+    rt.flushPersist();
+    if (!rt.useScheduledBackground) rt.pruneDataFiles().catch(() => {});
+    rt.refreshSkill(true, null, allPatterns);
+    if (!rt.useScheduledBackground) {
+      scheduleAfterOnload(ctx, "startup_advisor", () => rt.advisorRunner.maybeRun("startup", null, allPatterns), rt.timer);
+      scheduleAfterOnload(ctx, "startup_extraction", () => rt.extractionRunner.maybeRun("startup", null, allPatterns), rt.timer);
+    }
+  } catch (err) {
+    ctx.log.warn(`runtime-learner: initial refresh failed: ${err.message}`);
+  }
+  rt.timer.mark("initial_refresh");
+}
+
 /* ── Plugin lifecycle ── */
 
 export default definePlugin({
   async onload(ctx, { register }) {
     try {
-    const onloadTimer = createOnloadTimer(ctx);
-    const paths = createRuntimePaths(ctx.dataDir);
-    const {
-      DATA_DIR,
-      EXPERIENCE_LOG,
-      ERROR_LOG,
-      USAGE_SEEN_FILE,
-      CAPABILITIES_FILE,
-      PATTERNS_FILE,
-      TURNS_FILE,
-      EPISODES_FILE,
-      CONFIG_FILE,
-      HISTORY_DIR,
-    } = paths;
-    const { logActivity, pruneDataFiles } = createRuntimeLoggers(paths);
-    runtimeState.logActivity = logActivity;
-    ensureDir(paths);
-    onloadTimer.mark("paths_and_dirs");
-
-    // v0.341+: the host owns <dataDir>/config.json for its plugin config store.
-    // Move our legacy flat config.json (from older hosts) to runtime-config.json
-    // exactly once so the two writers never clobber each other. Host-shaped
-    // config.json is left untouched. See lib/runtime-config-path.js.
-    try {
-      const migration = migrateRuntimeConfigFile(DATA_DIR);
-      if (migration.migrated) {
-        ctx.log.info(`runtime-learner: migrated legacy config.json to runtime-config.json (${migration.reason})`);
-      }
-    } catch { /* migration is best-effort; loadConfig falls back to defaults */ }
-
-    let { config, source: configSource } = loadConfig(paths);
-    onloadTimer.mark("config_load");
-
-    // Bridge the Hanako settings panel into the runtime config. v0.341+: ctx.config
-    // is a method-based store (getAll/setMany); applyPanelConfig handles both old
-    // and new API transparently. The panel is authoritative for the settings it
-    // exposes — see applyPanelConfig.
-    const preBridge = JSON.stringify(config);
-    config = applyPanelConfig(config, ctx.config);
-    let configNeedsPersist = JSON.stringify(config) !== preBridge;
-
-    // Capture any API key the user typed into a settings-panel credential field.
-    // applyPanelConfig deliberately drops credential keys (they must never live
-    // in config.json plaintext), so route real panel-entered credentials into
-    // the encrypted store here — mergeCredentials() below then picks them up.
-    // Merge with the existing store so keys set via set_config aren't clobbered.
-    try {
-      const panelCreds = panelCredentialsToStore(ctx.config);
-      if (Object.keys(panelCreds).length > 0) {
-        saveCredentials({ ...loadCredentials(), ...panelCreds });
-        ctx.log.info(`runtime-learner: captured ${Object.keys(panelCreds).length} settings-panel credential(s) into the encrypted store`);
-      }
-    } catch {}
-
-    // One-time migration: move any plaintext API keys from old config.json into
-    // the encrypted credentials store. After migration the config file is
-    // rewritten with placeholder values so the keys never persist in plaintext.
-    try {
-      const plaintextKeys = detectPlaintextCredentials(config);
-      if (plaintextKeys.length > 0) {
-        const toEncrypt = {};
-        for (const key of plaintextKeys) toEncrypt[key] = config[key];
-        saveCredentials(toEncrypt);
-        // Rewrite config with sanitised values
-        for (const key of plaintextKeys) config[key] = "(stored in credentials.enc)";
-        configNeedsPersist = true;
-        ctx.log.info(`runtime-learner: migrated ${plaintextKeys.length} plaintext credential(s) to encrypted store`);
-      }
-    } catch {}
-
-    // Persist the bridged (and credential-sanitised) config so config.json on
-    // disk mirrors the panel for the runtime and the control tools alike. At
-    // this point config holds only credential placeholders, never plaintext.
-    if (configNeedsPersist) { try { writeJson(CONFIG_FILE, config); } catch {} }
-
-    // Merge encrypted credentials on top of the config — the encrypted store
-    // is the canonical source for API keys.
-    config = mergeCredentials(config);
-    onloadTimer.mark("config_bridge_credentials");
-
-    const seenIds = createSeenIdStore(readJson(USAGE_SEEN_FILE, []), {
-      cap: 5000,
-      persist: (ids) => writeJson(USAGE_SEEN_FILE, ids),
-    });
-    const persistSeenIds = (force = false) => {
-      try { seenIds.flush(force); } catch {}
-    };
-    runtimeState.persistSeenIds = () => persistSeenIds(true);
-    const detector = new PatternDetector(config);
-    onloadTimer.mark("detector_init");
-
-    // P6.D: shared across every post-flush pipeline run this session so
-    // back-to-back turns coalesce into a single in-flight auto-action run
-    // instead of stacking up concurrent fire-and-forget calls, and so the
-    // per-session action budget (maxAutoActionsPerSession) actually
-    // accumulates instead of resetting on every flush.
-    const actionPipelineState = { inFlight: false };
-    const actionBudgetState = createBudgetState();
-
-    // One-time migration: mark legacy preferences as durable knowledge.
-    try {
-      const patterns = readJson(PATTERNS_FILE, []);
-      let migrated = 0;
-      for (const p of patterns) {
-        if (p.type === "preference" && !p.knowledgeTier) {
-          p.knowledgeTier = "durable";
-          migrated += 1;
-        }
-      }
-      if (migrated > 0) {
-        writeJson(PATTERNS_FILE, patterns);
-        ctx.log.info(`runtime-learner: migrated ${migrated} preferences to durable tier`);
-      }
-    } catch {}
-
-    const sessions = new Map();
-    let lastSkillRefresh = 0;
-    runtimeState.sessionStart = new Date().toISOString();
-    runtimeState.sessionActivityCount = 0;
-
-    // Sync disk status into in-memory detector (control.js may approve/reject)
-    // Called once per flush cycle instead of on every persist.
-    // Uses mtime cache: only re-reads patterns.json when it was modified by control.js.
-    let _patternsMtime = 0;
-    const syncDiskStatus = () => {
-      try {
-        if (!fs.existsSync(PATTERNS_FILE)) return;
-        const mtime = fs.statSync(PATTERNS_FILE).mtimeMs;
-        if (mtime === _patternsMtime) return; // no change, skip
-        _patternsMtime = mtime;
-        const disk = readJson(PATTERNS_FILE, []);
-        if (!disk.length) return;
-        // Reconcile each disk pattern into its in-memory twin. The per-pattern
-        // merge rules (manual approve/reject, durable promotion, autoApproved
-        // clearing, and a newer advisor-distilled fix from control.js's manual
-        // run_model_advisor) live in absorbDiskPatternState so they are unit
-        // tested independently of the plugin lifecycle.
-        const merged = new Map(detector.patterns);
-        let added = 0;
-        for (const p of disk) {
-          if (!p.id) continue;
-          const stored = merged.get(p.id);
-          if (!stored) {
-            merged.set(p.id, { ...p });
-            added += 1;
-            continue;
-          }
-          if (absorbDiskPatternState(stored, p)) detector.invalidate();
-        }
-        if (added > 0) {
-          // restore() is built for loading a trusted clean snapshot at onload and
-          // marks the store clean as a side effect. Here `merged` is disk ∪
-          // in-memory (a superset of what's actually on disk), so anything the
-          // runtime learned this session but hadn't flushed yet would otherwise
-          // be silently dropped on the next persist — re-dirty after restoring.
-          detector.restore([...merged.values()]);
-          detector.invalidate();
-          ctx.log.info(`runtime-learner: absorbed ${added} disk pattern(s)`);
-        }
-      } catch {}
-    };
-
-    const persistPatternsNow = () => {
-      syncDiskStatus();
-      let currentMtime = 0;
-      try { currentMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
-      if (!detector.isDirty?.() && currentMtime === _patternsMtime) return false;
-      const changed = writeJson(PATTERNS_FILE, [...detector.patterns.values()].map(p => ({ ...p })));
-      try { _patternsMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
-      detector.markClean?.();
-      return changed;
-    };
-
-    // Debounced persist: coalesce the many flush/usage writes in a busy session
-    // into at most one disk write per ~1.5s. onunload force-flushes via
-    // runtimeState.persistPatterns so nothing is lost on shutdown.
-    let _persistTimer = null;
-    const persistPatterns = () => {
-      if (_persistTimer) return;
-      _persistTimer = setTimeout(() => {
-        _persistTimer = null;
-        try { persistPatternsNow(); }
-        catch (err) { ctx.log.warn(`runtime-learner: persist failed: ${err.message}`); }
-      }, 1500);
-      _persistTimer.unref?.();
-    };
-    const flushPersist = () => {
-      if (_persistTimer) { clearTimeout(_persistTimer); _persistTimer = null; }
-      persistPatternsNow();
-    };
-
-    const messenger = createSessionMessenger(ctx, {
-      proposalNotifiedIds: runtimeState.proposalNotifiedIds,
-      statusNotifiedAt: runtimeState.statusNotifiedAt,
-    });
-    const resolveSessionTarget = (sessionHandle) => runtimeState.sessionTargets.get(sessionHandle) || sessionHandle;
-    const notifyProposalReview = (sessionHandle, proposals = [], options = {}) => (
-      messenger.notifyProposalReview(resolveSessionTarget(sessionHandle), proposals, config, { ...options, sessionKey: sessionHandle })
-    );
-    const notifyWorkStatus = (sessionHandle, detail = "") => (
-      messenger.notifyWorkStatus(resolveSessionTarget(sessionHandle), config, detail, { sessionKey: sessionHandle })
-    );
-
-    let lastSkillRenderFingerprint = null;
-    let lastSkillRenderStatKey = null;
-    const refreshSkill = (force = false, sessionHandle = null, cachedAll = null) => {
-      const now = Date.now();
-      if (!force && now - lastSkillRefresh < SKILL_REFRESH_MIN_MS) return;
-      const allPatterns = cachedAll || detector.all();
-      const skillDir = path.join(ctx.pluginDir, "skills", "self-learning");
-      fs.mkdirSync(skillDir, { recursive: true });
-      const skillPath = path.join(skillDir, "SKILL.md");
-      const renderOptions = {
-        turnCount: detector.turnCount,
-        dataDir: DATA_DIR,
-      };
-      const currentFingerprint = skillRenderFingerprint(allPatterns, config, renderOptions);
-      const currentStatKey = fileStatKey(skillPath);
-      const shouldRenderSkill = currentFingerprint !== lastSkillRenderFingerprint || currentStatKey !== lastSkillRenderStatKey;
-      if (shouldRenderSkill) {
-        const content = buildSkillMdFromPatterns(allPatterns, config, renderOptions);
-        let current = null;
-        try { current = fs.readFileSync(skillPath, "utf-8"); } catch {}
-        if (skipObservedLine(current) !== skipObservedLine(content)) {
-          snapshotSkill(skillPath, HISTORY_DIR, { keep: MAX_SKILL_HISTORY });
-          const triggerPatternIds = allPatterns.filter(p => p.injectable).slice(0, 8).map(p => p.id);
-          const proposal = buildSkillPatchProposal({
-            learnerDir: DATA_DIR,
-            skillPath,
-            content,
-            triggerPatternIds,
-          });
-          if (proposal.autoApply && proposal.status !== "applied") {
-            if (config.requireReviewForAutoApply && !isProposalReviewApproved(DATA_DIR, proposal.id)) {
-              ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
-            } else {
-              const applied = applyProposalSafely(DATA_DIR, proposal.id, {
-                configPath: CONFIG_FILE,
-                requireReview: !!config.requireReviewForAutoApply,
-                allowedSkillRoots: [ctx.pluginDir],
-              });
-              pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
-              // Feedback signal: SKILL.md actually changed and was written. Fail-soft.
-              if (config.feedbackSignalsEnabled && applied?.status === "applied" && applied?.result?.ok) {
-                recordMemoryInjected(DATA_DIR, { patternIds: triggerPatternIds, skillRef: "skills/self-learning/SKILL.md" });
-              }
-            }
-          }
-        }
-        lastSkillRenderFingerprint = currentFingerprint;
-        lastSkillRenderStatKey = fileStatKey(skillPath);
-      }
-      const { proposals, created } = buildRepeatedCodePatchProposals({
-        learnerDir: DATA_DIR, patterns: allPatterns, minCount: CODE_PROPOSAL_MIN_COUNT,
-      });
-      if (proposals.length > 0) {
-        if (created > 0) {
-          const sessionTarget = normalizeSessionTarget(resolveSessionTarget(sessionHandle));
-          logActivity({
-            type: "proposal_created",
-            summary: `Created ${created} high-risk code improvement proposal(s) for review`,
-            sessionId: sessionTarget.sessionId,
-            sessionRef: sessionTarget.sessionRef,
-            sessionPath: sessionTarget.sessionPath,
-          });
-        }
-        void notifyProposalReview(sessionHandle, proposals);
-      }
-      lastSkillRefresh = now;
-    };
-
-    const advisorRunner = createAdvisorRunner({
-      getConfig: () => config,
-      detector,
-      refreshSkill,
-      logActivity,
-      runtimeState,
-      ctx,
-      notifyProposalReview,
-      notifyWorkStatus,
-      dataDir: DATA_DIR,
-      usageSummaryFile: path.join(DATA_DIR, "usage_summary.json"),
-      capabilitiesFile: CAPABILITIES_FILE,
-    });
-
-    // v5.0 M2: LLM pattern extraction runner. Gated by llmExtractionEnabled
-    // (default false → no-op). Synchronously enqueues candidates then fires an
-    // async background tick; output is review-only pattern_candidate proposals.
-    const extractionRunner = createExtractionRunner({
-      getConfig: () => config,
-      dataDir: DATA_DIR,
-      ctx,
-    });
-
-    try {
-      if (fs.existsSync(PATTERNS_FILE)) {
-        const saved = JSON.parse(fs.readFileSync(PATTERNS_FILE, "utf-8"));
-        detector.restore(saved);
-        try { _patternsMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
-        ctx.log.info(`runtime-learner: restored ${saved.length} patterns`);
-      }
-    } catch (err) {
-      ctx.log.warn(`runtime-learner: load failed: ${err.message}`);
-    }
-    onloadTimer.mark("patterns_restore");
-
-    scheduleCapabilitySnapshot(ctx, CAPABILITIES_FILE, onloadTimer);
-    onloadTimer.mark("capability_snapshot_scheduled");
-    const autoApprovePatterns = (sessionHandle = null, cachedAll = null) => {
-      if (!config.autoApproveHighConfidence) return { count: 0, allPatterns: cachedAll || detector.all() };
-      const allPatterns = cachedAll || detector.all();
-      let count = 0;
-      for (const p of allPatterns) {
-        if (p.status === "pending" && p.injectable && p.type !== "preference") {
-          const stored = detector.patterns.get(p.id);
-          if (stored && stored.status === "pending") {
-            stored.status = "approved";
-            stored.autoApproved = true;
-            stored.reviewedAt = new Date().toISOString();
-            count += 1;
-          }
-        }
-      }
-      if (count > 0) {
-        const sessionTarget = normalizeSessionTarget(resolveSessionTarget(sessionHandle));
-        logActivity({
-          type: "auto_approved",
-          summary: `Auto-approved ${count} high-confidence pattern(s)`,
-          sessionId: sessionTarget.sessionId,
-          sessionRef: sessionTarget.sessionRef,
-          sessionPath: sessionTarget.sessionPath,
-        });
-        ctx.log.info(`runtime-learner: auto-approved ${count} pattern(s)`);
-        detector.invalidate();
-        return { count, allPatterns: detector.all() };
-      }
-      return { count, allPatterns };
-    };
-
-    const noopBackground = async () => {};
-    let backgroundTasks = { ok: false, useLegacyPath: true };
-    const currentPatterns = () => {
-      try { return detector.all(); } catch { return []; }
-    };
-    try {
-      backgroundTasks = await setupBackgroundTasks({
-        ctx,
-        dataDir: DATA_DIR,
-        config,
-        registerDispose: typeof register === "function" ? register : null,
-        runAdvisor: async () => advisorRunner.maybeRun("scheduled", null, currentPatterns()),
-        runRetention: async () => {
-          syncDiskStatus();
-          detector.pruneMemory();
-          const allPatterns = currentPatterns();
-          flushPersist();
-          await pruneDataFiles();
-          refreshSkill(false, null, allPatterns);
-          return { ok: true, patterns: allPatterns.length };
-        },
-        runLlmExtraction: async () => extractionRunner.maybeRun("scheduled", null, currentPatterns()),
-      });
-    } catch (err) {
-      ctx.log.debug?.(`runtime-learner: background task setup skipped: ${err?.message || err}`);
-      backgroundTasks = { ok: false, useLegacyPath: true };
-    }
-    const useScheduledBackground = backgroundTasks.ok && backgroundTasks.useLegacyPath === false;
-    onloadTimer.mark("background_setup");
-
-    const recordUsage = (entry, sessionHandle = null) => {
-      if (!config.learnFromUsage) return;
-      const session = normalizeSessionTarget(sessionHandle, entry?.attribution, entry?.source?.actor, entry?.session);
-      const summaryEntry = summarizeUsageEntry(entry, session);
-      const dedupKey = usageDedupKey(entry, summaryEntry);
-      if (dedupKey && !seenIds.add(dedupKey)) return;
-      try {
-        updateUsageSummary(summaryEntry, path.join(DATA_DIR, "usage_summary.json"));
-        persistSeenIds();
-        const usageChanges = detector.ingestUsage?.(summaryEntry) || [];
-        for (const change of usageChanges) {
-          if (!change.isNew) continue;
-          logActivity({
-            type: "usage_pattern_discovered",
-            summary: `New usage pattern: ${change.pattern.desc}`,
-            sessionId: session.sessionId,
-            sessionRef: session.sessionRef,
-            sessionPath: session.sessionPath,
-          });
-          runtimeState.sessionActivityCount += 1;
-        }
-        runPostFlushPipeline({
-          detector,
-          autoApprovePatterns,
-          persistPatterns,
-          refreshSkill,
-          maybeRunModelAdvisor: useScheduledBackground ? noopBackground : advisorRunner.maybeRun,
-          maybeRunExtraction: useScheduledBackground ? noopBackground : extractionRunner.maybeRun,
-          reason: "usage",
-          // Use the identity key (sid:/sref:/path) so resolveSessionTarget hits
-          // the sessionTargets map the observer populated under the same key and
-          // round-trips the full target. Passing the raw sessionPath misses the
-          // map whenever sessionId/sessionRef exist and silently drops them.
-          sessionHandle: sessionIdentityKey(session),
-          ctx,
-          learnerDir: DATA_DIR,
-          config,
-          skipPrune: useScheduledBackground,
-          actionPipelineState,
-          budgetState: actionBudgetState,
-        });
-      } catch (err) {
-        ctx.log.warn(`runtime-learner: usage record skipped: ${err.message}`);
-      }
-    };
-
-    try {
-      const usageCapability = ctx.bus.getCapability?.("usage:list");
-      if (config.learnFromUsage && (usageCapability?.available || ctx.bus.hasHandler?.("usage:list"))) {
-        const usageBootstrapFile = usageBootstrapStatePath(DATA_DIR);
-        const since = usageBootstrapSince(usageBootstrapFile);
-        const result = await ctx.bus.request("usage:list", { since, limit: 50 });
-        const entries = result?.entries || [];
-        for (const entry of entries) recordUsage(entry, entry.attribution || entry.source?.actor || entry.session || null);
-        recordUsageBootstrap(usageBootstrapFile, entries, { requestedSince: since });
-        persistSeenIds(true); // flush now so a hard kill won't re-count on next start
-        ctx.log.info(`runtime-learner: bootstrapped ${entries.length} usage records since ${since}`);
-      }
-    } catch (err) {
-      ctx.log.warn(`runtime-learner: usage bootstrap skipped: ${err.message}`);
-    }
-    onloadTimer.mark("usage_bootstrap");
-
-    // ── Observer setup (extracted to lib/observer.js) ──
-
-    const configRef = { current: config };
-
-    const observer = createObserver({
-      detector,
-      sessions,
-      runtimeState,
-      persistPatterns,
-      refreshSkill,
-      autoApprovePatterns,
-      syncDiskStatus,
-      pruneDataFiles: useScheduledBackground ? noopBackground : pruneDataFiles,
-      maybeRunModelAdvisor: useScheduledBackground ? noopBackground : advisorRunner.maybeRun,
-      maybeRunExtraction: useScheduledBackground ? noopBackground : extractionRunner.maybeRun,
-
-      logActivity,
-      recordUsage,
-      configRef,
-      ctx,
-      paths: { DATA_DIR, TURNS_FILE, EPISODES_FILE, EXPERIENCE_LOG, ERROR_LOG, CONFIG_FILE },
-      MAX_SESSIONS,
-      skipPrune: useScheduledBackground,
-      actionPipelineState,
-      actionBudgetState,
-    });
-
-    observer.subscribe(ctx.bus, config);
-    onloadTimer.mark("observer_subscribe");
-
-    // Live settings-panel updates. The host writes our config.json and emits
-    // `plugin_config_changed` when the user edits the settings panel (see
-    // core/plugin-manager.ts setConfig); it does NOT reload the plugin. So we
-    // re-bridge the panel into the in-memory config and converge every holder
-    // (detector, refreshSkill/advisor closures, configRef) WITHOUT changing the
-    // config object's identity — replacing it would leave them on the old
-    // snapshot. Fields whose effect is wired at onload (learnFromUsage → the
-    // usage subscription below) cannot apply live and carry a reloadRequired
-    // note in the manifest instead.
-    const refreshConfigFromPanel = () => {
-      try {
-        const bridged = applyPanelConfig(loadConfig(paths).config, ctx.config);
-        // Persist the bridged view so config.json and the control tools stay in
-        // sync. applyPanelConfig drops credential keys, so this never writes
-        // plaintext secrets.
-        try { writeJson(CONFIG_FILE, bridged); } catch {}
-        // Capture any newly panel-entered credential into the encrypted store.
-        try {
-          const panelCreds = panelCredentialsToStore(ctx.config);
-          if (Object.keys(panelCreds).length > 0) saveCredentials({ ...loadCredentials(), ...panelCreds });
-        } catch {}
-        applyLiveConfig({ config, configRef, detector }, mergeCredentials(bridged));
-        ctx.log.info("runtime-learner: applied live settings-panel config update");
-      } catch (err) {
-        ctx.log.warn(`runtime-learner: live config refresh skipped: ${err?.message || err}`);
-      }
-    };
-    const unsubConfig = ctx.bus.subscribe?.((event) => {
-      if (event?.type === "plugin_config_changed" && (!ctx.pluginId || event.pluginId === ctx.pluginId)) {
-        refreshConfigFromPanel();
-      }
-    }, { types: ["plugin_config_changed"] });
-
-    runtimeState.detector = detector;
-    runtimeState.sessions = sessions;
-    runtimeState.unsub = () => observer.unsubscribe();
-    runtimeState.persistPatterns = flushPersist;
-    runtimeState.refreshSkill = refreshSkill;
-
-    // Register disposable cleanup via the host's register() callback (v0.341+).
-    if (typeof register === "function") {
-      register(() => { try { observer.unsubscribe(); } catch {} });
-      register(() => { try { persistSeenIds(true); } catch {} });
-      register(() => { try { flushPersist(); } catch {} });
-      if (typeof unsubConfig === "function") register(() => { try { unsubConfig(); } catch {} });
-    }
-    onloadTimer.mark("runtime_state_registered");
-
-    // Config fallback notification: let the user know when their config was
-    // corrupt or missing and the plugin reverted to defaults.
-    if (configSource !== "file") {
-      const reason = configSource === "corrupt"
-        ? "config.json was corrupt (JSON syntax error) — renamed to .corrupt.bak and reverted to defaults"
-        : "config.json was missing — wrote DEFAULT_CONFIG";
-      logActivity({
-        type: "config_fallback",
-        summary: reason,
-      });
-      ctx.log.warn(`runtime-learner: ${reason}`);
-    }
-
-    // Session startup activity entry
-    logActivity({
-      type: "session_start",
-      summary: `Self-learning runtime started with ${detector.all().length} existing patterns`,
-    });
-
-    try {
-      syncDiskStatus();
-      const { allPatterns } = autoApprovePatterns();
-      flushPersist();
-      if (!useScheduledBackground) pruneDataFiles().catch(() => {});
-      refreshSkill(true, null, allPatterns);
-      if (!useScheduledBackground) {
-        scheduleAfterOnload(ctx, "startup_advisor", () => advisorRunner.maybeRun("startup", null, allPatterns), onloadTimer);
-        scheduleAfterOnload(ctx, "startup_extraction", () => extractionRunner.maybeRun("startup", null, allPatterns), onloadTimer);
-      }
-    } catch (err) {
-      ctx.log.warn(`runtime-learner: initial refresh failed: ${err.message}`);
-    }
-    onloadTimer.mark("initial_refresh");
-
-    ctx.log.info("runtime-learner: started three-layer self-learning runtime");
-    onloadTimer.mark("complete");
-
+      const rt = { register, timer: createOnloadTimer(ctx) };
+      initPathsAndDirs(ctx, rt);
+      loadRuntimeConfig(ctx, rt);
+      bridgePanelConfig(ctx, rt);
+      initDetectorState(ctx, rt);
+      migrateLegacyPreferences(ctx, rt);
+      initSessionsAndPersistence(ctx, rt);
+      createSkillRefresh(ctx, rt);
+      createModelRunners(ctx, rt);
+      restorePatternsFromDisk(ctx, rt);
+      scheduleCapabilitySnapshot(ctx, rt.paths.CAPABILITIES_FILE, rt.timer);
+      rt.timer.mark("capability_snapshot_scheduled");
+      createAutoApprove(ctx, rt);
+      await setupBackground(ctx, rt);
+      createRecordUsage(ctx, rt);
+      await bootstrapUsage(ctx, rt);
+      subscribeObserver(ctx, rt);
+      wireLiveConfigAndDisposal(ctx, rt);
+      runInitialRefresh(ctx, rt);
+      ctx.log.info("runtime-learner: started three-layer self-learning runtime");
+      rt.timer.mark("complete");
     } catch (err) {
       try { ctx.log.error(`runtime-learner: onload failed: ${err.message}`); } catch {}
     }
