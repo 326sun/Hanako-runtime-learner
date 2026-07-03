@@ -13,20 +13,11 @@ import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths, readPluginVersion } from "./_shared.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
-import { statusHandlers } from "./control-handlers/status.js";
-import { proposalReviewHandlers } from "./control-handlers/proposal-review.js";
-import { maintenanceHandlers, regenerateSkill } from "./control-handlers/maintenance.js";
-import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
-import { eventHandlers } from "./control-handlers/events.js";
-import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
-import { auditHandlers } from "./control-handlers/audit.js";
-import { transferHandlers } from "./control-handlers/transfer.js";
+import { CONTROL_HANDLERS } from "./control-handlers/index.js";
+import { regenerateSkill } from "./control-handlers/maintenance.js";
 import { controlNeedsConfig, controlNeedsPatterns, describeControlSideEffect } from "./control-action-registry.js";
 
 const HANDLERS = {
-  // Status read-model handler lives in control-handlers/status.js (S2.P2a split).
-  ...statusHandlers,
-
   // Read-only diagnostic (M5b): surface the local feedback signal tallies.
   // Pure read — no file writes, no thresholds, no adaptive suggestions, and
   // nothing here participates in any current decision. Observation only.
@@ -82,11 +73,6 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, id, status: "rejected" }, null, 2);
   },
 
-  // Maintenance/config/skill-lifecycle handlers live in
-  // control-handlers/maintenance.js (S2.P2c split): set_config, rollback,
-  // regenerate_skill, regenerate_memfs, set_policy_profile, trust_project_scripts.
-  ...maintenanceHandlers,
-
   async run_model_advisor(input, p, config, patterns, ctx) {
     // Decrypt sensitive keys (API keys) just for the advisor — the only control
     // handler that consumes a credential. config.json holds a placeholder, so
@@ -104,27 +90,10 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, suggestions: result.advice?.suggestions?.length || 0, merged }, null, 2);
   },
 
-  // Proposal/review workflow handlers live in control-handlers/proposal-review.js
-  // (S2.P2b split): list_proposals, show_proposal, apply_proposal, reject_proposal,
-  // review_panel, preview_proposal, validate_proposal, approve_review, reject_review,
-  // apply_review, list_reviews.
-  ...proposalReviewHandlers,
-
-  // Event-log read-only handlers live in control-handlers/events.js
-  // (C-001 HANDLERS split — events domain): list_events, event_summary, verify_event_log.
-  ...eventHandlers,
-
-  // Agent-task handlers (agent_graph_preview, list/show/approve/reject/cancel/
-  // resume_agent_task) live in control-handlers/agent-tasks.js (C-001 split).
-  ...agentTaskHandlers,
-
-  // Cross-project transfer handlers live in control-handlers/transfer.js
-  // (S11.P2 split): list/show/register/record/expire transfer candidates.
-  ...transferHandlers,
-
-  // Audit/benchmark handlers (run_benchmarks, export_audit_bundle,
-  // generate_audit_dashboard) live in control-handlers/audit.js (C-001 split).
-  ...auditHandlers,
+  // All domain handlers (status, proposal-review, maintenance, skill-policy,
+  // events, agent-tasks, audit, transfer) live in tools/control-handlers/*.js
+  // and are aggregated by control-handlers/index.js (S2.P2d split).
+  ...CONTROL_HANDLERS,
 
   run_skill_promotion_loop(input, p, config) {
     const result = runSkillPromotionLoop(p.learnerDir, {
@@ -134,10 +103,6 @@ const HANDLERS = {
     appendEvent(p.learnerDir, { type: "skill_promotion.loop_ran", entityType: "skill_promotion", entityId: "skill_candidates", summary: `Ran skill promotion loop: candidates=${result.counts?.candidates || 0}, active=${result.counts?.active || 0}`, data: { counts: result.counts, events: result.events } });
     return JSON.stringify({ ok: result.ok, counts: result.counts, autoSkillFileWriteBlocked: result.autoSkillFileWriteBlocked, nextAction: "list_skill_candidates or export_audit_bundle" }, null, 2);
   },
-
-  // Skill-promotion & policy read-only handlers live in control-handlers/skill-policy.js
-  // (C-001 HANDLERS split pilot): list_skill_candidates, list_active_skills, list_policy_profiles.
-  ...skillPolicyHandlers,
 
   doctor(input, p) {
     const report = runDoctorFromDisk(p.learnerDir, { manifestPath: path.join(p.pluginDir, "manifest.json"), fast: input.fast === true });
