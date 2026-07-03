@@ -3,9 +3,14 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import {
   cosineSim,
+  embeddingCachePath,
   normalizeEmbeddingUrl,
+  inspectEmbeddingCache,
   resolveSemanticConfig,
   embedTexts,
 } from "../lib/embeddings.js";
@@ -51,13 +56,38 @@ describe("embeddings · embedTexts (mocked)", () => {
     const r1 = await embedTexts(["aa", "bbb"], config, { fetchImpl: fakeFetch, cache });
     assert.equal(r1.ok, true);
     assert.equal(r1.vectors.length, 2);
+    assert.equal(r1.cacheStats.hits, 0);
+    assert.equal(r1.cacheStats.misses, 2);
+    assert.equal(r1.cacheStats.stored, 2);
     assert.equal(Object.keys(cache).length, 2);
 
     let calls = 0;
     const countingFetch = async () => { calls++; return { ok: true, json: async () => ({ data: [] }) }; };
     const r2 = await embedTexts(["aa", "bbb"], config, { fetchImpl: countingFetch, cache });
     assert.equal(r2.ok, true);
+    assert.equal(r2.cacheStats.hits, 2);
+    assert.equal(r2.cacheStats.misses, 0);
     assert.equal(calls, 0, "all cache hits → no fetch");
+  });
+
+  it("reports disk cache entries and evictions", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `embed-cache-${process.pid}-`));
+    const cacheFile = embeddingCachePath(dir);
+    try {
+      const r = await embedTexts(["aa", "bbb"], { ...config, semanticCacheMaxEntries: 1 }, { fetchImpl: fakeFetch, cacheFile });
+      assert.equal(r.ok, true);
+      assert.equal(r.cacheStats.stored, 2);
+      assert.equal(r.cacheStats.evicted, 1);
+      assert.equal(r.cacheStats.entriesAfter, 1);
+
+      const summary = inspectEmbeddingCache(cacheFile, { maxEntries: 1 });
+      assert.equal(summary.entries, 1);
+      assert.equal(summary.maxEntries, 1);
+      assert.equal(summary.overLimit, 0);
+      assert.equal(typeof summary.newestUsedAt, "string");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("degrades (ok:false) when disabled or on HTTP error — never throws", async () => {

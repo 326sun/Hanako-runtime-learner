@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { pruneSkillBackups, writeSkillIfChanged } from "../lib/skill-lifecycle.js";
+import { pruneSkillBackups, skillRenderFingerprint, writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 
 const tmpDir = path.join(os.tmpdir(), "skill-lifecycle-test-" + Date.now());
 
@@ -62,6 +62,58 @@ describe("skill lifecycle", () => {
         "SKILL.md.2026-06-08T00-00-03-000Z.bak",
         "SKILL.md.2026-06-08T00-00-04-000Z.bak",
       ],
+    );
+  });
+
+  it("fingerprints skill render inputs stably and invalidates on relevant changes", () => {
+    const patterns = [
+      {
+        id: "workflow:test",
+        type: "workflow",
+        status: "approved",
+        score: 10,
+        count: 2,
+        desc: "repeat test command",
+        fix: "run npm test",
+        scope: { project: "hanako", taskType: "code" },
+        lastSeen: "2026-06-30T00:00:00.000Z",
+      },
+    ];
+    const config = { minInjectScore: 8, maxSkillTokens: 2000 };
+
+    assert.equal(
+      skillRenderFingerprint(patterns, config, { turnCount: 4, dataDir: tmpDir }),
+      skillRenderFingerprint(patterns, { maxSkillTokens: 2000, minInjectScore: 8 }, { turnCount: 4, dataDir: tmpDir }),
+    );
+    assert.notEqual(
+      skillRenderFingerprint(patterns, config, { turnCount: 4, dataDir: tmpDir }),
+      skillRenderFingerprint([{ ...patterns[0], desc: "repeat check command" }], config, { turnCount: 4, dataDir: tmpDir }),
+    );
+    assert.notEqual(
+      skillRenderFingerprint(patterns, config, { turnCount: 4, dataDir: tmpDir }),
+      skillRenderFingerprint(patterns, { ...config, minInjectScore: 10 }, { turnCount: 4, dataDir: tmpDir }),
+    );
+    assert.equal(
+      skillRenderFingerprint(patterns, { ...config, modelAdvisorApiKey: "secret-a" }, { turnCount: 4, dataDir: tmpDir }),
+      skillRenderFingerprint(patterns, { ...config, modelAdvisorApiKey: "secret-b" }, { turnCount: 4, dataDir: tmpDir }),
+    );
+  });
+
+  it("includes active skill registry stat only when active skill injection is enabled", async () => {
+    const dataDir = path.join(tmpDir, "data");
+    fs.mkdirSync(dataDir, { recursive: true });
+    const file = path.join(dataDir, "active_skills.json");
+    fs.writeFileSync(file, JSON.stringify({ skills: [] }), "utf-8");
+    const config = { activeSkillsInjectionEnabled: true };
+    const before = skillRenderFingerprint([], config, { dataDir });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fs.writeFileSync(file, JSON.stringify({ skills: [{ id: "x" }] }), "utf-8");
+
+    assert.notEqual(skillRenderFingerprint([], config, { dataDir }), before);
+    assert.equal(
+      skillRenderFingerprint([], { activeSkillsInjectionEnabled: false }, { dataDir }),
+      skillRenderFingerprint([], { activeSkillsInjectionEnabled: false }, { dataDir }),
     );
   });
 });

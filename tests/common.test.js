@@ -20,6 +20,7 @@ import {
   countJsonl,
   countValues,
   readRecentJsonl,
+  readJsonlSample,
   estimateTokens,
   estimateTokensRaw,
 } from "../lib/common.js";
@@ -525,5 +526,25 @@ describe("readRecentJsonl", () => {
     assert.deepEqual(row.sessionRef, { tabId: "tab-1" });
     assert.equal(row.sessionKey, "sid:sess-1");
     assert.equal(row.sessionLabel, "sessions/test.jsonl");
+  });
+
+  it("samples recent rows and session identity coverage in one pass", () => {
+    const file = path.join(tmpDir, "sample.jsonl");
+    const cutoff = Date.now() - 60_000;
+    const rows = [
+      { eventId: "stable-old", date: new Date(cutoff - 60_000).toISOString(), sessionId: "s-old" },
+      { eventId: "legacy-recent", date: new Date(cutoff + 1_000).toISOString(), sessionPath: "sessions/legacy.jsonl" },
+      { eventId: "unknown-recent", date: new Date(cutoff + 2_000).toISOString() },
+    ];
+    fs.writeFileSync(file, `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf-8");
+
+    const sample = readJsonlSample(file, { cutoff, maxLines: 10 });
+
+    assert.deepEqual(sample.rows.map((row) => row.eventId), ["legacy-recent", "unknown-recent"]);
+    assert.equal(sample.coverage.total, 3);
+    assert.equal(sample.coverage.withStableIdentity, 1);
+    assert.equal(sample.coverage.legacyPathOnly, 1);
+    assert.equal(sample.coverage.unknown, 1);
+    assert.equal(sample.coverage.coverageRatio, 1 / 3);
   });
 });

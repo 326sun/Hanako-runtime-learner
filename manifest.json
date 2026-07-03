@@ -290,5 +290,55 @@
         }
       }
     }
+  },
+  "dev": {
+    "scenarios": [
+      {
+        "id": "self_learning_stats_readonly",
+        "steps": [
+          {
+            "invokeTool": {
+              "name": "self_learning_stats",
+              "input": {}
+            }
+          },
+          {
+            "expectToolText": "\"ok\""
+          }
+        ]
+      },
+      {
+        "id": "self_learning_doctor_readonly",
+        "steps": [
+          {
+            "invokeTool": {
+              "name": "self_learning_doctor",
+              "input": {
+                "format": "json"
+              }
+            }
+          },
+          {
+            "expectToolText": "\"status\""
+          }
+        ]
+      },
+      {
+        "id": "self_learning_control_status_readonly",
+        "steps": [
+          {
+            "invokeTool": {
+              "name": "self_learning_control",
+              "input": {
+                "action": "status"
+              }
+            }
+          },
+          {
+            "expectToolText": "\"config\""
+          }
+        ]
+      }
+    ]
   }
 }

@@ -18,6 +18,7 @@ describe("CONTROL_PARAM_PROPERTIES", () => {
     assert.deepEqual(CONTROL_PARAM_PROPERTIES.validationStatus, { type: "string", enum: ["passed", "failed"], description: "Target validation status for record_transfer_validation." });
     assert.deepEqual(CONTROL_PARAM_PROPERTIES.evidence, { type: "array", items: { type: "string" }, description: "Validation evidence lines for transfer registry actions." });
     assert.deepEqual(CONTROL_PARAM_PROPERTIES.format, { type: "string", enum: ["text", "json"], description: "Output format for the doctor action. Default text." });
+    assert.deepEqual(CONTROL_PARAM_PROPERTIES.fast, { type: "boolean", description: "For doctor: skip deep log/event/MemFS/fact checks for a faster read-only health snapshot. Default false." });
     assert.deepEqual(CONTROL_PARAM_PROPERTIES.governanceProfile, { type: "string", enum: ["conservative", "balanced", "autonomous"], description: "Governance policy profile to apply." });
     assert.deepEqual(CONTROL_PARAM_PROPERTIES.semanticCacheMaxEntries, { type: "number" });
   });

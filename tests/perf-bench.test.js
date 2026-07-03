@@ -6,6 +6,7 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "child_process";
 import { runPerfBench, evaluate, buildSyntheticPatterns } from "../scripts/perf-bench.js";
 
 describe("perf-bench", () => {
@@ -43,5 +44,24 @@ describe("perf-bench", () => {
   it("evaluate ignores metrics that have no configured threshold", () => {
     const res = evaluate({ search_ms: 999, coldImport_ms: 5 }, { coldImport_ms: 10 });
     assert.equal(res.ok, true, "unthresholded metric does not fail the run");
+  });
+
+  it("CLI --quick --json prints a parseable report with metadata", () => {
+    const result = spawnSync(process.execPath, ["scripts/perf-bench.js", "--quick", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf-8",
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.schemaVersion, 1);
+    assert.equal(report.quick, true);
+    assert.deepEqual(report.sizes, [50, 100]);
+    assert.equal(report.maxSize, 100);
+    assert.ok(report.generatedAt);
+    assert.ok(report.thresholdsPath.endsWith("perf-thresholds.json"));
+    assert.equal(report.ok, true);
+    for (const key of ["search_ms", "decorate_ms", "skill_render_ms", "prune_ms", "all_cold_ms", "all_cached_ms", "coldImport_ms"]) {
+      assert.ok(Number.isFinite(report.metrics[key]), `${key} should be finite`);
+    }
   });
 });

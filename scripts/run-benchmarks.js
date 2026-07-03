@@ -3,7 +3,7 @@ import path from "path";
 import { runBenchmarkCorpus, formatBenchmarkReport } from "../lib/benchmark-corpus.js";
 
 function parseArgs(argv) {
-  const args = { ids: [], outputDir: path.join(process.cwd(), "benchmark-results") };
+  const args = { ids: [], outputDir: path.join(process.cwd(), "benchmark-results"), json: false };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--id") args.ids.push(argv[++i]);
@@ -12,6 +12,7 @@ function parseArgs(argv) {
     else if (arg === "--thresholds") args.thresholdsPath = argv[++i];
     else if (arg === "--output-dir") args.outputDir = argv[++i];
     else if (arg === "--keep-workspaces") args.keepBenchmarkWorkspaces = true;
+    else if (arg === "--json") args.json = true;
     else if (arg === "--help") args.help = true;
     else throw new Error(`unknown argument: ${arg}`);
   }
@@ -19,7 +20,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/run-benchmarks.js [options]\n\nOptions:\n  --id <scenarioId>          Run one scenario; may be repeated.\n  --benchmark-root <dir>     Benchmark root. Default: ./benchmarks\n  --baseline <file>          Baseline metrics JSON.\n  --thresholds <file>        Regression thresholds JSON.\n  --output-dir <dir>         Output report directory. Default: ./benchmark-results\n  --keep-workspaces          Do not remove fixture workspaces.\n`);
+  console.log(`Usage: node scripts/run-benchmarks.js [options]\n\nOptions:\n  --id <scenarioId>          Run one scenario; may be repeated.\n  --benchmark-root <dir>     Benchmark root. Default: ./benchmarks\n  --baseline <file>          Baseline metrics JSON.\n  --thresholds <file>        Regression thresholds JSON.\n  --output-dir <dir>         Output report directory. Default: ./benchmark-results\n  --keep-workspaces          Do not remove fixture workspaces.\n  --json                     Print the full report as JSON instead of the Markdown summary.\n`);
 }
 
 try {
@@ -33,8 +34,12 @@ try {
     console.error(JSON.stringify(result.corpus, null, 2));
     process.exit(2);
   }
-  console.log(formatBenchmarkReport(result));
-  if (result.outputDir) console.log(`Reports written to: ${result.outputDir}`);
+  if (args.json) {
+    console.log(JSON.stringify(result, null, 2));
+  } else {
+    console.log(formatBenchmarkReport(result));
+    if (result.outputDir) console.log(`Reports written to: ${result.outputDir}`);
+  }
   process.exit(result.ok ? 0 : 1);
 } catch (err) {
   console.error(err.stack || err.message);

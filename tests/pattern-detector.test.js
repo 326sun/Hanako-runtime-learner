@@ -471,6 +471,24 @@ describe("PatternDetector", () => {
       assert.equal(detector.all().find((p) => p.id === "error:boom").status, "approved");
     });
 
+    it("tracks store dirty state separately from decorated cache reads", () => {
+      const detector = new PatternDetector({});
+      assert.equal(detector.isDirty(), false);
+
+      detector.ingestError(makeError({ errorType: "dirty", severity: 4 }));
+      assert.equal(detector.isDirty(), true);
+      detector.all();
+      assert.equal(detector.isDirty(), true);
+
+      detector.markClean();
+      assert.equal(detector.isDirty(), false);
+      detector.invalidate();
+      assert.equal(detector.isDirty(), true);
+
+      detector.restore([{ id: "error:restored", type: "error", count: 1 }]);
+      assert.equal(detector.isDirty(), false);
+    });
+
     it("highConfidence and prefs return only the first eight matching decorated patterns", () => {
       const detector = new PatternDetector({
         autoInjectHighConfidence: true,

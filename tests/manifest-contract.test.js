@@ -47,6 +47,10 @@ const CREDENTIAL_KEYS = ["modelAdvisorApiKey", "semanticEmbeddingApiKey"];
 // llm_usage subscription in observer.js (only subscribed when true at onload).
 const RESTART_REQUIRED_KEYS = ["learnFromUsage"];
 
+const RESTART_REQUIRED_REASONS = {
+  learnFromUsage: "observer usage subscription is established during onload",
+};
+
 describe("manifest contract · host plugin schema", () => {
   it("credential fields declare sensitive:true (host ignores format:password)", () => {
     for (const key of CREDENTIAL_KEYS) {
@@ -86,6 +90,18 @@ describe("manifest contract · host plugin schema", () => {
     }
   });
 
+  it("requires every reloadRequired field to be explicitly justified", () => {
+    const actual = Object.entries(props)
+      .filter(([, spec]) => spec?.reloadRequired === true)
+      .map(([key]) => key)
+      .sort();
+    const expected = Object.keys(RESTART_REQUIRED_REASONS).sort();
+    assert.deepEqual(actual, expected, "reloadRequired fields must be reviewed against onload-bound runtime behavior");
+    for (const key of actual) {
+      assert.ok(RESTART_REQUIRED_REASONS[key], `missing reloadRequired reason for ${key}`);
+    }
+  });
+
   it("does not declare unrecognized host capabilities", () => {
     for (const field of ["capabilities", "sensitiveCapabilities"]) {
       const declared = manifest[field];
@@ -98,5 +114,35 @@ describe("manifest contract · host plugin schema", () => {
         );
       }
     }
+  });
+
+  it("keeps usage access under permissions instead of capabilities", () => {
+    assert.ok(Array.isArray(manifest.permissions), "manifest.permissions must be an array");
+    assert.ok(manifest.permissions.includes("usage.read"), "usage.read must stay declared under manifest.permissions");
+    for (const field of ["capabilities", "sensitiveCapabilities"]) {
+      assert.ok(
+        !(manifest[field] || []).includes("usage.read"),
+        `usage.read is not a ${field} entry in the current host schema`,
+      );
+    }
+  });
+
+  it("declares read-only dev scenarios for the host dev loop", () => {
+    const scenarios = manifest.dev?.scenarios;
+    assert.ok(Array.isArray(scenarios), "manifest.dev.scenarios must be an array");
+    assert.ok(scenarios.length >= 3, "manifest.dev.scenarios should cover the main read-only smoke paths");
+    assert.deepEqual(new Set(scenarios.map((scenario) => scenario.id)).size, scenarios.length, "dev scenario ids must be unique");
+    const invoked = new Set();
+    for (const scenario of scenarios) {
+      assert.ok(typeof scenario.id === "string" && scenario.id, "dev scenario id is required");
+      assert.ok(Array.isArray(scenario.steps) && scenario.steps.length > 0, `dev scenario ${scenario.id} needs steps`);
+      const invokeStep = scenario.steps.find((step) => step.invokeTool);
+      assert.ok(invokeStep, `dev scenario ${scenario.id} needs an invokeTool step`);
+      assert.ok(typeof invokeStep.invokeTool.name === "string" && invokeStep.invokeTool.name, `dev scenario ${scenario.id} needs a tool name`);
+      invoked.add(invokeStep.invokeTool.name);
+    }
+    assert.ok(invoked.has("self_learning_stats"), "dev scenarios should cover self_learning_stats");
+    assert.ok(invoked.has("self_learning_doctor"), "dev scenarios should cover self_learning_doctor");
+    assert.ok(invoked.has("self_learning_control"), "dev scenarios should cover self_learning_control status");
   });
 });

@@ -9,8 +9,9 @@
 
 import fs from "fs";
 import path from "path";
-import { hanakoHome, learnerDir, loadLearnerConfig, readJson } from "../lib/common.js";
+import { hanakoHome, learnerDir, loadLearnerConfig } from "../lib/common.js";
 import { runtimeConfigPath, migrateRuntimeConfigFile } from "../lib/runtime-config-path.js";
+import { readJsonCached } from "../lib/file-cache.js";
 
 /** Read a plugin's version from its package.json, or "unknown" on any error. */
 export function readPluginVersion(pluginDir) {
@@ -48,5 +49,5 @@ export function loadConfig(configPath, { persist = false } = {}) {
 
 /** Load raw patterns from disk. */
 export function loadPatterns(patternsPath) {
-  return readJson(patternsPath, []);
+  return readJsonCached(patternsPath, []);
 }

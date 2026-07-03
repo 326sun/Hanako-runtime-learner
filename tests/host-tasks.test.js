@@ -196,6 +196,29 @@ describe("M3-lite background task setup", () => {
     assert.equal([...bus.schedules.keys()].length, 3);
   });
 
+  it("P9.D: lists schedules once per setup call for the whole job batch, not once per job", async () => {
+    const bus = new FakeTaskBus();
+    const ctx = ctxFor(bus);
+    const base = {
+      ctx,
+      dataDir: tmpDir,
+      config: DEFAULT_CONFIG,
+      getPatterns: () => [],
+      runAdvisor: async () => ({ ok: true }),
+      runRetention: async () => ({ ok: true }),
+      runLlmExtraction: async () => ({ ok: false, skipped: "disabled" }),
+    };
+
+    const first = await setupBackgroundTasks(base);
+    assert.equal(first.jobs, 3, "sanity: 3 background jobs are set up");
+    const listCallsAfterFirst = bus.requests.filter((r) => r.name === "task:list-schedules").length;
+    assert.equal(listCallsAfterFirst, 1, "one job batch should need exactly one task:list-schedules lookup, not one per job");
+
+    await setupBackgroundTasks(base);
+    const listCallsAfterSecond = bus.requests.filter((r) => r.name === "task:list-schedules").length;
+    assert.equal(listCallsAfterSecond, 2, "a second setup call adds exactly one more lookup");
+  });
+
   it("audits and keeps legacy behavior when task:* is unavailable", async () => {
     const ctx = ctxFor({ getCapability: () => null, hasHandler: () => false, request: () => { throw new Error("should not request"); } });
     const result = await setupBackgroundTasks({

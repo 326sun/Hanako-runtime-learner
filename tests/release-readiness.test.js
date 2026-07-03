@@ -118,3 +118,14 @@ test("release readiness formatter surfaces failed checks", () => {
   assert(md.includes("benchmarks.corpus_valid"));
   assert(md.includes("blocked"));
 });
+
+test("P10.B: every check reports a finite non-negative durationMs, surfaced in the Markdown report", () => {
+  const root = makeProject();
+  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true });
+  assert.ok(result.checks.length > 0);
+  for (const check of result.checks) {
+    assert.ok(Number.isFinite(check.durationMs) && check.durationMs >= 0, `${check.id} should have a finite non-negative durationMs`);
+  }
+  const md = formatReleaseReadinessReport(result);
+  assert.match(md, /\| Check \| Status \| Duration \(ms\) \| Message \|/);
+});

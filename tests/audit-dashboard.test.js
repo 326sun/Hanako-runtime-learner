@@ -140,3 +140,44 @@ test("self_learning_control exposes audit dashboard generation", async () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test("generate_audit_dashboard reuses the last export unless regenerate:true (P8.B)", async () => {
+  const { execute: executeControl } = await import("../tools/control.js");
+  const oldHome = process.env.HANA_HOME;
+  const home = tmp();
+  process.env.HANA_HOME = home;
+  try {
+    const learnerDir = path.join(home, "self-learning");
+    fs.mkdirSync(learnerDir, { recursive: true });
+    seedBenchmark(learnerDir);
+
+    const first = parseToolResult(await executeControl({ action: "generate_audit_dashboard", id: "first" }, { pluginDir: process.cwd() }));
+    assert.equal(first.status, "generated");
+
+    // A second call with no new evidence and no regenerate flag should reuse
+    // the first export rather than re-walking every governance subsystem.
+    const second = parseToolResult(await executeControl({ action: "generate_audit_dashboard" }, { pluginDir: process.cwd() }));
+    assert.equal(second.status, "reused");
+    assert.equal(second.reused, true);
+    assert.equal(second.dir, first.dir);
+    assert.deepEqual(second.summary, first.summary);
+
+    // regenerate:true must force a fresh build even though nothing changed.
+    const third = parseToolResult(await executeControl({ action: "generate_audit_dashboard", id: "third", regenerate: true }, { pluginDir: process.cwd() }));
+    assert.equal(third.status, "generated");
+    assert.notEqual(third.dir, first.dir);
+
+    // An explicit benchmark override also forces a fresh build, since the
+    // caller is asking about specific data, not "whatever was last exported."
+    const fourth = parseToolResult(await executeControl({
+      action: "generate_audit_dashboard",
+      id: "fourth",
+      benchmarkRunsDir: path.join(learnerDir, "benchmark-runs"),
+    }, { pluginDir: process.cwd() }));
+    assert.equal(fourth.status, "generated");
+  } finally {
+    if (oldHome == null) delete process.env.HANA_HOME;
+    else process.env.HANA_HOME = oldHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

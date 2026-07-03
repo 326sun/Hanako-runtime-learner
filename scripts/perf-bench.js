@@ -116,6 +116,31 @@ export function loadThresholds(file) {
   try { return JSON.parse(fs.readFileSync(file, "utf-8")); } catch { return {}; }
 }
 
+export function buildPerfReport({ quick = false, thresholdsPath = path.resolve(import.meta.dirname, "..", "benchmarks", "perf-thresholds.json") } = {}) {
+  const { bySize, sizes } = runPerfBench({ quick });
+  const coldImport_ms = measureColdImport();
+  const maxSize = Math.max(...sizes);
+  const metrics = { ...bySize[maxSize], coldImport_ms };
+  const thresholds = loadThresholds(thresholdsPath);
+  const { ok, breaches } = evaluate(metrics, thresholds);
+  return {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    quick,
+    node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    sizes,
+    maxSize,
+    metrics,
+    bySize,
+    thresholdsPath,
+    thresholds,
+    ok,
+    breaches,
+  };
+}
+
 function fmt(ms) { return ms < 0.01 ? ms.toExponential(2) : ms.toFixed(4); }
 
 // ── CLI ──
@@ -127,17 +152,16 @@ if (isMain) {
     return i !== -1 ? argv[i + 1] : path.resolve(import.meta.dirname, "..", "benchmarks", "perf-thresholds.json");
   })();
   const asJson = argv.includes("--json");
+  const quick = argv.includes("--quick");
 
-  const { bySize, sizes } = runPerfBench();
-  const coldImport_ms = measureColdImport();
-  const maxSize = Math.max(...sizes);
-  const metrics = { ...bySize[maxSize], coldImport_ms };
-
-  const thresholds = loadThresholds(thresholdsPath);
-  const { ok, breaches } = evaluate(metrics, thresholds);
+  const report = buildPerfReport({ quick, thresholdsPath });
+  const { bySize, sizes, coldImport_ms, thresholds, ok, breaches } = {
+    ...report,
+    coldImport_ms: report.metrics.coldImport_ms,
+  };
 
   if (asJson) {
-    console.log(JSON.stringify({ metrics, bySize, thresholds, ok, breaches }, null, 2));
+    console.log(JSON.stringify(report, null, 2));
   } else {
     console.log("# Per-turn hot-path performance\n");
     const cols = ["search_ms", "decorate_ms", "skill_render_ms", "prune_ms", "all_cold_ms", "all_cached_ms"];

@@ -14,6 +14,17 @@ export function countByStatus(rows = [], field = "status") {
   return counts;
 }
 
+export function summarizePatternStatus(patterns = []) {
+  const summary = { total: 0, pending: 0, approved: 0, rejected: 0 };
+  for (const pattern of patterns) {
+    summary.total += 1;
+    if (pattern?.status === "pending") summary.pending += 1;
+    else if (pattern?.status === "approved") summary.approved += 1;
+    else if (pattern?.status === "rejected") summary.rejected += 1;
+  }
+  return summary;
+}
+
 export function summarizeDecoratedPatterns(patterns = []) {
   const summary = { total: 0, injectable: 0, pending: 0, approved: 0, rejected: 0 };
   for (const pattern of patterns) {

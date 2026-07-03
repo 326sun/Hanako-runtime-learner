@@ -1,7 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { usageDedupKey, normalizeSeenIds } from "../lib/helpers.js";
-import { summarizeUsageEntry } from "../lib/usage-pipeline.js";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { summarizeUsageEntry, usageBootstrapSince, recordUsageBootstrap } from "../lib/usage-pipeline.js";
 
 const summary = {
   date: "2026-06-08T10:00:00.000Z",
@@ -73,5 +76,54 @@ describe("summarizeUsageEntry", () => {
     assert.equal(result.sessionId, "sess-1");
     assert.deepEqual(result.sessionRef, { tabId: "tab-1" });
     assert.equal(result.sessionPath, "D:/sessions/a.jsonl");
+  });
+});
+
+describe("usage bootstrap cursor", () => {
+  it("falls back to a seven-day lookback when no cursor exists", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `usage-cursor-${process.pid}-`));
+    try {
+      const stateFile = path.join(dir, "usage_bootstrap_state.json");
+      assert.equal(
+        usageBootstrapSince(stateFile, { now: Date.parse("2026-07-02T00:00:00.000Z") }),
+        "2026-06-25T00:00:00.000Z",
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("records the newest usage entry timestamp as the next cursor", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `usage-cursor-${process.pid}-`));
+    try {
+      const stateFile = path.join(dir, "usage_bootstrap_state.json");
+      const state = recordUsageBootstrap(stateFile, [
+        { startedAt: "2026-07-01T08:00:00.000Z" },
+        { endedAt: "2026-07-01T09:30:00.000Z" },
+      ], {
+        now: Date.parse("2026-07-02T00:00:00.000Z"),
+        requestedSince: "2026-06-25T00:00:00.000Z",
+      });
+
+      assert.equal(state.lastSeenAt, "2026-07-01T09:30:00.000Z");
+      assert.equal(state.lastEntryCount, 2);
+      assert.equal(usageBootstrapSince(stateFile), "2026-07-01T09:30:00.000Z");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses lastCheckedAt after an empty bootstrap result", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `usage-cursor-${process.pid}-`));
+    try {
+      const stateFile = path.join(dir, "usage_bootstrap_state.json");
+      recordUsageBootstrap(stateFile, [], {
+        now: Date.parse("2026-07-02T00:00:00.000Z"),
+        requestedSince: "2026-06-25T00:00:00.000Z",
+      });
+      assert.equal(usageBootstrapSince(stateFile), "2026-07-02T00:00:00.000Z");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

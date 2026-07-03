@@ -1,7 +1,6 @@
-import { readJson, readRecentJsonl, countBy, decoratePatterns, describeOfficialUtilityModel, summarizeSessionRows, inspectSessionIdentityCoverage } from "../lib/common.js";
+import { readJson, countBy, describeOfficialUtilityModel } from "../lib/common.js";
 import { modelAdviceFile } from "../lib/model-advisor.js";
-import { listProposals } from "../lib/proposals.js";
-import { toolPaths, loadConfig, loadPatterns } from "./_shared.js";
+import { loadRuntimeSnapshot } from "./runtime-snapshot.js";
 
 export const name = "self_learning_report";
 
@@ -18,25 +17,34 @@ export const parameters = {
 
 export async function execute(input = {}, ctx) {
   const days = input.days || 7;
-  const p = toolPaths(ctx);
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    const snapshot = loadRuntimeSnapshot(ctx, {
+      includeDecorated: true,
+      includeProposals: true,
+      includeLogs: true,
+      logCutoff: cutoff,
+      proposalLimit: 30,
+    });
+    const p = snapshot.paths;
 
-    const experiences = readRecentJsonl(p.experiencePath, cutoff);
-    const errors = readRecentJsonl(p.errorPath, cutoff);
-    const sessions = summarizeSessionRows(experiences);
-    const errorSessions = summarizeSessionRows(errors);
+    const experienceSample = snapshot.logs.experience;
+    const errorSample = snapshot.logs.error;
+    const experiences = experienceSample.rows;
+    const errors = errorSample.rows;
+    const sessions = experienceSample.sessions;
+    const errorSessions = errorSample.sessions;
     const sessionCoverage = [
-      ["experience_log.jsonl", inspectSessionIdentityCoverage(p.experiencePath)],
-      ["error_log.jsonl", inspectSessionIdentityCoverage(p.errorPath)],
-      ["turns.jsonl", inspectSessionIdentityCoverage(p.turnsPath)],
-      ["activity_log.jsonl", inspectSessionIdentityCoverage(p.activityPath)],
+      ["experience_log.jsonl", experienceSample.coverage],
+      ["error_log.jsonl", errorSample.coverage],
+      ["turns.jsonl", snapshot.logs.turns.coverage],
+      ["activity_log.jsonl", snapshot.logs.activity.coverage],
     ].map(([file, coverage]) => ({
       file,
       ...coverage,
       coveragePct: Math.round((coverage.coverageRatio || 0) * 100),
     })).filter((item) => item.total > 0);
-    const config = loadConfig(p.configPath);
-    const patterns = decoratePatterns(loadPatterns(p.patternsPath), config);
+    const config = snapshot.config;
+    const patterns = snapshot.decoratedPatterns;
 
     const injectable = patterns.filter((pattern) => pattern.injectable);
     const pending = patterns.filter((pattern) => pattern.status === "pending");
@@ -45,7 +53,7 @@ export async function execute(input = {}, ctx) {
     const usage = readJson(p.usageSummaryPath, null);
     const capabilities = readJson(p.capabilitiesPath, null);
     const modelAdvice = readJson(modelAdviceFile(p.learnerDir), null);
-    const proposals = listProposals(p.learnerDir, { limit: 30 });
+    const proposals = snapshot.proposals;
     const pendingProposals = proposals.filter((proposal) => proposal.status === "pending");
     const officialUtilityModel = describeOfficialUtilityModel();
     config.officialUtilityModelDisplay = officialUtilityModel.display;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { appendEvent, eventLogPath, readEvents, verifyEventLog } from "../lib/event-log.js";
+import { appendEvent, eventLogPath, readEvents, verifyEventLog, eventSummary, cachedEventSummary } from "../lib/event-log.js";
 import { execute as executeControl } from "../tools/control.js";
 import { parseToolResult } from "./_test-utils.js";
 
@@ -142,5 +142,42 @@ describe("event log hash chain", () => {
     assert.equal(result.ok, true);
     assert.equal(result.events, 1);
     assert.equal(result.brokenAt, null);
+  });
+
+  describe("eventSummary caching (P8.A)", () => {
+    it("reuses the replayed summary when the log is unchanged, and invalidates on new events", () => {
+      const dir = path.join(tmpDir, "summary-cache");
+      appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p1", summary: "created" });
+
+      const first = eventSummary(dir);
+      const second = eventSummary(dir);
+      assert.strictEqual(first, second, "unchanged log should return the cached replay result, not recompute");
+      assert.equal(first.byType["proposal.created"], 1);
+
+      appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p2", summary: "created" });
+      const third = eventSummary(dir);
+      assert.notStrictEqual(second, third, "a new event must invalidate the cache");
+      assert.equal(third.byType["proposal.created"], 2);
+    });
+
+    it("keys the cache on limit, so a different limit does not reuse another limit's result", () => {
+      const dir = path.join(tmpDir, "summary-cache-limit");
+      appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p1", summary: "created" });
+      appendEvent(dir, { type: "proposal.created", entityType: "proposal", entityId: "p2", summary: "created" });
+
+      const full = cachedEventSummary(dir, { limit: 5000 });
+      const limited = cachedEventSummary(dir, { limit: 1 });
+      assert.equal(full.count, 2);
+      assert.equal(limited.count, 1);
+    });
+
+    it("accepts a pre-read events array to skip a redundant readEvents call", () => {
+      const dir = path.join(tmpDir, "summary-cache-prefetched");
+      appendEvent(dir, { type: "review.queued", entityType: "review", entityId: "r1", summary: "queued" });
+      const events = readEvents(dir, { limit: 5000 });
+
+      const result = cachedEventSummary(dir, { limit: 5000, events });
+      assert.equal(result.byType["review.queued"], 1);
+    });
   });
 });

@@ -75,6 +75,15 @@ describe("status / doctor read-only output", () => {
     });
   });
 
+  it("status does not create runtime-config.json while reading", async () => {
+    await withLearner({}, async (ctx) => {
+      const configPath = path.join(ctx.learner, "runtime-config.json");
+      assert.equal(fs.existsSync(configPath), false);
+      await json("status", {}, ctx);
+      assert.equal(fs.existsSync(configPath), false);
+    });
+  });
+
   it("doctor format=json returns a structured report (status good on empty store)", async () => {
     await withLearner({}, async (ctx) => {
       const report = await json("doctor", { format: "json" }, ctx);
@@ -91,6 +100,14 @@ describe("status / doctor read-only output", () => {
       assert.equal(typeof text, "string");
       assert.ok(text.length > 0);
       assert.ok(!text.trimStart().startsWith("{"), "default doctor output should be text, not JSON");
+    });
+  });
+
+  it("doctor format=json fast=true returns the fast health snapshot", async () => {
+    await withLearner({}, async (ctx) => {
+      const report = await json("doctor", { format: "json", fast: true }, ctx);
+      assert.equal(report.mode, "fast");
+      assert.equal(report.status, "good");
     });
   });
 

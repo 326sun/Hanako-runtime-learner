@@ -85,6 +85,50 @@ test("control run_benchmarks uses source root metadata and writes a non-empty re
   }
 }));
 
+test("control file outputs are staged as session files when the host supports stageFile", async () => withHome(async (home) => {
+  const runtime = copyRuntimePackageFixture(sourceRoot);
+  write(path.join(runtime, ".source-root.json"), JSON.stringify({ sourceRoot }, null, 2));
+  const outputDir = path.join(home, "bench-stage-out");
+  const stageCalls = [];
+  const ctx = {
+    pluginDir: runtime,
+    sessionId: "session-1",
+    stageFile(entry) {
+      stageCalls.push(entry);
+      return {
+        file: { id: `file-${stageCalls.length}`, ...entry },
+        mediaItem: { type: "session_file", fileId: `file-${stageCalls.length}`, label: entry.label },
+      };
+    },
+  };
+  try {
+    const response = await executeControl({ action: "run_benchmarks", benchmarkId: "quality.node_check_ok", benchmarkOutputDir: outputDir }, ctx);
+    const result = parseToolResult(response);
+    assert.equal(result.ok, true);
+    assert.deepEqual(stageCalls.map((entry) => path.basename(entry.filePath)).sort(), ["benchmark-report.json", "benchmark-report.md"]);
+    assert.equal(stageCalls.every((entry) => entry.sessionId === "session-1"), true);
+    assert.equal(response.details.stagedFiles.length, 2);
+    assert.equal(response.details.media.items.length, 2);
+  } finally {
+    fs.rmSync(runtime, { recursive: true, force: true });
+  }
+}));
+
+test("control file outputs keep local paths when stageFile is unavailable", async () => withHome(async (home) => {
+  const runtime = copyRuntimePackageFixture(sourceRoot);
+  write(path.join(runtime, ".source-root.json"), JSON.stringify({ sourceRoot }, null, 2));
+  const outputDir = path.join(home, "bench-no-stage-out");
+  try {
+    const response = await executeControl({ action: "run_benchmarks", benchmarkId: "quality.node_check_ok", benchmarkOutputDir: outputDir }, { pluginDir: runtime });
+    const result = parseToolResult(response);
+    assert.equal(result.ok, true);
+    assert.equal(result.outputDir, outputDir);
+    assert.equal(response.details, undefined);
+  } finally {
+    fs.rmSync(runtime, { recursive: true, force: true });
+  }
+}));
+
 test("open-dir uses argument-vector command construction on Windows", () => {
   const spec = openDirectoryCommand("C:\\Users\\me\\.hanako\\self-learning", "win32");
   assert.equal(spec.command, "cmd");

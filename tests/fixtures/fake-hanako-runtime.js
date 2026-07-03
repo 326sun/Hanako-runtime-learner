@@ -42,15 +42,31 @@ export class FakeEventBus {
   }
 }
 
-export function createFakeRuntimeContext({ pluginDir, dataDir = null, bus = new FakeEventBus() } = {}) {
+export function createFakeRuntimeContext({
+  pluginDir,
+  dataDir = null,
+  bus = new FakeEventBus(),
+  configValues = {},
+  sessionId = "fake-session-1",
+  sessionRef = null,
+  sessionPath = "sessions/runtime-e2e.jsonl",
+} = {}) {
   const logs = [];
   const configUpdates = [];
+  const configStore = { ...configValues };
+  const stageFiles = [];
+  const effectiveSessionRef = sessionRef || { sessionId };
+  const fileLabel = (filePath) => String(filePath || "file").split(/[\\/]/).pop() || "file";
   return {
     pluginDir,
     ...(dataDir ? { dataDir } : {}),
+    sessionId,
+    sessionRef: effectiveSessionRef,
+    sessionPath,
     bus,
     logs,
     configUpdates,
+    stageFiles,
     log: {
       info: (message) => logs.push({ level: "info", message }),
       warn: (message) => logs.push({ level: "warn", message }),
@@ -58,8 +74,44 @@ export function createFakeRuntimeContext({ pluginDir, dataDir = null, bus = new 
       debug: (message) => logs.push({ level: "debug", message }),
     },
     config: {
+      getAll: () => ({ ...configStore }),
+      setMany: (value = {}) => {
+        Object.assign(configStore, value);
+        configUpdates.push(value);
+      },
       update: (value) => configUpdates.push(value),
       set: (value) => configUpdates.push(value),
+    },
+    stageFile(entry = {}) {
+      const fileId = `fake-session-file-${stageFiles.length + 1}`;
+      const record = {
+        fileId,
+        sessionId,
+        sessionRef: effectiveSessionRef,
+        sessionPath,
+        ...entry,
+        label: entry.label || fileLabel(entry.filePath),
+      };
+      stageFiles.push(record);
+      return {
+        file: record,
+        mediaItem: {
+          type: "session_file",
+          fileId,
+          label: record.label,
+          filePath: record.filePath,
+          sessionId: record.sessionId,
+          sessionRef: record.sessionRef,
+          sessionPath: record.sessionPath,
+        },
+      };
+    },
+    resources: {
+      read: async () => { throw new Error("Fake runtime resources.read is not implemented"); },
+      search: async () => { throw new Error("Fake runtime resources.search is not implemented"); },
+      materialize: async () => { throw new Error("Fake runtime resources.materialize is not implemented"); },
+      watch: async () => { throw new Error("Fake runtime resources.watch is not implemented"); },
+      subscribe: async () => { throw new Error("Fake runtime resources.subscribe is not implemented"); },
     },
   };
 }

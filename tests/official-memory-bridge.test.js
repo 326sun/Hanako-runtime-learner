@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { readOfficialMemoryEntries, searchOfficialMemory } from "../lib/official-memory-bridge.js";
+import {
+  officialMemoryBridgeStats,
+  readOfficialMemoryEntries,
+  searchOfficialMemory,
+  searchOfficialMemoryWithStats,
+} from "../lib/official-memory-bridge.js";
 
 const tmpDir = path.join(os.tmpdir(), "official-memory-bridge-test-" + Date.now());
 
@@ -30,9 +35,20 @@ describe("official memory bridge", () => {
   });
 
   it("searches official memory entries", () => {
-    const results = searchOfficialMemory("proposal review", { home: tmpDir, limit: 2 });
+    const { results, stats } = searchOfficialMemoryWithStats("proposal review", { home: tmpDir, limit: 2 });
     assert.equal(results.length, 1);
     assert.equal(results[0].memoryType, "pinned");
+    assert.equal(stats.lastResultCount, 1);
+    assert.ok(stats.lastSearchMs >= 0);
+  });
+
+  it("reports cache hits after the first read", () => {
+    readOfficialMemoryEntries({ home: tmpDir });
+    const before = officialMemoryBridgeStats();
+    readOfficialMemoryEntries({ home: tmpDir });
+    const after = officialMemoryBridgeStats();
+
+    assert.ok(after.cacheHits > before.cacheHits);
   });
 
   it("redacts sensitive values from official memory snippets", () => {

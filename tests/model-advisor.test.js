@@ -228,6 +228,28 @@ describe("model advisor", () => {
       assert.equal(s.status, "skipped");
       assert.equal(s.consecutiveFailures, 2);
     });
+
+    it("P9.A: exposes duration/nextEligibleAt on every outcome, and skippedBecause only when skipped", () => {
+      const success = advisor.buildAdvisorStatus({ outcome: "success", lastRunAt: "T", durationMs: 12.5, nextEligibleAt: "T+60m" });
+      assert.equal(success.durationMs, 12.5);
+      assert.equal(success.nextEligibleAt, "T+60m");
+      assert.equal(success.skippedBecause, null);
+
+      const skipped = advisor.buildAdvisorStatus({ outcome: "skipped", lastRunAt: "T", reason: "rate limited", durationMs: 0.4, nextEligibleAt: "T+30m" });
+      assert.equal(skipped.skippedBecause, "rate limited");
+      assert.equal(skipped.reason, "rate limited");
+      assert.equal(skipped.durationMs, 0.4);
+      assert.equal(skipped.nextEligibleAt, "T+30m");
+
+      const errored = advisor.buildAdvisorStatus({ outcome: "error", lastRunAt: "T", reason: "boom", durationMs: 5 });
+      assert.equal(errored.skippedBecause, null);
+      assert.equal(errored.durationMs, 5);
+
+      // Missing/non-finite duration falls back to null rather than NaN.
+      const noDuration = advisor.buildAdvisorStatus({ outcome: "success", lastRunAt: "T" });
+      assert.equal(noDuration.durationMs, null);
+      assert.equal(noDuration.nextEligibleAt, null);
+    });
   });
 
   describe("createAdvisorRunner", () => {
@@ -268,12 +290,21 @@ describe("model advisor", () => {
       await runner.maybeRun("unit", null, patterns);
       assert.equal(fetchCalls, 1);
 
+      const statusFile = path.join(dataDir, "model_advisor_status.json");
+      const statusAfterSuccess = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
+      assert.equal(statusAfterSuccess.status, "success");
+      assert.ok(Number.isFinite(statusAfterSuccess.durationMs) && statusAfterSuccess.durationMs >= 0, "P9.A: success status should record a duration");
+      assert.equal(statusAfterSuccess.skippedBecause, null);
+      assert.ok(Date.parse(statusAfterSuccess.nextEligibleAt) > Date.parse(statusAfterSuccess.lastRunAt), "P9.A: nextEligibleAt should be after lastRunAt");
+
       await new Promise((resolve) => setTimeout(resolve, 20));
       await runner.maybeRun("unit", null, patterns);
       assert.equal(fetchCalls, 1, "rate-limited run should not call the model");
-      const statusFile = path.join(dataDir, "model_advisor_status.json");
       const statusAfterRateLimit = JSON.parse(fs.readFileSync(statusFile, "utf-8"));
       assert.equal(statusAfterRateLimit.reason, "rate limited");
+      assert.equal(statusAfterRateLimit.skippedBecause, "rate limited", "P9.A: skippedBecause should mirror reason for a skipped outcome");
+      assert.ok(Number.isFinite(statusAfterRateLimit.durationMs));
+      assert.ok(Date.parse(statusAfterRateLimit.nextEligibleAt) > Date.now(), "P9.A: rate-limited nextEligibleAt should use the precise retryAfterMs");
 
       await new Promise((resolve) => setTimeout(resolve, 20));
       await runner.maybeRun("unit", null, patterns);

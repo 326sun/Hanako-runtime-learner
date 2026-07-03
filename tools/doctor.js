@@ -19,6 +19,7 @@ import { normalizeScope } from "../lib/scope.js";
 import { factConflicts } from "../lib/temporal.js";
 import { fingerprintPatterns, readMemFSIndex } from "../lib/memfs.js";
 import { POLICY_PROFILES } from "../lib/policy-profiles.js";
+import { embeddingCachePath, inspectEmbeddingCache, resolveSemanticConfig } from "../lib/embeddings.js";
 
 const SEVERITY_PENALTY = { critical: 20, high: 15, warning: 8, info: 3 };
 const SEVERITY_PRIORITY = { critical: "P0", high: "P0", warning: "P1", info: "P2" };
@@ -41,7 +42,7 @@ const norm = (s) => String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
  * @param {object} opts.events     event summary
  * @param {number} opts.now
  */
-export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS, advisorStatus = null } = {}) {
+export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [], facts = [], logs = [], reviews = [], events = null, memfsIndex = null, now = Date.now(), retentionDays = RETENTION_DAYS, advisorStatus = null, manifest = null, semanticEmbeddingCache = null, mode = "deep" } = {}) {
   const cfg = mergeConfig(config);
   const decorated = decoratePatterns(patterns, cfg);
   const issues = [];
@@ -328,6 +329,18 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       "Events will be written as new proposals/reviews/skill changes occur.");
   }
 
+  // 15) host_network_contract — arbitrary user endpoints must not be advertised
+  // through the host's static network.fetch allowlist contract.
+  if (manifest && typeof manifest === "object") {
+    const caps = [...(manifest.capabilities || []), ...(manifest.sensitiveCapabilities || [])];
+    if ("network" in manifest || caps.includes("network.fetch")) {
+      add("warning", "host_network_contract",
+        "Manifest declares a static host network channel, but model/embedding endpoints are user-configured.",
+        "Remove manifest.network and network.fetch capability entries unless Hanako supports dynamic user-approved endpoints.",
+        { hasNetworkBlock: "network" in manifest, networkFetchCapability: caps.includes("network.fetch") });
+    }
+  }
+
   // ── Score & status ──
   let score = 100;
   for (const i of issues) score -= SEVERITY_PENALTY[i.severity] ?? 3;
@@ -352,6 +365,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
   }
 
   return {
+    mode,
     status,
     label,
     score,
@@ -363,6 +377,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
       pendingReviews: activeReviews.length,
       blockedReviews: blockedReviews.length,
       concreteProjects: projectSet.size,
+      semanticEmbeddingCache,
       ...sessionCoverageSummary,
     },
     issues,
@@ -393,22 +408,28 @@ function oldestLogMs(file) {
 
 // Gather the on-disk inputs and run diagnose. Shared by the tool and by
 // self_learning_control's `doctor` action.
-export function runDoctorFromDisk(learnerDir = resolveLearnerDir(), { configPath = runtimeConfigPath(learnerDir) } = {}) {
+export function runDoctorFromDisk(learnerDir = resolveLearnerDir(), { configPath = runtimeConfigPath(learnerDir), manifestPath = null, fast = false } = {}) {
   const config = loadLearnerConfig(configPath);
   const patterns = readJson(path.join(learnerDir, "patterns.json"), []) || [];
-  const facts = readJson(path.join(learnerDir, "facts.json"), []) || [];
+  const facts = fast ? [] : readJson(path.join(learnerDir, "facts.json"), []) || [];
   const proposals = listProposals(learnerDir, { limit: 500 });
-  const logs = [
+  const logs = fast ? [] : [
     ["experience_log.jsonl"], ["error_log.jsonl"], ["turns.jsonl"], ["activity_log.jsonl"],
   ].map(([name]) => {
     const file = path.join(learnerDir, name);
     return { name, oldestMs: oldestLogMs(file), sessionCoverage: inspectSessionIdentityCoverage(file, { maxLines: 2000 }) };
   });
   const reviews = listReviews(learnerDir, { limit: 500 });
-  const events = eventSummary(learnerDir);
-  const memfsIndex = readMemFSIndex(learnerDir);
+  const events = fast ? null : eventSummary(learnerDir);
+  const memfsIndex = fast ? null : readMemFSIndex(learnerDir);
   const advisorStatus = readJson(path.join(learnerDir, "model_advisor_status.json"), null);
-  return diagnose({ patterns, config, proposals, facts, logs, reviews, events, memfsIndex, advisorStatus });
+  const manifest = manifestPath ? readJson(manifestPath, null) : null;
+  const semanticEmbeddingCache = {
+    enabled: !!config.semanticSearchEnabled,
+    configured: resolveSemanticConfig(config).ok,
+    ...inspectEmbeddingCache(embeddingCachePath(learnerDir), { maxEntries: config.semanticCacheMaxEntries }),
+  };
+  return diagnose({ patterns, config, proposals, facts, logs, reviews, events, memfsIndex, advisorStatus, manifest, semanticEmbeddingCache, mode: fast ? "fast" : "deep" });
 }
 
 export function formatReport(report) {
@@ -416,10 +437,14 @@ export function formatReport(report) {
   const coverageSummary = report.summary.sessionIdentityCoveragePct == null
     ? "sessionCoverage=n/a"
     : `sessionCoverage=${report.summary.sessionIdentityCoveragePct}%`;
+  const semanticCache = report.summary.semanticEmbeddingCache;
+  const semanticSummary = semanticCache
+    ? `semanticCache=${semanticCache.entries}/${semanticCache.maxEntries ?? "n/a"}`
+    : "semanticCache=n/a";
   const lines = [
     `# Self-Learning Doctor — ${icon} ${report.label} (score ${report.score}/100)`,
     "",
-    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals} · pendingReviews=${report.summary.pendingReviews || 0} · ${coverageSummary}`,
+    `patterns=${report.summary.patterns} · injectable=${report.summary.injectable} · pendingPrefs=${report.summary.pendingPreferences} · pendingProposals=${report.summary.pendingProposals} · pendingReviews=${report.summary.pendingReviews || 0} · ${coverageSummary} · ${semanticSummary}`,
     "",
   ];
   if (!report.issues.length) {
@@ -459,12 +484,14 @@ export const parameters = {
   type: "object",
   properties: {
     format: { type: "string", enum: ["text", "json"], description: "Output format. Default text." },
+    fast: { type: "boolean", description: "When true, skip deep log/event/MemFS/fact checks for a faster read-only health snapshot. Default false." },
   },
 };
 
 export async function execute(input = {}, ctx) {
   const dataDir = ctx?.dataDir || resolveLearnerDir();
-  const report = runDoctorFromDisk(dataDir);
+  const manifestPath = ctx?.pluginDir ? path.join(ctx.pluginDir, "manifest.json") : null;
+  const report = runDoctorFromDisk(dataDir, { manifestPath, fast: input.fast === true });
   if (input.format === "json") {
     return {
       content: [{ type: "text", text: JSON.stringify(report, null, 2) }],

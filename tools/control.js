@@ -21,6 +21,7 @@ import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/rel
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths, readPluginVersion } from "./_shared.js";
+import { loadRuntimeSnapshot } from "./runtime-snapshot.js";
 import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks, validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
 import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
@@ -56,17 +57,24 @@ function redactConfig(config = {}) {
 
 
 const HANDLERS = {
-  status(input, p, config, patterns) {
-    const decorated = decoratePatterns(patterns, config);
-    const patternSummary = summarizeDecoratedPatterns(decorated);
+  status(input, p, config, patterns, ctx) {
+    const snapshot = loadRuntimeSnapshot(ctx, {
+      includeDecorated: true,
+      includeProposals: true,
+      includeReviews: true,
+      proposalLimit: 0,
+      reviewLimit: 0,
+    });
+    const statusConfig = snapshot.config;
+    const patternSummary = summarizeDecoratedPatterns(snapshot.decoratedPatterns);
     let history = [];
     try { history = fs.readdirSync(p.historyDir).filter((n) => n.endsWith("-SKILL.md")).sort(); } catch {}
-    const proposalCounts = countByStatus(listProposals(p.learnerDir, { limit: 0 }));
-    const reviewCounts = countByStatus(listReviews(p.learnerDir, { limit: 0 }));
+    const proposalCounts = countByStatus(snapshot.proposals);
+    const reviewCounts = countByStatus(snapshot.reviews);
     const agentTasks = listAgentTaskStates(p.learnerDir, { limit: 1000 });
     const transferCounts = countTransferCandidatesByStatus(p.learnerDir, { limit: 1000 });
     return JSON.stringify({
-      config: redactConfig(config),
+      config: redactConfig(statusConfig),
       patterns: patternSummary.total,
       injectable: patternSummary.injectable,
       pending: patternSummary.pending,
@@ -326,7 +334,7 @@ const HANDLERS = {
   ...skillPolicyHandlers,
 
   doctor(input, p) {
-    const report = runDoctorFromDisk(p.learnerDir);
+    const report = runDoctorFromDisk(p.learnerDir, { manifestPath: path.join(p.pluginDir, "manifest.json"), fast: input.fast === true });
     return input.format === "json" ? JSON.stringify(report, null, 2) : formatReport(report);
   },
 
@@ -438,6 +446,18 @@ const LOCAL_STATE_MUTATION_ACTIONS = new Set([
   "run_skill_promotion_loop", "set_policy_profile", "trust_project_scripts",
 ]);
 
+const CONFIG_ACTIONS = new Set([
+  "list", "approve", "reject", "set_config", "regenerate_skill", "regenerate_memfs",
+  "run_model_advisor", "apply_proposal", "preview_proposal", "validate_proposal",
+  "resume_agent_task", "run_benchmarks", "export_audit_bundle", "list_policy_profiles",
+  "run_skill_promotion_loop", "set_policy_profile", "trust_project_scripts",
+]);
+
+const PATTERN_ACTIONS = new Set([
+  "list", "approve", "reject", "set_config", "regenerate_skill", "regenerate_memfs",
+  "run_model_advisor", "export_audit_bundle", "set_policy_profile",
+]);
+
 function describeControlSideEffect(input = {}) {
   const action = typeof input.action === "string" ? input.action : "unknown";
   // diagnose_bus is a read-only capability probe UNLESS a session target is
@@ -489,6 +509,79 @@ function describeControlSideEffect(input = {}) {
   };
 }
 
+function parseJsonObject(text) {
+  if (typeof text !== "string") return null;
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function sessionFileTarget(ctx = {}) {
+  const target = {};
+  if (typeof ctx.sessionId === "string" && ctx.sessionId.trim()) target.sessionId = ctx.sessionId;
+  if (ctx.sessionRef && typeof ctx.sessionRef === "object") target.sessionRef = ctx.sessionRef;
+  if (typeof ctx.sessionPath === "string" && ctx.sessionPath.trim()) target.sessionPath = ctx.sessionPath;
+  return Object.keys(target).length ? target : null;
+}
+
+function fileExists(filePath) {
+  return typeof filePath === "string" && path.isAbsolute(filePath) && fs.existsSync(filePath);
+}
+
+function controlOutputFiles(action, payload = {}) {
+  if (!payload || typeof payload !== "object") return [];
+  if (action === "run_benchmarks") {
+    return ["benchmark-report.md", "benchmark-report.json"]
+      .map((name) => path.join(payload.outputDir || "", name))
+      .filter(fileExists);
+  }
+  if (action === "export_audit_bundle" || action === "generate_audit_dashboard") {
+    return [payload.mdPath, payload.jsonPath].filter(fileExists);
+  }
+  if (action === "release_readiness") {
+    return ["release-readiness.md", "release-readiness.json"]
+      .map((name) => path.join(payload.outputDir || "", name))
+      .filter(fileExists);
+  }
+  return [];
+}
+
+function stageControlOutputFiles(input = {}, resultText, ctx = {}) {
+  if (typeof ctx?.stageFile !== "function") return [];
+  const target = sessionFileTarget(ctx);
+  if (!target) return [];
+  const payload = parseJsonObject(resultText);
+  const files = controlOutputFiles(input.action, payload);
+  const staged = [];
+  for (const filePath of files) {
+    try {
+      const stagedFile = ctx.stageFile({
+        ...target,
+        filePath,
+        label: path.basename(filePath),
+      });
+      staged.push({
+        ok: true,
+        filePath,
+        label: path.basename(filePath),
+        file: stagedFile?.file || null,
+        mediaItem: stagedFile?.mediaItem || null,
+      });
+    } catch (error) {
+      staged.push({
+        ok: false,
+        filePath,
+        label: path.basename(filePath),
+        error: error?.message || String(error),
+      });
+    }
+  }
+  return staged;
+}
+
 export const sessionPermission = {
   kind: "external_side_effect",
   describeSideEffect: describeControlSideEffect,
@@ -509,13 +602,22 @@ export const parameters = {
 
 export async function execute(input = {}, ctx) {
   const p = toolPaths(ctx);
-  const config = loadLearnerConfig(p.configPath, { persist: true });
-  const patterns = readJson(p.patternsPath, []);
   const handler = HANDLERS[input.action];
   if (!handler) throw new Error(`unknown action: ${input.action}`);
+  const config = CONFIG_ACTIONS.has(input.action)
+    ? loadLearnerConfig(p.configPath, { persist: true })
+    : null;
+  const patterns = PATTERN_ACTIONS.has(input.action)
+    ? readJson(p.patternsPath, [])
+    : null;
   const result = await handler(input, p, config, patterns, ctx);
   if (typeof result === "string") {
-    return { content: [{ type: "text", text: result }] };
+    const stagedFiles = stageControlOutputFiles(input, result, ctx);
+    const mediaItems = stagedFiles.map((item) => item.mediaItem).filter(Boolean);
+    return {
+      content: [{ type: "text", text: result }],
+      ...(stagedFiles.length ? { details: { stagedFiles, ...(mediaItems.length ? { media: { items: mediaItems } } : {}) } } : {}),
+    };
   }
   if (result && typeof result === "object" && result.content) {
     return result;

@@ -1,12 +1,14 @@
 import https from "https";
+import fs from "fs";
+import path from "path";
 import { readJson, memoryStrength, DEFAULT_CONFIG, knowledgeTier, mergeConfig } from "../lib/common.js";
-import { searchOfficialMemory } from "../lib/official-memory-bridge.js";
+import { searchOfficialMemoryWithStats } from "../lib/official-memory-bridge.js";
 import { MemoryIndex, tokenizeText } from "../lib/memory-index.js";
 import { admitMemory } from "../lib/memory-gate.js";
 import { inferScope, normalizeScope } from "../lib/scope.js";
 import { previewEvidence } from "../lib/evidence.js";
 import { factMemoryItems } from "../lib/facts.js";
-import { resolveSemanticConfig, embedTexts, cosineSim, rrfScores } from "../lib/embeddings.js";
+import { resolveSemanticConfig, embedTexts, cosineSim, rrfScores, embeddingCachePath } from "../lib/embeddings.js";
 import { mergeCredentials } from "../lib/credentials.js";
 import { toolPaths, loadConfig } from "./_shared.js";
 
@@ -39,6 +41,12 @@ const SYNONYMS = {
 };
 
 const SYNONYM_TOKEN_CACHE = new Map();
+const PREPARED_SEARCH_CACHE = {
+  key: null,
+  value: null,
+  hits: 0,
+  misses: 0,
+};
 
 function synonymTokensFor(key) {
   const syns = SYNONYMS[key];
@@ -143,6 +151,57 @@ export function prepareSearch(allPatterns, { type = null, taskType = null } = {}
     prefiltered,
     index: new MemoryIndex().rebuild(prefiltered),
   };
+}
+
+function fileSignature(file) {
+  try {
+    const stat = fs.statSync(file);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return "missing";
+  }
+}
+
+function cacheKeyForSearch({ patternsPath, factsPath, type, taskType }) {
+  return JSON.stringify({
+    patterns: fileSignature(patternsPath),
+    facts: fileSignature(factsPath),
+    type: type || null,
+    taskType: taskType || null,
+  });
+}
+
+export function clearPreparedSearchCache() {
+  PREPARED_SEARCH_CACHE.key = null;
+  PREPARED_SEARCH_CACHE.value = null;
+  PREPARED_SEARCH_CACHE.hits = 0;
+  PREPARED_SEARCH_CACHE.misses = 0;
+}
+
+export function preparedSearchCacheStats() {
+  return {
+    hits: PREPARED_SEARCH_CACHE.hits,
+    misses: PREPARED_SEARCH_CACHE.misses,
+    active: !!PREPARED_SEARCH_CACHE.value,
+  };
+}
+
+function loadPreparedSearchFromDisk(dataDir, patternsFile, { type = null, taskType = null } = {}) {
+  const factsPath = path.join(dataDir, "facts.json");
+  const key = cacheKeyForSearch({ patternsPath: patternsFile, factsPath, type, taskType });
+  if (PREPARED_SEARCH_CACHE.key === key && PREPARED_SEARCH_CACHE.value) {
+    PREPARED_SEARCH_CACHE.hits += 1;
+    return PREPARED_SEARCH_CACHE.value;
+  }
+  const patterns = (readJson(patternsFile, []) || []).filter((p) => p && p.id);
+  const factItems = factMemoryItems(dataDir);
+  const allPatterns = [...patterns, ...factItems];
+  const prepared = prepareSearch(allPatterns, { type, taskType });
+  const value = { allPatterns, prepared };
+  PREPARED_SEARCH_CACHE.key = key;
+  PREPARED_SEARCH_CACHE.value = value;
+  PREPARED_SEARCH_CACHE.misses += 1;
+  return value;
 }
 
 /**
@@ -299,17 +358,15 @@ export async function execute(input = {}, ctx) {
   const projectFilter = input.project || null;
   const limit = Math.min(input.limit || 5, 10);
 
-  const patterns = (readJson(patternsFile, []) || []).filter((p) => p && p.id);
-  const factItems = factMemoryItems(dataDir);
-  const allPatterns = [...patterns, ...factItems];
-  const prepared = prepareSearch(allPatterns, { type: typeFilter, taskType: taskFilter });
+  const { allPatterns, prepared } = loadPreparedSearchFromDisk(dataDir, patternsFile, { type: typeFilter, taskType: taskFilter });
   const config = mergeCredentials(loadConfig(p.configPath));
-  const officialMemory = config.officialMemoryBridgeEnabled
-    ? searchOfficialMemory(query, {
+  const officialMemorySearch = config.officialMemoryBridgeEnabled
+    ? searchOfficialMemoryWithStats(query, {
       limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)),
       project: projectFilter,
     })
-    : [];
+    : { results: [], stats: { lastSkippedReason: "disabled" } };
+  const officialMemory = officialMemorySearch.results;
 
   // Use a direct Node.js HTTPS request for the user-configured embedding
   // endpoint. The host's declarative ctx.network.fetch channel needs a static
@@ -342,6 +399,7 @@ export async function execute(input = {}, ctx) {
 
   let semantic = null;
   let semanticUsed = false;
+  let semanticCacheStats = null;
   if (resolveSemanticConfig(config).ok) {
     try {
       const probe = runSearch(allPatterns, query, {
@@ -350,7 +408,11 @@ export async function execute(input = {}, ctx) {
         prepared,
       }).results;
       if (probe.length) {
-        const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, { fetchImpl });
+        const emb = await embedTexts([query, ...probe.map((r) => `${r.desc} ${r.fix || ""}`)], config, {
+          fetchImpl,
+          cacheFile: embeddingCachePath(dataDir),
+        });
+        semanticCacheStats = emb.cacheStats || null;
         if (emb.ok && Array.isArray(emb.vectors[0])) {
           const qv = emb.vectors[0];
           semantic = new Map();
@@ -384,6 +446,8 @@ export async function execute(input = {}, ctx) {
       : "bm25(cjk) + gate + relation + memoryStrength",
     results,
     officialMemory,
+    officialMemoryStats: officialMemorySearch.stats,
+    semanticCacheStats,
   };
   if (!results.length) {
     result.hint = "No matching patterns admitted. Try broader keywords, a different taskType/project filter, or check self_learning_stats for an overview.";

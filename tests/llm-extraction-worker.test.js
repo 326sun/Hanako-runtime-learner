@@ -156,6 +156,21 @@ describe("llm-extraction-worker", () => {
       assert.equal(r.processed, 3);
     });
 
+    it("P9.C: records batch size and duration on the returned result and persisted state", async () => {
+      const ctx = busReturning(validJson);
+      const pats = [wfPattern, errPattern];
+      enqueueCandidates(tmpDir, enabled, pats, { now: "2026-06-25T00:00:00.000Z" });
+      const r = await runExtractionTick(ctx, { config: enabled, dataDir: tmpDir, now: "2026-06-25T00:00:00.000Z" });
+      assert.ok(Number.isFinite(r.durationMs) && r.durationMs >= 0, "tick result should report a finite duration");
+
+      const state = JSON.parse(fs.readFileSync(path.join(tmpDir, "llm_extraction_state.json"), "utf-8"));
+      assert.equal(state.lastRunAt, "2026-06-25T00:00:00.000Z");
+      assert.ok(Number.isFinite(state.durationMs) && state.durationMs >= 0, "persisted state should record duration");
+      assert.equal(state.processed, r.processed);
+      assert.equal(state.proposalsCreated, r.proposalsCreated);
+      assert.equal(state.maxJobs, 5);
+    });
+
     it("rate-limits a second tick within the min interval", async () => {
       const ctx = busReturning(validJson);
       enqueueCandidates(tmpDir, enabled, [wfPattern, errPattern], { now: "2026-06-25T00:00:00.000Z" });

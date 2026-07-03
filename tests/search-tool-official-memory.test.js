@@ -32,6 +32,8 @@ test("self_learning_search scopes official memory by project", async () => {
 
     assert.equal(result.ok, true);
     assert.ok(result.officialMemory.length >= 1);
+    assert.equal(result.officialMemoryStats.lastResultCount, result.officialMemory.length);
+    assert.ok(result.officialMemoryStats.lastSearchMs >= 0);
     assert.deepEqual([...new Set(result.officialMemory.map((entry) => entry.agent))], ["hanako"]);
   } finally {
     if (previousHome === undefined) delete process.env.HANA_HOME;

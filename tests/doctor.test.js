@@ -3,9 +3,12 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { DEFAULT_CONFIG } from "../lib/common.js";
 import { applyPolicyProfile } from "../lib/policy-profiles.js";
-import { diagnose, formatReport } from "../tools/doctor.js";
+import { diagnose, formatReport, runDoctorFromDisk } from "../tools/doctor.js";
 
 const NOW = Date.parse("2026-06-09T12:00:00Z");
 const daysAgo = (n) => new Date(NOW - n * 86_400_000).toISOString();
@@ -23,9 +26,39 @@ describe("doctor · healthy baseline", () => {
       now: NOW,
     });
     assert.equal(r.status, "good");
+    assert.equal(r.mode, "deep");
     assert.equal(r.label, "Good");
     assert.equal(r.score, 100);
     assert.equal(r.issues.length, 0);
+  });
+});
+
+describe("doctor · fast mode", () => {
+  it("runDoctorFromDisk fast mode skips deep log retention checks without changing the default", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `doctor-fast-${process.pid}-`));
+    try {
+      fs.writeFileSync(path.join(dir, "patterns.json"), "[]", "utf-8");
+      fs.writeFileSync(path.join(dir, "experience_log.jsonl"), JSON.stringify({
+        date: new Date(NOW - 90 * 86_400_000).toISOString(),
+        type: "turn",
+      }) + "\n", "utf-8");
+      fs.writeFileSync(path.join(dir, "embeddings_cache.json"), JSON.stringify({
+        "m:a": { vector: [1, 0], createdAt: NOW - 1000, lastUsedAt: NOW },
+      }, null, 2), "utf-8");
+
+      const deep = runDoctorFromDisk(dir);
+      const fast = runDoctorFromDisk(dir, { fast: true });
+
+      assert.equal(deep.mode, "deep");
+      assert.equal(fast.mode, "fast");
+      assert.equal(deep.summary.semanticEmbeddingCache.entries, 1);
+      assert.match(formatReport(deep), /semanticCache=1\/1000/);
+      assert.ok(types(deep).includes("privacy_retention"));
+      assert.ok(!types(fast).includes("privacy_retention"));
+      assert.equal(fast.summary.sessionIdentityCoveragePct, null);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -362,6 +395,29 @@ describe("doctor · advisor status", () => {
     });
     const issue = r.issues.find((i) => i.type === "advisor_error");
     assert.equal(issue?.severity, "high");
+  });
+});
+
+describe("doctor · host network contract", () => {
+  it("flags manifest network.fetch declarations for user-configured endpoints", () => {
+    const r = diagnose({
+      patterns: [],
+      manifest: { capabilities: ["network.fetch"], network: { allowedHosts: ["api.example.com"] } },
+      now: NOW,
+    });
+    const issue = r.issues.find((i) => i.type === "host_network_contract");
+    assert.equal(issue?.severity, "warning");
+    assert.equal(issue.hasNetworkBlock, true);
+    assert.equal(issue.networkFetchCapability, true);
+  });
+
+  it("does not flag a manifest without static network declarations", () => {
+    const r = diagnose({
+      patterns: [],
+      manifest: { permissions: ["usage.read"] },
+      now: NOW,
+    });
+    assert.ok(!types(r).includes("host_network_contract"));
   });
 });
 

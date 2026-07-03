@@ -72,6 +72,10 @@ function readJsonl(filePath) {
   return fs.readFileSync(filePath, "utf-8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
 }
 
+function wait(ms = 20) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 describe("runtime E2E with fake Hanako EventBus", () => {
   before(async () => {
     previousHome = process.env.HANA_HOME;
@@ -101,6 +105,62 @@ describe("runtime E2E with fake Hanako EventBus", () => {
     assert.equal(fs.existsSync(path.join(hostDataDir, "config.json")), false);
     assert.equal(fs.existsSync(path.join(hostDataDir, "activity_log.jsonl")), true);
     assert.equal(fs.existsSync(configPath), false);
+  });
+
+  it("defers host capability snapshot until after onload resolves", async () => {
+    await resetDisk();
+    const bus = new FakeEventBus();
+    bus.listCapabilities = () => [
+      { type: "model:sample-text", available: true },
+      { type: "usage:list", available: false },
+    ];
+    const ctx = createFakeRuntimeContext({ pluginDir, bus });
+    const plugin = new RuntimePlugin();
+    plugin.ctx = ctx;
+
+    await plugin.onload();
+
+    const capabilitiesPath = path.join(dataDir, "host_capabilities.json");
+    assert.equal(fs.existsSync(capabilitiesPath), false);
+    await wait();
+    const capabilities = readJson(capabilitiesPath, null);
+    assert.equal(capabilities.count, 2);
+    assert.equal(capabilities.availableCount, 1);
+    assert.equal(typeof capabilities.updatedAt, "string");
+
+    await plugin.onunload();
+  });
+
+  it("defers startup extraction until after onload resolves", async () => {
+    await resetDisk({
+      ...DEFAULT_CONFIG,
+      llmExtractionEnabled: true,
+      llmExtractionMinIntervalMinutes: 1,
+    });
+    writeJson(patternsPath, [{
+      id: "wf:startup-extract",
+      type: "workflow",
+      status: "approved",
+      score: 20,
+      count: 5,
+      desc: "startup extraction candidate",
+      fix: "extract later",
+      evidence: [{ quote: "startup extraction evidence" }],
+      firstSeen: "2026-06-01T00:00:00.000Z",
+      lastSeen: "2026-06-30T00:00:00.000Z",
+    }]);
+    const ctx = createFakeRuntimeContext({ pluginDir });
+    const plugin = new RuntimePlugin();
+    plugin.ctx = ctx;
+
+    await plugin.onload();
+
+    const queuePath = path.join(dataDir, "llm-extraction-queue.json");
+    assert.equal(fs.existsSync(queuePath), false);
+    await wait();
+    assert.equal(fs.existsSync(queuePath), true);
+
+    await plugin.onunload();
   });
 
   it("keeps usage/advisor/action outputs in host dataDir without recreating legacy self-learning", async () => {
@@ -149,6 +209,82 @@ describe("runtime E2E with fake Hanako EventBus", () => {
     assert.equal(fs.existsSync(path.join(hostDataDir, "event_log.jsonl")), true);
   });
 
+  it("uses the usage bootstrap cursor on the next startup", async () => {
+    const usageConfig = { ...DEFAULT_CONFIG, learnFromUsage: true };
+    await resetDisk(usageConfig);
+    const payloads = [];
+    const firstEndedAt = "2026-07-01T10:30:00.000Z";
+    const firstBus = new FakeEventBus({
+      handlers: {
+        "usage:list": (payload) => {
+          payloads.push(payload);
+          return { entries: [{
+            requestId: "usage-cursor-1",
+            status: "ok",
+            startedAt: "2026-07-01T10:00:00.000Z",
+            endedAt: firstEndedAt,
+            model: { provider: "p", modelId: "gpt-5.5" },
+            source: { subsystem: "session", operation: "reply", trigger: "manual" },
+            usage: { totalTokens: 100 },
+          }] };
+        },
+      },
+    });
+    const firstCtx = createFakeRuntimeContext({ pluginDir, bus: firstBus });
+    const firstPlugin = new RuntimePlugin();
+    firstPlugin.ctx = firstCtx;
+    await firstPlugin.onload();
+    await firstPlugin.onunload();
+
+    const secondBus = new FakeEventBus({
+      handlers: {
+        "usage:list": (payload) => {
+          payloads.push(payload);
+          return { entries: [] };
+        },
+      },
+    });
+    const secondCtx = createFakeRuntimeContext({ pluginDir, bus: secondBus });
+    const secondPlugin = new RuntimePlugin();
+    secondPlugin.ctx = secondCtx;
+    await secondPlugin.onload();
+    await secondPlugin.onunload();
+
+    assert.equal(payloads.length, 2);
+    assert.equal(payloads[1].since, firstEndedAt);
+  });
+
+  it("does not rewrite patterns.json when detector state is unchanged", async () => {
+    await resetDisk(DEFAULT_CONFIG);
+    fs.mkdirSync(path.dirname(patternsPath), { recursive: true });
+    writeJson(patternsPath, [{
+      id: "workflow:seeded",
+      type: "workflow",
+      status: "approved",
+      score: 12,
+      count: 3,
+      desc: "seeded workflow",
+      fix: "keep seeded workflow",
+      tools: ["read", "edit"],
+      context: { categories: ["file_management", "coding"], taskType: "coding" },
+      scope: { project: "general", taskType: "coding" },
+      firstSeen: "2026-06-01T00:00:00.000Z",
+      lastSeen: "2026-06-30T00:00:00.000Z",
+    }]);
+    const seededTime = new Date("2026-06-30T00:00:00.000Z");
+    fs.utimesSync(patternsPath, seededTime, seededTime);
+    const before = fs.statSync(patternsPath).mtimeMs;
+
+    const ctx = createFakeRuntimeContext({ pluginDir });
+    const plugin = new RuntimePlugin();
+    plugin.ctx = ctx;
+    await plugin.onload();
+    await plugin.onunload();
+
+    const after = fs.statSync(patternsPath).mtimeMs;
+    assert.equal(after, before);
+  });
+
   it("absorbs externally merged disk patterns before persisting", async () => {
     const { plugin } = await startRuntime();
     const external = {
@@ -173,6 +309,51 @@ describe("runtime E2E with fake Hanako EventBus", () => {
     assert.ok(patterns.some((pattern) => pattern.id === external.id), "external disk pattern should survive runtime flush");
   });
 
+  it("keeps in-session learned patterns after absorbing a concurrent external disk addition", async () => {
+    // P7.D: syncDiskStatus's added>0 branch calls detector.restore(), which is
+    // built for loading a trusted clean snapshot at onload and marks the store
+    // clean as a side effect. If control.js concurrently adds an unrelated
+    // pattern to patterns.json while the runtime is still holding un-flushed
+    // in-session state, that clean reset must not cause the in-session pattern
+    // to be silently dropped on the next persist.
+    const { bus, plugin } = await startRuntime();
+    const sessionPath = path.join(tempRoot, "sessions", "concurrent-project", "turn.jsonl");
+
+    for (let i = 0; i < 3; i++) {
+      emitSuccessfulTurn(bus, sessionPath, {
+        userText: "read the target file and edit the implementation",
+        tools: ["read", "edit"],
+      });
+    }
+
+    // Simulate control.js writing an unrelated, brand-new pattern to disk
+    // before the runtime has flushed its in-session learning.
+    const external = {
+      id: "workflow:external-concurrent",
+      type: "workflow",
+      status: "approved",
+      score: 12,
+      count: 4,
+      desc: "Externally added workflow",
+      fix: "Keep externally added pattern",
+      tools: ["read", "edit"],
+      context: { categories: ["file_management", "coding"], taskType: "coding" },
+      scope: { project: "general", taskType: "coding" },
+      firstSeen: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+    };
+    writeJson(patternsPath, [external]);
+
+    await plugin.onunload();
+
+    const patterns = readPatterns();
+    assert.ok(patterns.some((pattern) => pattern.id === external.id), "external disk pattern should survive runtime flush");
+    assert.ok(
+      patterns.some((pattern) => pattern.type === "workflow" && pattern.id !== external.id),
+      "in-session learned workflow must not be dropped when merging a concurrent external disk addition",
+    );
+  });
+
   it("learns a repeated workflow and refreshes the generated skill", async () => {
     const { bus, plugin } = await startRuntime();
     const sessionPath = path.join(tempRoot, "sessions", "workflow-project", "turn.jsonl");
@@ -194,14 +375,38 @@ describe("runtime E2E with fake Hanako EventBus", () => {
 
     const decorated = decoratePatterns(patterns, DEFAULT_CONFIG);
     assert.equal(decorated.find((pattern) => pattern.id === workflow.id)?.injectable, true);
-    assert.match(fs.readFileSync(skillPath, "utf-8"), /跨类别工作流/);
+    assert.match(fs.readFileSync(skillPath, "utf-8"), /Recent Workflows/);
+  });
+
+  it("applies settings-panel config changes live for later runtime decisions", async () => {
+    const { bus, ctx, plugin } = await startRuntime();
+    const sessionPath = path.join(tempRoot, "sessions", "live-config-project", "turn.jsonl");
+
+    ctx.config.setMany({ minInjectCount: 99 });
+    bus.emit({ type: "plugin_config_changed", pluginId: "hanako-runtime-learner" });
+
+    for (let i = 0; i < 3; i++) {
+      emitSuccessfulTurn(bus, sessionPath, {
+        userText: "read the target file and edit the implementation",
+        tools: ["read", "edit"],
+      });
+    }
+
+    await plugin.onunload();
+
+    const patterns = readPatterns();
+    const workflow = patterns.find((pattern) => pattern.type === "workflow");
+    assert.ok(workflow, "workflow pattern should still be learned");
+    assert.equal(workflow.status, "pending", "live minInjectCount should prevent auto-approval");
+    assert.equal(decoratePatterns(patterns, { ...DEFAULT_CONFIG, minInjectCount: 99 }).find((pattern) => pattern.id === workflow.id)?.injectable, false);
+    assert.ok(ctx.logs.some((entry) => entry.message === "runtime-learner: applied live settings-panel config update"));
   });
 
   it("captures a user correction as pending searchable preference without injecting it", async () => {
     const { bus, plugin } = await startRuntime();
     const sessionPath = path.join(tempRoot, "sessions", "paper-project", "turn.jsonl");
 
-    emitCorrectionTurn(bus, sessionPath, "下次记住，我写论文时 mAP50 是主指标，不是 mAP50-95。");
+    emitCorrectionTurn(bus, sessionPath, "\u4e0b\u6b21\u8bb0\u4f4f\uff0c\u6211\u5199\u8bba\u6587\u65f6 mAP50 \u662f\u4e3b\u6307\u6807\uff0c\u4e0d\u662f mAP50-95\u3002");
 
     await plugin.onunload();
 
@@ -212,9 +417,9 @@ describe("runtime E2E with fake Hanako EventBus", () => {
     assert.equal(decoratePatterns(patterns, DEFAULT_CONFIG).find((pattern) => pattern.id === preference.id)?.injectable, false);
 
     const skill = fs.readFileSync(skillPath, "utf-8");
-    assert.equal(skill.includes("mAP50 是主指标"), false);
+    assert.equal(skill.includes("mAP50"), false);
 
-    const search = runSearch(patterns, "论文 mAP50 主指标", { config: DEFAULT_CONFIG, type: "preference", limit: 5 });
+    const search = runSearch(patterns, "paper mAP50 primary metric", { config: DEFAULT_CONFIG, type: "preference", limit: 5 });
     assert.ok(search.results.some((result) => result.id === preference.id));
   });
 
@@ -327,12 +532,12 @@ describe("runtime E2E with fake Hanako EventBus", () => {
       sessionPath: path.join(tempRoot, "sessions", "stable-session-project", "turn.jsonl"),
     };
 
-    bus.emit({ type: "user_message", message: { role: "user", content: "下次记住，优先读配置再修改。" } }, sessionMeta);
+    bus.emit({ type: "user_message", message: { role: "user", content: "\u4e0b\u6b21\u8bb0\u4f4f\uff0c\u4f18\u5148\u8bfb\u914d\u7f6e\u518d\u4fee\u6539\u3002" } }, sessionMeta);
     bus.emit({ type: "tool_execution_start", toolName: "read" }, sessionMeta);
     bus.emit({ type: "tool_execution_end", toolName: "read", isError: false, result: { ok: true } }, sessionMeta);
     bus.emit({ type: "tool_execution_start", toolName: "edit" }, sessionMeta);
     bus.emit({ type: "tool_execution_end", toolName: "edit", isError: false, result: { ok: true } }, sessionMeta);
-    bus.emit({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: "记住了" } }, sessionMeta);
+    bus.emit({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: "\u8bb0\u4f4f\u4e86" } }, sessionMeta);
 
     await plugin.onunload();
 

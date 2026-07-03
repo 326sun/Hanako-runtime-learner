@@ -1,8 +1,9 @@
 import fs from "fs";
-import { readJson, countJsonl, decoratePatterns, describeOfficialUtilityModel, readRecentJsonl, summarizeSessionRows, inspectSessionIdentityCoverage } from "../lib/common.js";
+import { readJson, describeOfficialUtilityModel } from "../lib/common.js";
+import { embeddingCachePath, inspectEmbeddingCache, resolveSemanticConfig } from "../lib/embeddings.js";
+import { officialMemoryBridgeStats } from "../lib/official-memory-bridge.js";
 import { modelAdviceFile } from "../lib/model-advisor.js";
-import { listProposals } from "../lib/proposals.js";
-import { toolPaths, loadConfig, loadPatterns } from "./_shared.js";
+import { loadRuntimeSnapshot } from "./runtime-snapshot.js";
 
 export const name = "self_learning_stats";
 
@@ -16,23 +17,31 @@ export const parameters = {
 };
 
 export async function execute(input, ctx) {
-  const p = toolPaths(ctx);
-  const config = loadConfig(p.configPath);
+  const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const snapshot = loadRuntimeSnapshot(ctx, {
+    includeDecorated: true,
+    includeProposals: true,
+    includeLogs: true,
+    logCutoff: recentCutoff,
+    proposalLimit: 50,
+  });
+  const p = snapshot.paths;
+  const config = snapshot.config;
   const officialUtilityModel = describeOfficialUtilityModel();
   config.officialUtilityModelDisplay = officialUtilityModel.display;
-  const patterns = loadPatterns(p.patternsPath);
-  const decorated = decoratePatterns(patterns, config);
-  const proposals = listProposals(p.learnerDir, { limit: 50 });
-  const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const recentExperiences = readRecentJsonl(p.experiencePath, recentCutoff);
-  const recentErrors = readRecentJsonl(p.errorPath, recentCutoff);
-  const recentSessions = summarizeSessionRows(recentExperiences);
-  const recentErrorSessions = summarizeSessionRows(recentErrors);
+  const decorated = snapshot.decoratedPatterns;
+  const proposals = snapshot.proposals;
+  const experienceSample = snapshot.logs.experience;
+  const errorSample = snapshot.logs.error;
+  const recentExperiences = experienceSample.rows;
+  const recentErrors = errorSample.rows;
+  const recentSessions = experienceSample.sessions;
+  const recentErrorSessions = errorSample.sessions;
   const sessionIdentityCoverage = {
-    experience_log: inspectSessionIdentityCoverage(p.experiencePath),
-    error_log: inspectSessionIdentityCoverage(p.errorPath),
-    turns: inspectSessionIdentityCoverage(p.turnsPath),
-    activity_log: inspectSessionIdentityCoverage(p.activityPath),
+    experience_log: experienceSample.coverage,
+    error_log: errorSample.coverage,
+    turns: snapshot.logs.turns.coverage,
+    activity_log: snapshot.logs.activity.coverage,
   };
   for (const item of Object.values(sessionIdentityCoverage)) {
     item.coveragePct = Math.round((item.coverageRatio || 0) * 100);
@@ -69,9 +78,9 @@ export async function execute(input, ctx) {
   } catch {}
 
   const result = {
-    totalTurns: countJsonl(p.experiencePath),
-    compactTurns: countJsonl(p.turnsPath),
-    errors: countJsonl(p.errorPath),
+    totalTurns: snapshot.logs.experience.count,
+    compactTurns: snapshot.logs.turns.count,
+    errors: snapshot.logs.error.count,
     recentSessions: {
       observed: recentSessions.length,
       withErrors: recentErrorSessions.length,
@@ -90,6 +99,12 @@ export async function execute(input, ctx) {
       enabled: config.officialMemoryBridgeEnabled !== false,
       maxResults: config.officialMemoryBridgeMaxResults,
       mode: "read-only-file-bridge",
+      stats: officialMemoryBridgeStats(),
+    },
+    semanticEmbeddingCache: {
+      enabled: !!config.semanticSearchEnabled,
+      configured: resolveSemanticConfig(config).ok,
+      ...inspectEmbeddingCache(embeddingCachePath(p.learnerDir), { maxEntries: config.semanticCacheMaxEntries }),
     },
     proposals: {
       pending: proposalCounts.pending,

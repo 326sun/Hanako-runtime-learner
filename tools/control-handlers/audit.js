@@ -9,12 +9,12 @@
 // / benchmark-corpus / facts imports from control.js (import-budget relief).
 
 import path from "path";
-import { appendEvent, readEvents, replayEventState } from "../../lib/event-log.js";
+import { appendEvent, readEvents, cachedEventSummary } from "../../lib/event-log.js";
 import { listProposals } from "../../lib/proposals.js";
 import { listReviews } from "../../lib/review-queue.js";
 import { loadFacts } from "../../lib/facts.js";
 import { buildAuditBundle, exportAuditBundle } from "../../lib/audit-bundle.js";
-import { buildAuditDashboard, exportAuditDashboard } from "../../lib/audit-dashboard.js";
+import { buildAuditDashboard, exportAuditDashboard, findLatestExportedDashboard } from "../../lib/audit-dashboard.js";
 import { runBenchmarkCorpus } from "../../lib/benchmark-corpus.js";
 import { listTransferCandidateRecords } from "../../lib/transfer-registry.js";
 import { resolveProjectRoot } from "../../lib/project-root.js";
@@ -40,20 +40,36 @@ export const auditHandlers = {
   },
 
   export_audit_bundle(input, p, config, patterns) {
-    const proposals = listProposals(p.learnerDir, { limit: 500 });
-    const reviews = listReviews(p.learnerDir, { limit: 500 });
+    // P8.D: every governance data source is staged/capped by the same caller
+    // `limit`, so a large audit history doesn't force the full set into an
+    // explicit, one-off export. Events keep a higher default (5000) since a
+    // replay summary is meaningful only over a wider window; the others
+    // default to 500, matching their prior hardcoded value.
+    const listLimit = input.limit || 500;
+    const proposals = listProposals(p.learnerDir, { limit: listLimit });
+    const reviews = listReviews(p.learnerDir, { limit: listLimit });
     const events = readEvents(p.learnerDir, { limit: input.limit || 5000 });
-    const facts = loadFacts(p.learnerDir);
+    const facts = loadFacts(p.learnerDir, { limit: listLimit });
     const doctorReport = runDoctorFromDisk(p.learnerDir);
-    const transferCandidates = listTransferCandidateRecords(p.learnerDir, { limit: 500 });
+    const transferCandidates = listTransferCandidateRecords(p.learnerDir, { limit: listLimit });
     const version = readPluginVersion(p.pluginDir);
-    const bundle = buildAuditBundle({ version, config, patterns, facts, proposals, reviews, events, eventSummary: replayEventState(events), doctor: doctorReport, transferCandidates });
+    const eventSummaryLimit = input.limit || 5000;
+    const bundle = buildAuditBundle({ version, config, patterns, facts, proposals, reviews, events, eventSummary: cachedEventSummary(p.learnerDir, { limit: eventSummaryLimit, events }), doctor: doctorReport, transferCandidates });
     const written = exportAuditBundle(p.learnerDir, bundle);
     appendEvent(p.learnerDir, { type: "audit.exported", entityType: "audit", entityId: path.basename(written.dir), summary: "Exported local audit bundle", data: { dir: written.dir, doctorStatus: doctorReport.status } });
     return JSON.stringify({ ok: true, ...written, summary: bundle.summary, nextAction: "review audit-report.md" }, null, 2);
   },
 
   generate_audit_dashboard(input, p) {
+    // Only take the reuse shortcut for a plain "give me the dashboard" call —
+    // an explicit benchmark override signals the caller wants fresh data for
+    // that specific input, not whatever was last exported.
+    if (!input.regenerate && !input.benchmarkReportPath && !input.benchmarkRunsDir) {
+      const reused = findLatestExportedDashboard(p.learnerDir);
+      if (reused) {
+        return JSON.stringify({ ok: true, ...reused, nextAction: "review dashboard.md or export_audit_bundle; pass regenerate:true for a fresh rebuild" }, null, 2);
+      }
+    }
     const root = resolveProjectRoot(input, p, { requireBenchmarkCorpus: true });
     const version = readPluginVersion(root.ok ? root.projectRoot : p.pluginDir);
     const benchmarkRunsDir = input.benchmarkRunsDir || path.join(p.learnerDir, "benchmark-runs");

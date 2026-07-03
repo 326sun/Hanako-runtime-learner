@@ -229,6 +229,39 @@ describe("SessionObserver — event routing", () => {
       assert.equal(sessions.size, 0);
     });
 
+    it("ignores unhandled event types without materializing a turn or touching state", () => {
+      // P6.A/acceptance: a no-op (unhandled-type) event must not allocate a
+      // SessionTurn, register a session target, or reach any persistence path.
+      const sessions = new Map();
+      const runtimeState = { pendingAdoptionChecks: new Map(), sessionActivityCount: 0, sessionTargets: new Map() };
+      let persistCalls = 0;
+      let appendCalls = 0;
+      const mocks = setupMocks({
+        sessions,
+        runtimeState,
+        persistPatterns: () => { persistCalls += 1; },
+        appendJsonl: () => { appendCalls += 1; },
+      });
+      const observer = createObserver(mocks);
+
+      let eventCallback;
+      observer.subscribe({
+        subscribe(cb) { eventCallback = cb; return () => {}; },
+      }, { learnFromUsage: false });
+
+      for (let i = 0; i < 1000; i++) {
+        eventCallback(
+          { type: "some_unhandled_event", i },
+          { sessionId: "sess-noop", sessionPath: "sessions/test.jsonl" },
+        );
+      }
+
+      assert.equal(sessions.size, 0, "no SessionTurn should be created for unhandled event types");
+      assert.equal(runtimeState.sessionTargets.size, 0, "no session target should be registered for unhandled event types");
+      assert.equal(persistCalls, 0);
+      assert.equal(appendCalls, 0);
+    });
+
     it("tracks turns by stable sessionId when the host provides session metadata", () => {
       const sessions = new Map();
       const runtimeState = { pendingAdoptionChecks: new Map(), sessionActivityCount: 0, sessionTargets: new Map() };
