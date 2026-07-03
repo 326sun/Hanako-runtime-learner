@@ -229,7 +229,7 @@ soft warning 为 imports 偏高，后续若继续治理应优先处理 `status`/
   表格同步，并新增规则 0（新建文件是最后手段）+「预算调整历史」记录本次变更。
   CHANGELOG 条目待下次版本号变更时一并记录（本次调整未随版本发布）。
 
-## C-006 — 入口文件 index.js 体量（已重构、已纳管、接受现状）
+## C-006 — 入口文件 index.js 体量（已重构、已纳管、已收敛）
 
 - **Area**: `index.js`（插件入口）。
 - **Symptom**: 838 LOC / 28 imports，超 soft target（600/20），hard（900/35）内。
@@ -247,4 +247,18 @@ soft warning 为 imports 偏高，后续若继续治理应优先处理 `status`/
 - **Fix**: 维护期仅监控。若未来逼近 hard，再评估把（届时已边界清晰的）阶段
   函数整体搬迁到一个 lib 模块——属机械操作，但消耗 1 个 lib 模块名额，须与
   C-005 决策联动。
-- **Status**: accepted
+- **Status**: **resolved（N3，2026-07-03）** — 下一步计划 N3 抽出两个职责完整的
+  runtime 聚合模块：`lib/runtime-live-config.js`（配置加载、settings panel bridge、
+  credentials 迁移、live config/disposal wiring）与 `lib/runtime-skill-refresh.js`
+  （SKILL.md refresh、proposal notification、code-patch proposal creation）。这不是
+  机械拆小文件，而是把两个完整 wiring 域从入口移出。
+
+  **现状快照（2026-07-03，`complexity:report` 实测）**：`index.js`
+  **588 LOC / 19 imports**，已同时低于 LOC soft target 600 与 imports soft target 20；
+  N3 后不再产生 index.js soft warning。代价是 lib 模块数 107→109（仍在 hard 118 内，
+  但继续超过 soft 105），这是明确接受的结构成本：两个新增模块都是聚合边界，
+  不是碎片化小工具。
+
+  验证：runtime-e2e、live-config、runtime-config、perf-onload、install-smoke 定向测试
+  通过；`npm run check`、`npm run build`、`npm test`（942 total / 937 passed / 5 skipped）、
+  `npm run release:check`（ready / 100）通过。

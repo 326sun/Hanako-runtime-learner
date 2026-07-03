@@ -11,42 +11,25 @@
 
 import fs from "fs";
 import path from "path";
-import { DEFAULT_CONFIG, learnerDir, readJson, writeJson, buildSkillMdFromPatterns, cleanupTempFiles, mergeConfig, applyPanelConfig } from "./lib/common.js";
+import { learnerDir, readJson, writeJson, cleanupTempFiles } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
-import { runtimeConfigPath, migrateRuntimeConfigFile } from "./lib/runtime-config-path.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
 import { createExtractionRunner } from "./lib/llm-extraction-worker.js";
-import { buildSkillPatchProposal } from "./lib/proposals.js";
-import { applyProposalSafely } from "./lib/proposal-apply-safe.js";
-import { recordMemoryInjected } from "./lib/feedback-signals.js";
-import { buildRepeatedCodePatchProposals } from "./lib/advisor-insights.js";
 import { summarizeUsageEntry, updateUsageSummary, snapshotHostCapabilities, usageBootstrapSince, usageBootstrapStatePath, recordUsageBootstrap } from "./lib/usage-pipeline.js";
 import { usageDedupKey, absorbDiskPatternState, normalizeSessionTarget, sessionIdentityKey } from "./lib/helpers.js";
 import { PatternDetector } from "./lib/pattern-detector.js";
 import { createObserver } from "./lib/observer.js";
-import { snapshotSkill, pruneSkillBackups, skipObservedLine, skillRenderFingerprint } from "./lib/skill-lifecycle.js";
-import { isProposalReviewApproved } from "./lib/review-queue.js";
 import { runPostFlushPipeline } from "./lib/pipeline.js";
 import { createBudgetState } from "./lib/action-runtime.js";
-import { mergeCredentials, detectPlaintextCredentials, saveCredentials, loadCredentials, panelCredentialsToStore } from "./lib/credentials.js";
 import { createActivityLogger } from "./lib/activity-log.js";
 import { createJsonlRetentionPruner } from "./lib/log-retention.js";
-import { createSessionMessenger } from "./lib/session-messenger.js";
 import { createSeenIdStore } from "./lib/seen-id-store.js";
 import { setupBackgroundTasks } from "./lib/host-tasks.js";
-import { applyLiveConfig } from "./lib/live-config.js";
 import { createOnloadTimer } from "./lib/onload-timing.js";
+import { createRuntimeConfigPath, loadRuntimeConfig, bridgePanelConfig, wireLiveConfigAndDisposal } from "./lib/runtime-live-config.js";
+import { createSkillRefresh } from "./lib/runtime-skill-refresh.js";
 
 const DEFAULT_DATA_DIR = learnerDir();
-
-function fileStatKey(file) {
-  try {
-    const stat = fs.statSync(file);
-    return `${stat.mtimeMs}:${stat.size}`;
-  } catch {
-    return "missing";
-  }
-}
 
 function createRuntimePaths(dataDir = DEFAULT_DATA_DIR) {
   const DATA_DIR = dataDir || DEFAULT_DATA_DIR;
@@ -59,7 +42,7 @@ function createRuntimePaths(dataDir = DEFAULT_DATA_DIR) {
     PATTERNS_FILE: path.join(DATA_DIR, "patterns.json"),
     TURNS_FILE: path.join(DATA_DIR, "turns.jsonl"),
     EPISODES_FILE: path.join(DATA_DIR, "episodes.jsonl"),
-    CONFIG_FILE: runtimeConfigPath(DATA_DIR),
+    CONFIG_FILE: createRuntimeConfigPath(DATA_DIR),
     ACTIVITY_LOG: path.join(DATA_DIR, "activity_log.jsonl"),
     HISTORY_DIR: path.join(DATA_DIR, "skill_history"),
   };
@@ -100,34 +83,6 @@ function ensureDir(paths) {
   try { cleanupTempFiles(paths.DATA_DIR); } catch { /* best-effort at startup */ }
 }
 
-
-/**
- * Load config from disk, merging with defaults. Returns { config, source }:
- *   - source="file": normal load from config.json
- *   - source="corrupt": config.json had a JSON syntax error, renamed to .corrupt.bak
- *   - source="default": no config file existed, wrote DEFAULT_CONFIG
- * The caller should notify the user when source !== "file".
- */
-function loadConfig(paths) {
-  try {
-    if (fs.existsSync(paths.CONFIG_FILE)) {
-      const raw = fs.readFileSync(paths.CONFIG_FILE, "utf-8");
-      const parsed = JSON.parse(raw);
-      return { config: mergeConfig(parsed), source: "file" };
-    }
-  } catch (e) {
-    // Only move the file aside on JSON parse errors — a disk I/O error
-    // (EACCES, EIO, etc.) should not rename and overwrite valid user config.
-    if (e instanceof SyntaxError) {
-      try { fs.renameSync(paths.CONFIG_FILE, `${paths.CONFIG_FILE}.corrupt.${Date.now()}.bak`); } catch {}
-      // Fall through to write DEFAULT_CONFIG and signal the caller.
-      try { writeJson(paths.CONFIG_FILE, DEFAULT_CONFIG); } catch {}
-      return { config: mergeConfig(), source: "corrupt" };
-    }
-  }
-  try { writeJson(paths.CONFIG_FILE, DEFAULT_CONFIG); } catch {}
-  return { config: mergeConfig(), source: "default" };
-}
 
 /* ── Activity log + retention ── */
 
@@ -187,81 +142,6 @@ function initPathsAndDirs(ctx, rt) {
   runtimeState.logActivity = logActivity;
   ensureDir(rt.paths);
   rt.timer.mark("paths_and_dirs");
-}
-
-/** Sets rt.config / rt.configSource from disk (after legacy-path migration). */
-function loadRuntimeConfig(ctx, rt) {
-  // v0.341+: the host owns <dataDir>/config.json for its plugin config store.
-  // Move our legacy flat config.json (from older hosts) to runtime-config.json
-  // exactly once so the two writers never clobber each other. Host-shaped
-  // config.json is left untouched. See lib/runtime-config-path.js.
-  try {
-    const migration = migrateRuntimeConfigFile(rt.paths.DATA_DIR);
-    if (migration.migrated) {
-      ctx.log.info(`runtime-learner: migrated legacy config.json to runtime-config.json (${migration.reason})`);
-    }
-  } catch { /* migration is best-effort; loadConfig falls back to defaults */ }
-
-  const { config, source } = loadConfig(rt.paths);
-  rt.config = config;
-  rt.configSource = source;
-  rt.timer.mark("config_load");
-}
-
-/**
- * Bridges the settings panel into rt.config, routes panel/plaintext
- * credentials into the encrypted store, and merges credentials back on top.
- * rt.config's object identity is FINAL after this phase — later phases and
- * applyLiveConfig only mutate it in place, never replace it.
- */
-function bridgePanelConfig(ctx, rt) {
-  // Bridge the Hanako settings panel into the runtime config. v0.341+: ctx.config
-  // is a method-based store (getAll/setMany); applyPanelConfig handles both old
-  // and new API transparently. The panel is authoritative for the settings it
-  // exposes — see applyPanelConfig.
-  let config = rt.config;
-  const preBridge = JSON.stringify(config);
-  config = applyPanelConfig(config, ctx.config);
-  let configNeedsPersist = JSON.stringify(config) !== preBridge;
-
-  // Capture any API key the user typed into a settings-panel credential field.
-  // applyPanelConfig deliberately drops credential keys (they must never live
-  // in config.json plaintext), so route real panel-entered credentials into
-  // the encrypted store here — mergeCredentials() below then picks them up.
-  // Merge with the existing store so keys set via set_config aren't clobbered.
-  try {
-    const panelCreds = panelCredentialsToStore(ctx.config);
-    if (Object.keys(panelCreds).length > 0) {
-      saveCredentials({ ...loadCredentials(), ...panelCreds });
-      ctx.log.info(`runtime-learner: captured ${Object.keys(panelCreds).length} settings-panel credential(s) into the encrypted store`);
-    }
-  } catch {}
-
-  // One-time migration: move any plaintext API keys from old config.json into
-  // the encrypted credentials store. After migration the config file is
-  // rewritten with placeholder values so the keys never persist in plaintext.
-  try {
-    const plaintextKeys = detectPlaintextCredentials(config);
-    if (plaintextKeys.length > 0) {
-      const toEncrypt = {};
-      for (const key of plaintextKeys) toEncrypt[key] = config[key];
-      saveCredentials(toEncrypt);
-      // Rewrite config with sanitised values
-      for (const key of plaintextKeys) config[key] = "(stored in credentials.enc)";
-      configNeedsPersist = true;
-      ctx.log.info(`runtime-learner: migrated ${plaintextKeys.length} plaintext credential(s) to encrypted store`);
-    }
-  } catch {}
-
-  // Persist the bridged (and credential-sanitised) config so config.json on
-  // disk mirrors the panel for the runtime and the control tools alike. At
-  // this point config holds only credential placeholders, never plaintext.
-  if (configNeedsPersist) { try { writeJson(rt.paths.CONFIG_FILE, config); } catch {} }
-
-  // Merge encrypted credentials on top of the config — the encrypted store
-  // is the canonical source for API keys.
-  rt.config = mergeCredentials(config);
-  rt.timer.mark("config_bridge_credentials");
 }
 
 /** Sets rt.seenIds / rt.persistSeenIds / rt.detector / rt.actionPipelineState / rt.actionBudgetState. */
@@ -392,90 +272,6 @@ function initSessionsAndPersistence(ctx, rt) {
   rt.syncDiskStatus = syncDiskStatus;
   rt.persistPatterns = persistPatterns;
   rt.flushPersist = flushPersist;
-}
-
-/** Sets rt.resolveSessionTarget / rt.notifyProposalReview / rt.notifyWorkStatus / rt.refreshSkill. */
-function createSkillRefresh(ctx, rt) {
-  const messenger = createSessionMessenger(ctx, {
-    proposalNotifiedIds: runtimeState.proposalNotifiedIds,
-    statusNotifiedAt: runtimeState.statusNotifiedAt,
-  });
-  rt.resolveSessionTarget = (sessionHandle) => runtimeState.sessionTargets.get(sessionHandle) || sessionHandle;
-  rt.notifyProposalReview = (sessionHandle, proposals = [], options = {}) => (
-    messenger.notifyProposalReview(rt.resolveSessionTarget(sessionHandle), proposals, rt.config, { ...options, sessionKey: sessionHandle })
-  );
-  rt.notifyWorkStatus = (sessionHandle, detail = "") => (
-    messenger.notifyWorkStatus(rt.resolveSessionTarget(sessionHandle), rt.config, detail, { sessionKey: sessionHandle })
-  );
-
-  let lastSkillRefresh = 0;
-  let lastSkillRenderFingerprint = null;
-  let lastSkillRenderStatKey = null;
-  rt.refreshSkill = (force = false, sessionHandle = null, cachedAll = null) => {
-    const now = Date.now();
-    if (!force && now - lastSkillRefresh < SKILL_REFRESH_MIN_MS) return;
-    const allPatterns = cachedAll || rt.detector.all();
-    const skillDir = path.join(ctx.pluginDir, "skills", "self-learning");
-    fs.mkdirSync(skillDir, { recursive: true });
-    const skillPath = path.join(skillDir, "SKILL.md");
-    const renderOptions = {
-      turnCount: rt.detector.turnCount,
-      dataDir: rt.paths.DATA_DIR,
-    };
-    const currentFingerprint = skillRenderFingerprint(allPatterns, rt.config, renderOptions);
-    const currentStatKey = fileStatKey(skillPath);
-    const shouldRenderSkill = currentFingerprint !== lastSkillRenderFingerprint || currentStatKey !== lastSkillRenderStatKey;
-    if (shouldRenderSkill) {
-      const content = buildSkillMdFromPatterns(allPatterns, rt.config, renderOptions);
-      let current = null;
-      try { current = fs.readFileSync(skillPath, "utf-8"); } catch {}
-      if (skipObservedLine(current) !== skipObservedLine(content)) {
-        snapshotSkill(skillPath, rt.paths.HISTORY_DIR, { keep: MAX_SKILL_HISTORY });
-        const triggerPatternIds = allPatterns.filter(p => p.injectable).slice(0, 8).map(p => p.id);
-        const proposal = buildSkillPatchProposal({
-          learnerDir: rt.paths.DATA_DIR,
-          skillPath,
-          content,
-          triggerPatternIds,
-        });
-        if (proposal.autoApply && proposal.status !== "applied") {
-          if (rt.config.requireReviewForAutoApply && !isProposalReviewApproved(rt.paths.DATA_DIR, proposal.id)) {
-            ctx.log.info(`runtime-learner: queued ${proposal.id} for review before auto-apply (strict review mode)`);
-          } else {
-            const applied = applyProposalSafely(rt.paths.DATA_DIR, proposal.id, {
-              configPath: rt.paths.CONFIG_FILE,
-              requireReview: !!rt.config.requireReviewForAutoApply,
-              allowedSkillRoots: [ctx.pluginDir],
-            });
-            pruneSkillBackups(skillDir, { keep: MAX_SKILL_HISTORY });
-            // Feedback signal: SKILL.md actually changed and was written. Fail-soft.
-            if (rt.config.feedbackSignalsEnabled && applied?.status === "applied" && applied?.result?.ok) {
-              recordMemoryInjected(rt.paths.DATA_DIR, { patternIds: triggerPatternIds, skillRef: "skills/self-learning/SKILL.md" });
-            }
-          }
-        }
-      }
-      lastSkillRenderFingerprint = currentFingerprint;
-      lastSkillRenderStatKey = fileStatKey(skillPath);
-    }
-    const { proposals, created } = buildRepeatedCodePatchProposals({
-      learnerDir: rt.paths.DATA_DIR, patterns: allPatterns, minCount: CODE_PROPOSAL_MIN_COUNT,
-    });
-    if (proposals.length > 0) {
-      if (created > 0) {
-        const sessionTarget = normalizeSessionTarget(rt.resolveSessionTarget(sessionHandle));
-        rt.logActivity({
-          type: "proposal_created",
-          summary: `Created ${created} high-risk code improvement proposal(s) for review`,
-          sessionId: sessionTarget.sessionId,
-          sessionRef: sessionTarget.sessionRef,
-          sessionPath: sessionTarget.sessionPath,
-        });
-      }
-      void rt.notifyProposalReview(sessionHandle, proposals);
-    }
-    lastSkillRefresh = now;
-  };
 }
 
 /** Sets rt.advisorRunner / rt.extractionRunner. */
@@ -692,57 +488,6 @@ function subscribeObserver(ctx, rt) {
   rt.timer.mark("observer_subscribe");
 }
 
-/** Wires live settings-panel updates, runtimeState handles, and register() disposables. */
-function wireLiveConfigAndDisposal(ctx, rt) {
-  // Live settings-panel updates. The host writes our config.json and emits
-  // `plugin_config_changed` when the user edits the settings panel (see
-  // core/plugin-manager.ts setConfig); it does NOT reload the plugin. So we
-  // re-bridge the panel into the in-memory config and converge every holder
-  // (detector, refreshSkill/advisor closures, configRef) WITHOUT changing the
-  // config object's identity — replacing it would leave them on the old
-  // snapshot. Fields whose effect is wired at onload (learnFromUsage → the
-  // usage subscription below) cannot apply live and carry a reloadRequired
-  // note in the manifest instead.
-  const refreshConfigFromPanel = () => {
-    try {
-      const bridged = applyPanelConfig(loadConfig(rt.paths).config, ctx.config);
-      // Persist the bridged view so config.json and the control tools stay in
-      // sync. applyPanelConfig drops credential keys, so this never writes
-      // plaintext secrets.
-      try { writeJson(rt.paths.CONFIG_FILE, bridged); } catch {}
-      // Capture any newly panel-entered credential into the encrypted store.
-      try {
-        const panelCreds = panelCredentialsToStore(ctx.config);
-        if (Object.keys(panelCreds).length > 0) saveCredentials({ ...loadCredentials(), ...panelCreds });
-      } catch {}
-      applyLiveConfig({ config: rt.config, configRef: rt.configRef, detector: rt.detector }, mergeCredentials(bridged));
-      ctx.log.info("runtime-learner: applied live settings-panel config update");
-    } catch (err) {
-      ctx.log.warn(`runtime-learner: live config refresh skipped: ${err?.message || err}`);
-    }
-  };
-  const unsubConfig = ctx.bus.subscribe?.((event) => {
-    if (event?.type === "plugin_config_changed" && (!ctx.pluginId || event.pluginId === ctx.pluginId)) {
-      refreshConfigFromPanel();
-    }
-  }, { types: ["plugin_config_changed"] });
-
-  runtimeState.detector = rt.detector;
-  runtimeState.sessions = rt.sessions;
-  runtimeState.unsub = () => rt.observer.unsubscribe();
-  runtimeState.persistPatterns = rt.flushPersist;
-  runtimeState.refreshSkill = rt.refreshSkill;
-
-  // Register disposable cleanup via the host's register() callback (v0.341+).
-  if (typeof rt.register === "function") {
-    rt.register(() => { try { rt.observer.unsubscribe(); } catch {} });
-    rt.register(() => { try { rt.persistSeenIds(true); } catch {} });
-    rt.register(() => { try { rt.flushPersist(); } catch {} });
-    if (typeof unsubConfig === "function") rt.register(() => { try { unsubConfig(); } catch {} });
-  }
-  rt.timer.mark("runtime_state_registered");
-}
-
 /** Startup notifications + first sync/approve/persist/skill-refresh pass. */
 function runInitialRefresh(ctx, rt) {
   // Config fallback notification: let the user know when their config was
@@ -792,7 +537,12 @@ export default definePlugin({
       initDetectorState(ctx, rt);
       migrateLegacyPreferences(ctx, rt);
       initSessionsAndPersistence(ctx, rt);
-      createSkillRefresh(ctx, rt);
+      createSkillRefresh(ctx, rt, {
+        runtimeState,
+        minRefreshMs: SKILL_REFRESH_MIN_MS,
+        maxSkillHistory: MAX_SKILL_HISTORY,
+        codeProposalMinCount: CODE_PROPOSAL_MIN_COUNT,
+      });
       createModelRunners(ctx, rt);
       restorePatternsFromDisk(ctx, rt);
       scheduleCapabilitySnapshot(ctx, rt.paths.CAPABILITIES_FILE, rt.timer);
@@ -802,7 +552,7 @@ export default definePlugin({
       createRecordUsage(ctx, rt);
       await bootstrapUsage(ctx, rt);
       subscribeObserver(ctx, rt);
-      wireLiveConfigAndDisposal(ctx, rt);
+      wireLiveConfigAndDisposal(ctx, rt, runtimeState);
       runInitialRefresh(ctx, rt);
       ctx.log.info("runtime-learner: started three-layer self-learning runtime");
       rt.timer.mark("complete");
