@@ -25,8 +25,8 @@
    altitude + CLAUDE.md 规范，之后人工核实）：**零正确性缺陷**；修复 3 项发现
    的维护性问题（`redactConfig` 重复定义、`CONTROL_BANNED_DIRECT_IMPORTS`
    缺失 drift 测试、1 处预先存在的死 import）。
-6. **README 文档澄清（用户风险反馈跟进）**：测试徽章 `948/948` 增加环境依赖
-   说明（本地 Windows 无 symlink 权限时实际为 943 passed/5 skipped，非缺陷）；
+6. **README 文档澄清（用户风险反馈跟进）**：测试徽章 `950/950` 增加环境依赖
+   说明（本地 Windows 无 symlink 权限时实际为 945 passed/5 skipped，非缺陷）；
    补充 `trust: full-access` 与窄 `permissions: ["usage.read"]` 不对称的解释
    （引用 `docs/HOST_PROTOCOL_NOTES.md` 的宿主契约）；`self_learning_control`
    近 50 个 action 按代码层真实 side-effect 分类（只读查询/产出报告/提案预审/
@@ -49,13 +49,13 @@
 |---|---|
 | package / lock / manifest | `5.1.7` |
 | README version badge | `5.1.7` |
-| README test badge | `948/948` |
+| README test badge | `950/950` |
 | `tools/control.js` | 533→268 LOC（−50%），32→18 imports（−44%） |
 | `lib/helpers.js` | 312→277 LOC，18→15 exports |
 | lib 模块数 | 109（无变化） |
 | soft warnings | 2→1（control imports 告警清零；剩余为无关的 lib module count 历史项） |
 | structural warnings | 0 |
-| 测试统计 | `948 tests · 943 passed · 5 skipped · 0 failed`（5 skip 为 Windows symlink 权限环境限制，非缺陷） |
+| 测试统计 | `950 tests · 945 passed · 5 skipped · 0 failed`（5 skip 为 Windows symlink 权限环境限制，非缺陷） |
 | release zip | `release/hanako-runtime-learner-dist.zip`，SHA256 `ecc2d7e7a101f6ec147d1f69327127cf7c4256b645518f7826385bc1aa07005a` |
 
 ## 门禁结果
@@ -64,7 +64,7 @@
 |---|---|
 | `npm run build` | passed（dist 13 files / bundle 367.5kB / release zip generated） |
 | `npm run check` | passed |
-| `npm test` | 948 tests · 943 passed · 5 skipped · 0 failed |
+| `npm test` | 950 tests · 945 passed · 5 skipped · 0 failed |
 | `npm run benchmark` | passed（17/17 scenarios succeeded） |
 | `npm run perf` | passed（all metrics within thresholds） |
 | `npm run complexity:check` | passed（1 soft warning / 0 structural warnings / 0 hard violations） |

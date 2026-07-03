@@ -288,6 +288,7 @@ export function diagnose({ patterns = [], config = DEFAULT_CONFIG, proposals = [
   const evidenceInUse = decorated.some((p) => Array.isArray(p.evidence) && p.evidence.length);
   if (evidenceInUse) {
     const highNoEv = decorated.filter((p) =>
+      p.status !== "rejected" &&
       (Number(p.score) >= 12 || Number(p.decayedScore) >= 12) &&
       !(Array.isArray(p.evidence) && p.evidence.length));
     if (highNoEv.length) {

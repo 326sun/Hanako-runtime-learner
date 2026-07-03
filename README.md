@@ -10,11 +10,11 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-948%2F948-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-950%2F950-success" alt="tests">
 </p>
 
-> 测试徽章 `948/948` 表示测试总数 = 发布参考环境下的通过数（0 skip）。**本地开发机上实际结果可能是
-> `943 passed / 5 skipped`**——5 个跳过项由 Windows 无 symlink 创建权限触发（`t.skip(...)`
+> 测试徽章 `950/950` 表示测试总数 = 发布参考环境下的通过数（0 skip）。**本地开发机上实际结果可能是
+> `945 passed / 5 skipped`**——5 个跳过项由 Windows 无 symlink 创建权限触发（`t.skip(...)`
 > 环境能力探测，非功能失败），在有 symlink 权限或非 Windows 环境下会正常执行并通过。详见下方
 > “发布检查表”。
 
@@ -246,7 +246,7 @@ flowchart LR
 ```powershell
 npm run build          # esbuild 打包为可安装的 dist/（开发期可选；发布期必跑）
 npm run check          # 语法与源代码检查
-npm test               # 948 个测试
+npm test               # 950 个测试
 npm run benchmark      # 17 个内置基准场景
 npm run perf           # 热路径微基准
 npm run complexity:check   # 复杂度预算门禁（超 hard limit 即失败）
@@ -287,7 +287,7 @@ npm run release:check
 ```text
 package version: 5.1.7
 npm run check: passed
-npm test: 948 tests, 943 passed, 5 skipped, 0 failed
+npm test: 950 tests, 945 passed, 5 skipped, 0 failed
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100

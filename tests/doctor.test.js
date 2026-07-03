@@ -325,6 +325,17 @@ describe("doctor · evidence_missing", () => {
     const r = diagnose({ patterns: [base({ id: "wf:noev", score: 20 })], now: NOW });
     assert.ok(!types(r).includes("evidence_missing"));
   });
+
+  it("ignores rejected high-score patterns without evidence", () => {
+    const r = diagnose({
+      patterns: [
+        base({ id: "wf:withev", score: 20, evidence: [{ type: "turn", quote: "x" }] }),
+        base({ id: "wf:rejected-noev", status: "rejected", score: 20 }),
+      ],
+      now: NOW,
+    });
+    assert.ok(!types(r).includes("evidence_missing"));
+  });
 });
 
 describe("doctor · advisor status", () => {

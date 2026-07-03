@@ -196,20 +196,31 @@ describe("PatternDetector — ingest", () => {
       const detector = new PatternDetector({ largeUsageTokenThreshold: 100000 });
       const changes = detector.ingestUsage({
         date: new Date().toISOString(),
+        requestId: "usage-large-1",
         model: "deepseek-v4-pro",
         totalTokens: 150000,
+        inputTokens: 100000,
+        outputTokens: 50000,
         status: "success",
         subsystem: "chat",
         operation: "send",
       });
       assert.ok(changes.length >= 1);
-      assert.ok(changes[0].pattern.id.includes("large_context"));
+      const pattern = changes.find((c) => c.pattern.id.includes("large_context"))?.pattern;
+      assert.ok(pattern);
+      assert.equal(pattern.evidence?.[0]?.type, "usage");
+      assert.equal(pattern.evidence?.[0]?.file, "usage_summary.json");
+      assert.equal(pattern.evidence?.[0]?.id, "usage-large-1");
+      assert.match(pattern.evidence?.[0]?.quote || "", /model=deepseek-v4-pro/);
+      assert.match(pattern.evidence?.[0]?.quote || "", /operation=send/);
+      assert.match(pattern.evidence?.[0]?.quote || "", /totalTokens=150000/);
     });
 
     it("creates failed-request pattern on error", () => {
       const detector = new PatternDetector({});
       const changes = detector.ingestUsage({
         date: new Date().toISOString(),
+        id: "usage-fail-1",
         model: "deepseek-v4-pro",
         status: "error",
         error: { message: "timeout" },
@@ -217,7 +228,38 @@ describe("PatternDetector — ingest", () => {
         operation: "send",
       });
       assert.ok(changes.length >= 1);
-      assert.ok(changes.some((c) => c.pattern.id.includes("failed_request")));
+      const pattern = changes.find((c) => c.pattern.id.includes("failed_request"))?.pattern;
+      assert.ok(pattern);
+      assert.equal(pattern.evidence?.[0]?.type, "usage");
+      assert.equal(pattern.evidence?.[0]?.id, "usage-fail-1");
+      assert.match(pattern.evidence?.[0]?.quote || "", /status=error/);
+      assert.match(pattern.evidence?.[0]?.quote || "", /timeout/);
+    });
+
+    it("adds distinct evidence when reinforcing an existing usage pattern", () => {
+      const detector = new PatternDetector({ largeUsageTokenThreshold: 100000 });
+      detector.ingestUsage({
+        date: "2026-07-03T00:00:00.000Z",
+        requestId: "usage-large-1",
+        model: "deepseek-v4-pro",
+        totalTokens: 150000,
+        status: "success",
+        subsystem: "chat",
+        operation: "send",
+      });
+      const changes = detector.ingestUsage({
+        date: "2026-07-03T00:01:00.000Z",
+        requestId: "usage-large-2",
+        model: "deepseek-v4-pro",
+        totalTokens: 160000,
+        status: "success",
+        subsystem: "chat",
+        operation: "send",
+      });
+      const pattern = changes.find((c) => c.pattern.id.includes("large_context"))?.pattern;
+      assert.equal(pattern.count, 2);
+      assert.equal(pattern.evidence.length, 2);
+      assert.deepEqual(pattern.evidence.map((ev) => ev.id), ["usage-large-2", "usage-large-1"]);
     });
 
     it("does not flag benign non-whitelisted statuses as failed requests", () => {
