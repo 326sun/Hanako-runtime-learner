@@ -266,7 +266,7 @@ npm audit: 0 high/critical vulnerabilities
 | [docs/PRIVACY.md](docs/PRIVACY.md) | LLM extraction、后台任务和本地数据隐私说明。 |
 | [docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md) | v5.0.0 安全复审。 |
 | [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v5.0.0.md](docs/ACCEPTANCE-v5.0.0.md) | 当前版本验收记录。 |
+| [docs/ACCEPTANCE-v5.1.4.md](docs/ACCEPTANCE-v5.1.4.md) | 当前版本验收记录。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
 
 ## 许可证
