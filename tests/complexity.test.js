@@ -71,6 +71,38 @@ describe("complexity scan (simplify-S2 rootFiles)", () => {
     assert.ok(scan.structuralWarnings.some((w) => w.rule === "index_runtime_wiring_aggregators"));
     assert.ok(scan.structuralWarnings.some((w) => w.rule === "control_action_registry" && w.symbol === "CONFIG_ACTIONS"));
   });
+
+  it("S2.P3: flags tools/control.js importing a lib module that S2.P2 moved into control-handlers/*", () => {
+    write("tools/control.js", 'import { listProposals } from "../lib/proposals.js";\nexport const name = "control";\n');
+
+    const scan = scanComplexity(tmpRoot);
+    assert.equal(scan.ok, true, "structural warnings must never fail the hard gate");
+    const warning = scan.structuralWarnings.find((w) => w.rule === "control_router_no_business_imports" && w.module === "proposals");
+    assert.ok(warning, "expected a control_router_no_business_imports warning for lib/proposals.js");
+    assert.equal(warning.replacement, "tools/control-handlers/proposal-review.js");
+  });
+
+  it("S2.P3: does not flag tools/control.js for modules still legitimately imported (must-remain actions)", () => {
+    write(
+      "tools/control.js",
+      [
+        'import { appendEvent } from "../lib/event-log.js";',
+        'import { mergeCredentials } from "../lib/credentials.js";',
+        'import { runModelAdvisor } from "../lib/model-advisor.js";',
+        'import { exportReleaseReadiness } from "../lib/release-readiness.js";',
+        'import { runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";',
+        'export const name = "control";',
+        "",
+      ].join("\n"),
+    );
+
+    const scan = scanComplexity(tmpRoot);
+    assert.equal(
+      scan.structuralWarnings.filter((w) => w.rule === "control_router_no_business_imports").length,
+      0,
+      "modules still owned by a must-remain control.js action must not trip the router rule",
+    );
+  });
 });
 
 describe("analyzeSource", () => {

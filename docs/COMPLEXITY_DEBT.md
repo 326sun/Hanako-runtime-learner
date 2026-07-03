@@ -144,6 +144,44 @@ side-effect 分类。handler 执行体未迁移，`execute()` 行为不变。
 soft warning 为 imports 偏高，后续若继续治理应优先处理 `status`/audit/export
 聚合依赖，而不是继续迁移小 handler。
 
+#### import 聚合专项完成（S2.P2a-d，subsystem-simplify-v5.1.6，2026-07-03）
+
+上一节标记为 deferred 的"import 聚合专项"——重组 `status` / `export_audit_bundle`
+等聚合型 handler 跨域引用其他子系统函数的问题——在本轮 v5.1.6 精简计划中被
+**实际完成**，做法是把聚合型 handler 本身也按域下沉到 `tools/control-handlers/`，
+而不是让它们继续留在 `control.js` 里跨域拉取其他域的读模型函数：
+
+| 格 | 动作 | 新模块 | control.js LOC | control.js imports |
+|---|---|---|---:|---:|
+| baseline | — | — | 533 | 32 |
+| S2.P2a | 迁移 `status` 读模型 | `control-handlers/status.js` | 499 | 31 |
+| S2.P2b | 迁移 proposal/review 工作流（11 actions） | `control-handlers/proposal-review.js` | 405 | 28 |
+| S2.P2c | 迁移 maintenance/config/skill-lifecycle（6 actions，含 `regenerateSkill` 共享 helper） | `control-handlers/maintenance.js` | 303 | 24 |
+| S2.P2d | 把 8 个 handler 模块聚合为单一 `CONTROL_HANDLERS` | `control-handlers/index.js` | 268 | **18** |
+
+**关键差异**：此前几轮迁移只移动了"纯只读小域"，而 `status`/`export_audit_bundle`
+这类聚合型 handler 本身留在 `control.js` 内、继续 import 其他域的函数，导致
+「域内小函数迁移无法降低聚合层 imports」的死结（见第九阶段"结论"）。本轮直接把
+`status`（S2.P2a）本身连同它引用的读模型函数一起下沉，`proposal_review`/`maintenance`
+同理，才真正打破了这个死结。`export_audit_bundle` 等仍属 `audit.js`（此前已迁移，
+未在本轮改动）。
+
+**新增防回流规则**：`lib/complexity.js` 新增 `control_router_no_business_imports`
+report-only 结构规则（详见 `docs/COMPLEXITY_BUDGET.md`「结构规则」一节），禁止
+`control.js` 重新直接 import 已下沉到 `control-handlers/*` 的 9 个 `lib/` 模块
+（`proposals`/`proposal-apply-safe`/`review-queue`/`validation-gate`/
+`skill-lifecycle`/`memfs`/`policy-profiles`/`project-script-trust`/
+`agent-task-store`）。仍被 `must-remain` action 合法使用的模块
+（`event-log`/`credentials`/`model-advisor`/`release-readiness`/
+`skill-promotion-loop`）不在名单内，避免规则在主线上立即误报。
+
+**现状快照（2026-07-03，S2.P2d 后 `complexity:check` 实测）**：`tools/control.js`
+**268 LOC / 18 imports**，**首次低于 imports soft target（20）**，soft warnings
+2→1（剩余 1 条为与本子系统无关的 `lib module count 109 > 105`）。structural
+warnings 保持 0。C-001 的"import 聚合专项"deferred 项在此正式解除，C-001 整体
+状态维持 `closed-low-risk`（LTS 维护期常态治理已达成既定目标，不代表进入新一轮
+积极拆分周期）。
+
 ## C-002 — 大型 test 文件
 
 - **Area**: `tests/pattern-detector.test.js` 等

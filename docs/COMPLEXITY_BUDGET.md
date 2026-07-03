@@ -60,6 +60,18 @@ TODO/FIXME 仅统计约定式标记（`TODO:` / `FIXME:` / `TODO(author):`），
   `runtime-skill-refresh` 的深层 wiring 模块。
 - `tools/control.js` 的 action 分类、side-effect 描述、config/pattern loading 需求应来自
   `tools/control-action-registry.js`，不应恢复多组本地分类 Set。
+- **`control_router_no_business_imports`（S2.P3，subsystem-simplify-v5.1.6 新增）**：
+  `tools/control.js` 不应重新直接 import 已下沉到 `tools/control-handlers/*.js` 的
+  业务模块——`lib/proposals.js`、`lib/proposal-apply-safe.js`、`lib/review-queue.js`、
+  `lib/validation-gate.js`、`lib/skill-lifecycle.js`、`lib/memfs.js`、
+  `lib/policy-profiles.js`、`lib/project-script-trust.js`、`lib/agent-task-store.js`。
+  规则只覆盖当前已完全移出 `control.js` 的模块；仍被 `must-remain` action（`approve`/
+  `reject`/`run_model_advisor`/`release_readiness`/`run_skill_promotion_loop`）合法使用的
+  `lib/event-log.js`、`lib/credentials.js`、`lib/model-advisor.js`、
+  `lib/release-readiness.js`、`lib/skill-promotion-loop.js` 不在禁止名单中——把它们也
+  加进去会让规则在当前主线上立刻触发误报，违反"report-only 且主线当前必须为 0"的前提。
+  若后续把这些 must-remain action 也迁移到对应 handler（例如未来的 advisor handler），
+  再把对应模块补进 `lib/complexity.js` 的 `CONTROL_BANNED_DIRECT_IMPORTS`。
 
 结构规则可先以报告模式运行；当规则稳定且无历史 accepted debt 误伤时，再评估是否升级为
 hard gate。
