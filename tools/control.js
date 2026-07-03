@@ -11,7 +11,7 @@ import { runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
-import { toolPaths, readPluginVersion } from "./_shared.js";
+import { toolPaths } from "./_shared.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
 import { CONTROL_HANDLERS } from "./control-handlers/index.js";
 import { regenerateSkill } from "./control-handlers/maintenance.js";

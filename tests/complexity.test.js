@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { scanComplexity, analyzeSource, INDEX_BANNED_DIRECT_IMPORTS } from "../lib/complexity.js";
+import { scanComplexity, analyzeSource, INDEX_BANNED_DIRECT_IMPORTS, CONTROL_BANNED_DIRECT_IMPORTS } from "../lib/complexity.js";
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "complexity-test-"));
 
@@ -126,6 +126,38 @@ describe("S3.P3: index_runtime_wiring_aggregators ban list stays in sync with re
       }
     }
     assert.deepEqual(missing, [], "INDEX_BANNED_DIRECT_IMPORTS has fallen out of sync with the aggregator modules' real imports");
+  });
+});
+
+describe("control_router_no_business_imports ban list stays in sync with reality (code-review follow-up, S2.P3/S3.P3)", () => {
+  const repoRoot = process.cwd();
+
+  function realLibImports(rel) {
+    // tools/control.js is one directory above lib/ (../lib/...); files under
+    // tools/control-handlers/ are two directories above it (../../lib/...).
+    // Match either depth so this helper works for both callers below.
+    const text = fs.readFileSync(path.join(repoRoot, rel), "utf-8");
+    return [...text.matchAll(/from\s+["'](?:\.\.\/)+lib\/([\w-]+)\.js["']/g)].map((m) => m[1]);
+  }
+
+  it("the real tools/control.js does not import any CONTROL_BANNED_DIRECT_IMPORTS module directly", () => {
+    const bannedModules = new Set(CONTROL_BANNED_DIRECT_IMPORTS.map((item) => item.module));
+    const imports = realLibImports("tools/control.js");
+    const violations = imports.filter((mod) => bannedModules.has(mod));
+    assert.deepEqual(violations, [], "tools/control.js has regrown a direct import of a module that should live in tools/control-handlers/*.js");
+  });
+
+  it("every CONTROL_BANNED_DIRECT_IMPORTS entry is actually imported by a real tools/control-handlers/*.js file (catches stale/typo'd ban entries)", () => {
+    const controlHandlersDir = path.join(repoRoot, "tools/control-handlers");
+    const handlerFiles = fs.readdirSync(controlHandlersDir).filter((f) => f.endsWith(".js"));
+    const importedByHandlers = new Set();
+    for (const file of handlerFiles) {
+      for (const mod of realLibImports(`tools/control-handlers/${file}`)) importedByHandlers.add(mod);
+    }
+    const stale = CONTROL_BANNED_DIRECT_IMPORTS
+      .map((item) => item.module)
+      .filter((mod) => !importedByHandlers.has(mod));
+    assert.deepEqual(stale, [], "CONTROL_BANNED_DIRECT_IMPORTS names a module no tools/control-handlers/*.js file actually imports — the ban entry is stale or was never accurate");
   });
 });
 

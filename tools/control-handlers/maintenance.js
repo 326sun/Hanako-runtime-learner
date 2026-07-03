@@ -24,6 +24,7 @@ import { extractAndSaveCredentials, sanitizeCredentialPatch } from "../../lib/cr
 import { validateConfigPatch } from "../../lib/validation-gate.js";
 import { projectScriptsFingerprint } from "../../lib/project-script-trust.js";
 import { appendEvent } from "../../lib/event-log.js";
+import { redactConfig } from "../control-summaries.js";
 
 const MAX_SKILL_HISTORY = 20;
 
@@ -38,16 +39,6 @@ export function regenerateSkill(pathsValue, patterns, config) {
     pathsValue.historyDir,
     { keep: MAX_SKILL_HISTORY },
   );
-}
-
-const SENSITIVE_CONFIG_KEYS = new Set(["modelAdvisorApiKey", "semanticEmbeddingApiKey"]);
-
-function redactConfig(config = {}) {
-  const safeConfig = { ...config };
-  for (const key of Object.keys(safeConfig)) {
-    if (SENSITIVE_CONFIG_KEYS.has(key) && safeConfig[key]) safeConfig[key] = "***";
-  }
-  return safeConfig;
 }
 
 export const maintenanceHandlers = {

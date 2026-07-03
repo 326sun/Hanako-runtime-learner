@@ -10,20 +10,10 @@
 
 import fs from "fs";
 import { loadRuntimeSnapshot } from "../runtime-snapshot.js";
-import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks } from "../control-summaries.js";
+import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks, redactConfig } from "../control-summaries.js";
 import { listAgentTaskStates } from "../../lib/agent-task-store.js";
 import { loadActiveSkills, loadSkillCandidates } from "../../lib/skill-promotion-loop.js";
 import { countTransferCandidatesByStatus } from "./transfer.js";
-
-const SENSITIVE_CONFIG_KEYS = new Set(["modelAdvisorApiKey", "semanticEmbeddingApiKey"]);
-
-function redactConfig(config = {}) {
-  const safeConfig = { ...config };
-  for (const key of Object.keys(safeConfig)) {
-    if (SENSITIVE_CONFIG_KEYS.has(key) && safeConfig[key]) safeConfig[key] = "***";
-  }
-  return safeConfig;
-}
 
 export const statusHandlers = {
   status(input, p, config, patterns, ctx) {

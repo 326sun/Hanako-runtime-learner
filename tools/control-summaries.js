@@ -5,6 +5,22 @@
 // and had no external consumers; moving them here shrinks the control dispatcher
 // and makes them directly unit-testable. Bodies are unchanged from control.js.
 
+const SENSITIVE_CONFIG_KEYS = new Set(["modelAdvisorApiKey", "semanticEmbeddingApiKey"]);
+
+// Mask control-tool-output config fields (status, set_config, set_policy_profile).
+// Deliberately distinct from lib/audit-bundle.js's redactConfig: that one uses a
+// regex key match + "[redacted]" + URL-origin stripping for audit exports, this
+// one uses a fixed allowlist + "***" for control-tool echo. See
+// docs/COMPLEXITY_DEBT.md's "两处 redactConfig 行为差异" for the full comparison
+// (locked by tests/control-redaction.test.js) — do not merge the two.
+export function redactConfig(config = {}) {
+  const safeConfig = { ...config };
+  for (const key of Object.keys(safeConfig)) {
+    if (SENSITIVE_CONFIG_KEYS.has(key) && safeConfig[key]) safeConfig[key] = "***";
+  }
+  return safeConfig;
+}
+
 export function countByStatus(rows = [], field = "status") {
   const counts = {};
   for (const row of rows) {
