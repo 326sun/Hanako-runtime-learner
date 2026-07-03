@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.6-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.7-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
@@ -13,11 +13,16 @@
   <img src="https://img.shields.io/badge/tests-948%2F948-success" alt="tests">
 </p>
 
+> 测试徽章 `948/948` 表示测试总数 = 发布参考环境下的通过数（0 skip）。**本地开发机上实际结果可能是
+> `943 passed / 5 skipped`**——5 个跳过项由 Windows 无 symlink 创建权限触发（`t.skip(...)`
+> 环境能力探测，非功能失败），在有 symlink 权限或非 Windows 环境下会正常执行并通过。详见下方
+> “发布检查表”。
+
 Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
 
 设计目标很简单：让 Hanako 记住本地有价值的经验，但不扩大自动化边界。数据默认只保存在本机目录；外部模型调用和语义检索默认关闭，只有显式配置后才会启用。
 
-v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增加默认关闭的 LLM extraction worker，M3-lite 将后台整理迁移到 Hanako `task:*` bus 调度，M6 完成版本、治理和 release check 收口。v5.1.6 保留 v5.1.5 的可选/受治理路径与入口/控制面结构收敛，并修正发布文档中的测试统计漂移；默认边界仍保持保守：
+v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增加默认关闭的 LLM extraction worker，M3-lite 将后台整理迁移到 Hanako `task:*` bus 调度，M6 完成版本、治理和 release check 收口。v5.1.7 在 v5.1.6 基础上完成子系统级精简计划：`tools/control.js` 从控制面聚合器收敛为路由器（533→268 LOC，32→18 imports），新增防回流结构规则与自动化 drift 检测；默认边界与所有安全/审批/事务/审计闸门保持不变：
 
 | 能力 | 当前状态 | 默认值 | 自动执行边界 |
 |---|---|---|---|
@@ -59,6 +64,24 @@ v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增
 
 运行时采用 fail-closed 策略：未知命令、未知配置键、非法提案、doctor 关键状态和越界作用域变更都会被拦下，而不是靠猜测继续执行。
 
+### 关于 `trust: full-access`
+
+`manifest.json` 声明 `"trust": "full-access"`，`"permissions": ["usage.read"]`——两者不是同一层。
+按 [docs/HOST_PROTOCOL_NOTES.md](docs/HOST_PROTOCOL_NOTES.md) 记录的宿主契约：`permissions`
+数组只用于宿主 `createPluginBusProxy` 显式强制校验的少数敏感 bus 能力（当前只有 `usage.read`，
+用于从模型用量元数据学习）；其余 bus 能力（如 `session:send`、`model:sample-text`）与全部文件系统
+/子进程访问，则统一由 `trust` 这个更粗粒度的整体授信级别放行，不经过 `permissions` 数组逐项声明。
+本插件需要 `full-access` 是因为它要做的事本身就超出 bus 订阅范围：
+
+- 在 `~/.hanako/self-learning/` 下读写学习数据、生成/回滚 `SKILL.md`（见“数据与隐私”）。
+- `self_learning_open_dir` 需要打开本地目录。
+- `self_learning_control` 的部分 action（`run_benchmarks`、受控修复/回滚等）需要执行文件写入或
+  子进程调用，均经过“安全边界”表中列出的作用域门、事务快照、命令 allowlist 等约束。
+
+当前宿主协议没有比 `full-access` 更细的档位能表达“文件系统访问但仅限本插件数据目录”，所以选择
+声明 `full-access`，纵深防御落在代码层而非 manifest 层：见上表以及
+[docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md)。
+
 ## 安装
 
 用户安装 release zip：
@@ -78,7 +101,7 @@ npm run install-plugin
 固定版本安装：
 
 ```powershell
-git clone --branch v5.1.6 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v5.1.7 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm install
 npm run build
@@ -129,19 +152,39 @@ LLM extraction 默认关闭。关闭时不会调用 Hanako `model:sample-text` /
 | `self_learning_control` | 治理入口：审核、策略、审计导出、发布就绪度、任务控制等。 |
 | `self_learning_open_dir` | 打开本地自学习数据目录。 |
 
-常见控制动作：
+### `self_learning_control` 的 action 分组
+
+`self_learning_control` 一个工具聚合了近 50 个 action，风险差异很大——这里按
+`tools/control-action-registry.js` 里代码层的真实 side-effect 分类分组呈现，而不是按字母顺序堆一张
+长列表。分组由代码维护（新增 action 必须在 registry 声明分类，否则测试会失败），下表只是把它翻译
+成用户可读的形式。
+
+| 分组 | side-effect | 代表 action | 说明 |
+|---|---|---|---|
+| **只读查询**（20 个） | `read` | `status`、`doctor`、`review_panel`、`list_proposals`、`list_events`、`diagnose_bus` | 纯读取，不写入任何文件，日常排障/巡检首选。 |
+| **产出报告文件** | `plugin_output` | `run_benchmarks`、`export_audit_bundle`、`generate_audit_dashboard`、`release_readiness` | 只生成派生的 md/json 报告，不改动学习数据本身。 |
+| **提案预审**（进 review queue） | `plugin_state_mutation` | `preview_proposal`、`validate_proposal` | 把提案送入待审队列/写事件日志，尚未真正“应用”改动。 |
+| **调用外部模型** | `external_model_or_benchmark_run` | `run_model_advisor` | 默认关闭（`modelAdvisorEnabled=false`）；启用时才会发起出站请求。 |
+| **本地状态变更**（20 个，风险最高） | `plugin_state_mutation` / `external_side_effect` | `apply_proposal`、`apply_review`、`set_config`、`rollback`、`trust_project_scripts` | 会真正改变已批准状态、配置或信任基线；`apply_proposal`/`apply_review` 走 `applyProposalSafely`（作用域门 + 事务快照 + 回滚，见“安全边界”），`trust_project_scripts` 需要先建立脚本信任基线。 |
+
+常见只读排查命令：
 
 ```text
 self_learning_control action=status
 self_learning_control action=doctor
 self_learning_control action=review_panel
 self_learning_control action=list_proposals
+self_learning_control action=release_readiness
+```
+
+常见需要谨慎使用的命令（会改变已保存状态或已批准提案，建议先跑对应只读 action 确认再执行）：
+
+```text
 self_learning_control action=validate_proposal proposalId=<id>
 self_learning_control action=approve_review reviewId=<id>
 self_learning_control action=apply_review reviewId=<id>
 self_learning_control action=set_policy_profile governanceProfile=conservative
 self_learning_control action=regenerate_memfs
-self_learning_control action=release_readiness
 ```
 
 ## 配置重点
@@ -239,17 +282,19 @@ npm run perf -- --json
 npm run release:check
 ```
 
-`v5.1.6` 的预期结果：
+`v5.1.7` 的预期结果：
 
 ```text
-package version: 5.1.6
+package version: 5.1.7
 npm run check: passed
-npm test: 948 tests, 948 passed, 0 skipped
+npm test: 948 tests, 943 passed, 5 skipped, 0 failed
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100
 npm audit: 0 high/critical vulnerabilities
 ```
+
+在具备 symlink 创建权限的发布参考环境中，这 5 个边界测试应执行并通过；在普通 Windows 开发机上它们会被能力探测跳过。
 
 发布门不会执行 `git tag`、`git push`、`npm publish` 或任何外部副作用，它只检查本地文件和发布就绪度。
 
@@ -274,7 +319,7 @@ npm audit: 0 high/critical vulnerabilities
 | [docs/PRIVACY.md](docs/PRIVACY.md) | LLM extraction、后台任务和本地数据隐私说明。 |
 | [docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md) | v5.0.0 安全复审。 |
 | [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v5.1.6.md](docs/ACCEPTANCE-v5.1.6.md) | 当前版本验收记录。 |
+| [docs/ACCEPTANCE-v5.1.7.md](docs/ACCEPTANCE-v5.1.7.md) | 当前版本验收记录。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
 
 ## 许可证

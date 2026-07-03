@@ -2,6 +2,18 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.7 - 2026-07-03（子系统级精简计划：control 路由收敛）
+
+> 在已发布的 `5.1.6` 之上执行子系统级精简计划书（`test-plans/hanako-runtime-learner-subsystem-simplification-plan-v5.1.6.md`），完成全部 S0-S11 共 12 个子系统的审查。Phase A（S2 control 路由收敛）取得实质性精简成果；Phase B（S1 基础层 + S3 入口）完成低风险内聚与防回流规则自动化；Phase C（S4-S9 六个核心域）经严格审计确认边界健康、无精简机会；Phase D（S10 构建/发布基建）修复本轮自身引入的文档漂移。随后经三遍多角度代码审查（8 路并行 finder + 人工核实）确认零正确性缺陷，修复 3 项发现的维护性问题。**全程零默认行为变化、零安全边界放宽、零测试回归。**
+
+- **`tools/control.js` 从控制面聚合器收敛为路由器**：533 LOC / 32 imports → 268 LOC / 18 imports（LOC −50%，imports −44%，达成并超过 `<=20` 目标）。status/proposal-review/maintenance 三个 handler 域下沉到 `tools/control-handlers/{status,proposal-review,maintenance}.js`（逐字迁移，行为等价），8 个 handler 域模块聚合为单一 `tools/control-handlers/index.js`。
+- **防回流结构规则**：新增 `control_router_no_business_imports` report-only 规则（`lib/complexity.js`），禁止 `tools/control.js` 重新直接 import 已下沉的 9 个 lib 模块；`INDEX_BANNED_DIRECT_IMPORTS`（入口聚合边界）与新增的 `CONTROL_BANNED_DIRECT_IMPORTS` 均获得自动化 drift 检测测试（对比真实源码 import，而非仅靠人工审计）。
+- **基础层低风险内聚**：`lib/helpers.js` 312 LOC / 18 exports → 277 LOC / 15 exports（脱离 export soft target）。3 个单消费者 helper 内聚到各自唯一调用方；1 处 P1 误判（`sessionKeyFromNormalized` 被内部 `sessionIdentityKey` 依赖）已发现并更正为不动。
+- **代码审查修复**：`redactConfig`/`SENSITIVE_CONFIG_KEYS` 曾在 `status.js`/`maintenance.js` 两处重复定义，已合并到 `tools/control-summaries.js` 单一实现；`tools/control.js` 一处预先存在的死 import（`readPluginVersion`）已清理。
+- **Phase C 六域审计（S4-S9）**：观察/学习、记忆/检索、模型顾问/LLM、动作/agent、治理/审计、技能渲染——逐项以源码证据核实计划书列出的安全/正确性不变量（R2-R4 风险分类不可降级、`agent-graph-readonly.js` 架构级零 import、event-log hash 链完整性、SKILL.md 单一安全写入路径等），**均确认无精简机会、无漂移**。
+- **README 文档澄清（用户风险反馈跟进）**：测试徽章增加环境依赖说明（本地 Windows 无 symlink 权限时实际为 `943 passed/5 skipped`，非缺陷）；补充 `trust: full-access` 与窄 `permissions: ["usage.read"]` 不对称的解释（引用 `docs/HOST_PROTOCOL_NOTES.md` 宿主契约）；`self_learning_control` 近 50 个 action 按代码层真实 side-effect 分类重新分组呈现（只读查询/产出报告/提案预审/外部模型调用/本地状态变更），替代原先未分级的平铺列表。
+- **测试与发布门**：测试总数 `943` → `948`（新增 5 个复杂度治理测试；当前 Windows 本机结果为 `943 passed / 5 skipped / 0 failed`，5 skip 为 symlink 权限能力探测，非缺陷）。`npm run build`、`npm run check`、`npm test`、`npm run benchmark`、`npm run perf`、`npm run complexity:check`、`npm run release:check`、`npm audit --audit-level=high` 均通过；complexity soft warnings `1`（唯一剩余为与本轮无关的 lib module count 历史项），structural warnings `0`。
+
 ## 5.1.6 - 2026-07-03（文档统计修正发布）
 
 > 在已发布的 `5.1.5` 之上修正测试统计漂移，不移动既有 `v5.1.5` tag，使用 `v5.1.6` 作为干净补丁发布。
