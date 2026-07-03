@@ -1,18 +1,13 @@
 import fs from "fs";
 import path from "path";
-import { DEFAULT_CONFIG, readJson, writeJson, loadLearnerConfig, decoratePatterns, buildSkillMdFromPatterns, mergeConfig } from "../lib/common.js";
+import { readJson, writeJson, loadLearnerConfig, decoratePatterns } from "../lib/common.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
-import { validateConfigPatch } from "../lib/validation-gate.js";
 import { appendEvent } from "../lib/event-log.js";
 import { recordMemoryClosed, recordInjectionRevoked, wasRecentlyInjected, summarizeFeedback } from "../lib/feedback-signals.js";
-import { writeSkillIfChanged } from "../lib/skill-lifecycle.js";
 import { runDoctorFromDisk, formatReport } from "./doctor.js";
-import { generateMemFS } from "../lib/memfs.js";
-import { applyPolicyProfile } from "../lib/policy-profiles.js";
-import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
+import { mergeCredentials } from "../lib/credentials.js";
 import { runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
-import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
@@ -20,38 +15,13 @@ import { toolPaths, readPluginVersion } from "./_shared.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
 import { statusHandlers } from "./control-handlers/status.js";
 import { proposalReviewHandlers } from "./control-handlers/proposal-review.js";
+import { maintenanceHandlers, regenerateSkill } from "./control-handlers/maintenance.js";
 import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
 import { eventHandlers } from "./control-handlers/events.js";
 import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
 import { auditHandlers } from "./control-handlers/audit.js";
 import { transferHandlers } from "./control-handlers/transfer.js";
 import { controlNeedsConfig, controlNeedsPatterns, describeControlSideEffect } from "./control-action-registry.js";
-
-const MAX_SKILL_HISTORY = 20;
-
-function buildSkill(patterns, config, learnerDir) {
-  return buildSkillMdFromPatterns(patterns, config, { dataDir: learnerDir });
-}
-
-function regenerateSkill(pathsValue, patterns, config) {
-  return writeSkillIfChanged(
-    pathsValue.skillPath,
-    buildSkill(patterns, config, pathsValue.learnerDir),
-    pathsValue.historyDir,
-    { keep: MAX_SKILL_HISTORY },
-  );
-}
-
-const SENSITIVE_CONFIG_KEYS = new Set(["modelAdvisorApiKey", "semanticEmbeddingApiKey"]);
-
-function redactConfig(config = {}) {
-  const safeConfig = { ...config };
-  for (const key of Object.keys(safeConfig)) {
-    if (SENSITIVE_CONFIG_KEYS.has(key) && safeConfig[key]) safeConfig[key] = "***";
-  }
-  return safeConfig;
-}
-
 
 const HANDLERS = {
   // Status read-model handler lives in control-handlers/status.js (S2.P2a split).
@@ -112,47 +82,10 @@ const HANDLERS = {
     return JSON.stringify({ ok: true, id, status: "rejected" }, null, 2);
   },
 
-  set_config(input, p, config, patterns) {
-    fs.mkdirSync(p.learnerDir, { recursive: true });
-    fs.mkdirSync(p.historyDir, { recursive: true });
-    const patch = {};
-    for (const key of Object.keys(DEFAULT_CONFIG)) {
-      if (Object.prototype.hasOwnProperty.call(input, key)) patch[key] = input[key];
-    }
-    const sanitisedPatch = sanitizeCredentialPatch(patch);
-    const validation = validateConfigPatch(sanitisedPatch, config);
-    if (!validation.ok) {
-      const failures = validation.checks.filter((c) => c.status === "fail").map((c) => c.name).join(", ");
-      throw new Error(`config validation failed: ${failures}`);
-    }
-    extractAndSaveCredentials(patch);
-    const next = mergeConfig(config, sanitisedPatch);
-    writeJson(p.configPath, next);
-    regenerateSkill(p, patterns, next);
-    return JSON.stringify({ ok: true, config: redactConfig(next), validation }, null, 2);
-  },
-
-  rollback(input, p, config) {
-    const history = fs.readdirSync(p.historyDir).filter((n) => n.endsWith("-SKILL.md")).sort();
-    if (!history.length) throw new Error("no skill history to roll back");
-    const target = input.id ? history.find((n) => n.includes(input.id)) : history.at(-1);
-    if (!target) throw new Error(`snapshot not found: ${input.id}`);
-    const src = path.join(p.historyDir, target);
-    fs.copyFileSync(src, p.skillPath);
-    appendEvent(p.learnerDir, { type: "skill.rolled_back", entityType: "skill", entityId: target, summary: `Rolled back skill to ${target}` });
-    return JSON.stringify({ ok: true, snapshot: target }, null, 2);
-  },
-
-  regenerate_skill(input, p, config, patterns) {
-    const result = regenerateSkill(p, patterns, config);
-    appendEvent(p.learnerDir, { type: "skill.regenerated", entityType: "skill", entityId: "SKILL.md", summary: result.changed ? "Skill regenerated (content changed)" : "Skill unchanged" });
-    return JSON.stringify({ ok: true, changed: result.changed, snapshotPath: result.snapshotPath }, null, 2);
-  },
-
-  regenerate_memfs(input, p, config, patterns) {
-    const result = generateMemFS(p.learnerDir, { patterns, config });
-    return JSON.stringify({ ok: true, ...result }, null, 2);
-  },
+  // Maintenance/config/skill-lifecycle handlers live in
+  // control-handlers/maintenance.js (S2.P2c split): set_config, rollback,
+  // regenerate_skill, regenerate_memfs, set_policy_profile, trust_project_scripts.
+  ...maintenanceHandlers,
 
   async run_model_advisor(input, p, config, patterns, ctx) {
     // Decrypt sensitive keys (API keys) just for the advisor — the only control
@@ -209,41 +142,6 @@ const HANDLERS = {
   doctor(input, p) {
     const report = runDoctorFromDisk(p.learnerDir, { manifestPath: path.join(p.pluginDir, "manifest.json"), fast: input.fast === true });
     return input.format === "json" ? JSON.stringify(report, null, 2) : formatReport(report);
-  },
-
-  set_policy_profile(input, p, config, patterns) {
-    const profileName = input.governanceProfile || input.id || "balanced";
-    const result = applyPolicyProfile(config, profileName);
-    if (!result.ok) throw new Error(result.error);
-    writeJson(p.configPath, result.config);
-    appendEvent(p.learnerDir, { type: "policy.applied", entityType: "config", entityId: "governanceProfile", summary: `Applied governance profile: ${result.profile}`, data: { profile: result.profile, changed: result.changed } });
-    regenerateSkill(p, patterns, result.config);
-    return JSON.stringify({ ok: true, profile: result.profile, changed: result.changed, config: result.config, nextAction: "doctor" }, null, 2);
-  },
-
-  trust_project_scripts(input, p, config) {
-    const wsRoot = input.workspaceRoot ? path.resolve(input.workspaceRoot) : process.cwd();
-    const fingerprint = projectScriptsFingerprint(wsRoot);
-    if (!Object.keys(fingerprint.scripts).length) {
-      throw new Error("no scripts found in package.json at " + wsRoot);
-    }
-    const current = mergeConfig(config);
-    const next = mergeConfig(current, {
-      autoActionCommands: {
-        ...(current.autoActionCommands || {}),
-        allowProjectScripts: true,
-        projectScripts: { scriptsHash: fingerprint.scriptsHash },
-      },
-    });
-    writeJson(p.configPath, next);
-    appendEvent(p.learnerDir, {
-      type: "trust.project_scripts_approved",
-      entityType: "config",
-      entityId: "projectScripts",
-      summary: `Trusted project scripts hash: ${fingerprint.scriptsHash.slice(0, 16)} at ${fingerprint.packageJsonPath}`,
-      data: { scriptsHash: fingerprint.scriptsHash, packageJsonPath: fingerprint.packageJsonPath, scriptNames: Object.keys(fingerprint.scripts) },
-    });
-    return JSON.stringify({ ok: true, scriptsHash: fingerprint.scriptsHash, packageJsonPath: fingerprint.packageJsonPath, scripts: fingerprint.scripts, nextAction: "npm test or npm run check can now execute automatically" }, null, 2);
   },
 
   release_readiness(input, p) {
