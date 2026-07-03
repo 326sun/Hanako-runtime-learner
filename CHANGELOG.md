@@ -2,6 +2,15 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.8 - 2026-07-03（usage evidence + doctor 降噪补丁发布）
+
+> 在已发布的 `5.1.7` 之上做干净补丁发布，不覆盖既有 tag / release asset。主线修复已先进入 `main`，本版本重新同步版本元数据、构建 release zip 并发布新的 GitHub Release。
+
+- **usage pattern 补齐 evidence provenance**：`ingestUsage()` 现在会为 `usage:large_context:*` 与 `usage:failed_request:*` 写入结构化 `usage` evidence，记录 model、operation、status、totalTokens、requestId 或 entry id、input/output token 与错误摘要；已有 usage pattern 再次强化时通过 `attachEvidence()` 去重追加，保留最近证据链。
+- **doctor evidence_missing 降噪**：`tools/doctor.js` 的 `evidence_missing` 规则不再把 `status === "rejected"` 的高分旧 pattern 算进健康问题，避免已拒绝记忆污染健康报告解释。
+- **回归测试与发布计数同步**：新增 usage evidence 与 rejected doctor 噪音回归测试，测试总数 `948 -> 950`；同步 README 徽章、验收记录、release-readiness 默认测试数与 release fixture。
+- **默认边界不变**：无新增外部调用、无 backfill、无自动放宽；历史 pattern 不被批量改写，未来新 usage pattern 自然携带 evidence。
+
 ## 5.1.7 - 2026-07-03（子系统级精简计划：control 路由收敛）
 
 > 在已发布的 `5.1.6` 之上执行子系统级精简计划书（`test-plans/hanako-runtime-learner-subsystem-simplification-plan-v5.1.6.md`），完成全部 S0-S11 共 12 个子系统的审查。Phase A（S2 control 路由收敛）取得实质性精简成果；Phase B（S1 基础层 + S3 入口）完成低风险内聚与防回流规则自动化；Phase C（S4-S9 六个核心域）经严格审计确认边界健康、无精简机会；Phase D（S10 构建/发布基建）修复本轮自身引入的文档漂移。随后经三遍多角度代码审查（8 路并行 finder + 人工核实）确认零正确性缺陷，修复 3 项发现的维护性问题。**全程零默认行为变化、零安全边界放宽、零测试回归。**
