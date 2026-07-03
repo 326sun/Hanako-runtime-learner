@@ -29,6 +29,7 @@ import { eventHandlers } from "./control-handlers/events.js";
 import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
 import { auditHandlers } from "./control-handlers/audit.js";
 import { countTransferCandidatesByStatus, transferHandlers } from "./control-handlers/transfer.js";
+import { controlNeedsConfig, controlNeedsPatterns, describeControlSideEffect } from "./control-action-registry.js";
 
 const MAX_SKILL_HISTORY = 20;
 
@@ -414,101 +415,6 @@ export const name = "self_learning_control";
 
 export const description = "Review and control the runtime self-learning engine: list patterns, approve/reject hints, update injection config, or roll back the generated skill.";
 
-const READ_ONLY_CONTROL_ACTIONS = new Set([
-  "status", "list", "list_proposals", "show_proposal", "review_panel", "list_reviews",
-  "list_events", "event_summary", "verify_event_log", "list_agent_tasks", "show_agent_task",
-  "list_transfer_candidates", "show_transfer_candidate", "list_skill_candidates", "list_active_skills",
-  "doctor", "list_policy_profiles", "diagnose_bus", "feedback_summary",
-  "agent_graph_preview",
-]);
-
-const EXTERNAL_MODEL_ACTIONS = new Set([
-  "run_model_advisor",
-]);
-
-const FILE_OUTPUT_ACTIONS = new Set([
-  "run_benchmarks",
-  "export_audit_bundle",
-  "generate_audit_dashboard",
-  "release_readiness",
-]);
-
-const REVIEW_QUEUE_ACTIONS = new Set([
-  "preview_proposal",
-  "validate_proposal",
-]);
-
-const LOCAL_STATE_MUTATION_ACTIONS = new Set([
-  "approve", "reject", "set_config", "rollback", "regenerate_skill", "regenerate_memfs",
-  "apply_proposal", "reject_proposal", "approve_review", "reject_review", "apply_review",
-  "approve_agent_task", "reject_agent_task", "cancel_agent_task", "resume_agent_task",
-  "register_transfer_candidate", "record_transfer_validation", "expire_transfer_candidate",
-  "run_skill_promotion_loop", "set_policy_profile", "trust_project_scripts",
-]);
-
-const CONFIG_ACTIONS = new Set([
-  "list", "approve", "reject", "set_config", "regenerate_skill", "regenerate_memfs",
-  "run_model_advisor", "apply_proposal", "preview_proposal", "validate_proposal",
-  "resume_agent_task", "run_benchmarks", "export_audit_bundle", "list_policy_profiles",
-  "run_skill_promotion_loop", "set_policy_profile", "trust_project_scripts",
-]);
-
-const PATTERN_ACTIONS = new Set([
-  "list", "approve", "reject", "set_config", "regenerate_skill", "regenerate_memfs",
-  "run_model_advisor", "export_audit_bundle", "set_policy_profile",
-]);
-
-function describeControlSideEffect(input = {}) {
-  const action = typeof input.action === "string" ? input.action : "unknown";
-  // diagnose_bus is a read-only capability probe UNLESS a session target is
-  // supplied — in that case its handler calls session:send (an external side
-  // effect). Declaring it "read" then would let the host auto-allow the message
-  // without review, so report the side effect precisely when it will occur.
-  if (action === "diagnose_bus") {
-    const target = normalizeSessionTarget(input);
-    if (target.sessionId || target.sessionRef || target.sessionPath) {
-      return {
-        kind: "external_side_effect",
-        summary: "Send a diagnostic session:send test message to the target session.",
-        ruleId: "runtime-learner-control-diagnose_bus",
-      };
-    }
-  }
-  if (READ_ONLY_CONTROL_ACTIONS.has(action)) {
-    return {
-      kind: "read",
-      summary: `Read runtime learner state for control action: ${action}.`,
-      ruleId: `runtime-learner-control-${action}`,
-    };
-  }
-  if (FILE_OUTPUT_ACTIONS.has(action)) {
-    return {
-      kind: "plugin_output",
-      summary: `Generate runtime learner audit, benchmark, or release-readiness output for action: ${action}.`,
-      ruleId: `runtime-learner-control-${action}`,
-    };
-  }
-  if (REVIEW_QUEUE_ACTIONS.has(action)) {
-    return {
-      kind: "plugin_state_mutation",
-      summary: `Update runtime learner review queue or event log while preparing proposal review action: ${action}.`,
-      ruleId: `runtime-learner-control-${action}`,
-    };
-  }
-  if (EXTERNAL_MODEL_ACTIONS.has(action)) {
-    return {
-      kind: "external_model_or_benchmark_run",
-      summary: `Run runtime learner analysis that may call configured model/network providers: ${action}.`,
-      ruleId: `runtime-learner-control-${action}`,
-    };
-  }
-  return {
-    kind: LOCAL_STATE_MUTATION_ACTIONS.has(action) ? "plugin_state_mutation" : "external_side_effect",
-    summary: `Mutate runtime learner governance, memory, proposals, skills, approvals, configuration, or external state: ${action}.`,
-    ruleId: `runtime-learner-control-${action}`,
-  };
-}
-
 function parseJsonObject(text) {
   if (typeof text !== "string") return null;
   try {
@@ -604,10 +510,10 @@ export async function execute(input = {}, ctx) {
   const p = toolPaths(ctx);
   const handler = HANDLERS[input.action];
   if (!handler) throw new Error(`unknown action: ${input.action}`);
-  const config = CONFIG_ACTIONS.has(input.action)
+  const config = controlNeedsConfig(input.action)
     ? loadLearnerConfig(p.configPath, { persist: true })
     : null;
-  const patterns = PATTERN_ACTIONS.has(input.action)
+  const patterns = controlNeedsPatterns(input.action)
     ? readJson(p.patternsPath, [])
     : null;
   const result = await handler(input, p, config, patterns, ctx);

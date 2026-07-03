@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-07-03T01:16:15.642Z
+Generated at: 2026-07-03T02:15:49.641Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
@@ -11,15 +11,15 @@ Status: within budget
 
 | 指标 | 当前值 | hard limit | soft target |
 |---|---|---|---|
-| 文件数 | 250 | - | - |
+| 文件数 | 252 | - | - |
 | lib 模块数 | 107 | 118 | 105 |
-| 总 LOC | 36718 | - | - |
-| 总代码 LOC | 30346 | - | - |
+| 总 LOC | 36805 | - | - |
+| 总代码 LOC | 30424 | - | - |
 | 单文件最大 LOC | 838 | 900 | 600 |
-| 单文件最大 imports | 31 | 35 | 20 |
+| 单文件最大 imports | 32 | 35 | 20 |
 | 单文件最大 exports | 18 | 25 | 18 |
 | TODO/FIXME 总数 | 0 | 40 | 10 |
-| soft 警告数 | 5 | - | 0 |
+| soft 警告数 | 4 | - | 0 |
 | hard 违规数 | 0 | 0 | - |
 
 ## Top 10 最大文件 (LOC)
@@ -27,9 +27,9 @@ Status: within budget
 | 文件 | LOC | 代码 LOC |
 |---|---|---|
 | index.js | 838 | 657 |
-| tools/control.js | 627 | 540 |
 | tests/runtime-e2e.test.js | 588 | 480 |
 | tests/common.test.js | 551 | 454 |
+| tools/control.js | 533 | 458 |
 | tools/doctor.js | 506 | 422 |
 | tests/observer.test.js | 489 | 392 |
 | lib/observer.js | 463 | 342 |
@@ -41,7 +41,7 @@ Status: within budget
 
 | 文件 | imports |
 |---|---|
-| tools/control.js | 31 |
+| tools/control.js | 32 |
 | index.js | 27 |
 | tests/runtime-e2e.test.js | 15 |
 | tests/action-runtime.test.js | 14 |
@@ -76,8 +76,7 @@ Status: within budget
 以下项目超出 soft target 但仍在 hard limit 内，是优先治理对象（参见 COMPLEXITY_DEBT.md）。
 
 - index.js has 838 LOC > soft target 600
-- tools/control.js has 627 LOC > soft target 600
 - lib module count 107 > soft target 105
-- tools/control.js has 31 imports > soft target 20
+- tools/control.js has 32 imports > soft target 20
 - index.js has 27 imports > soft target 20
 

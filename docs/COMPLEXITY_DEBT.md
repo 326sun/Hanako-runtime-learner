@@ -130,6 +130,20 @@ control.js **627 LOC / 31 imports**（对比收口快照 601/32：imports 净降
 LOC 上升 26 来自 v5.1.3 功能与 P8.B 复用逻辑等正常增量，非治理回退）。
 C-001 维持 `closed-low-risk` 状态不变。
 
+#### 下一步结构收敛追记（N2，2026-07-03）
+
+下一步计划 N2 将 action 分类、config/pattern loading 需求与 side-effect 描述从
+`tools/control.js` 内的多组 Set 迁移到单一 `tools/control-action-registry.js` 描述表，
+并新增 `tests/control-action-registry.test.js` 锁定 registry 覆盖、加载分类与
+side-effect 分类。handler 执行体未迁移，`execute()` 行为不变。
+
+**现状快照（2026-07-03，`complexity:report` 实测）**：`tools/control.js`
+**533 LOC / 32 imports**。LOC 627→533（−94），已低于 soft target 600，
+因此消除 `tools/control.js` LOC soft warning；imports 31→32（+1），原因是主文件
+新增 registry import，仍在 hard 35 内。soft warnings 5→4，剩余 control 相关
+soft warning 为 imports 偏高，后续若继续治理应优先处理 `status`/audit/export
+聚合依赖，而不是继续迁移小 handler。
+
 ## C-002 — 大型 test 文件
 
 - **Area**: `tests/pattern-detector.test.js` 等

@@ -21,11 +21,11 @@
 | 项目 | 预期 |
 |---|---|
 | `npm run check` | 通过 |
-| `npm test` | 938 个测试，933 通过，5 跳过 |
+| `npm test` | 942 个测试，937 通过，5 跳过 |
 | `npm run benchmark` | 17/17 通过 |
 | `npm run perf` | 无阈值越界 |
 | `npm run release:check` | Score 100 |
 
 ## 未完成项
 
-v5.0.0 当前剩余未完成阶段仅为明确排除的后续阶段：M1 本地 embedding / vector index、M4 Agent 编排、M5 adaptive thresholds。本次发布不进入这些阶段。
+v5.1.4 当前仍未发布完整的 M1 本地 vector index；语义检索、agent task/graph/resume 与 adaptive thresholds 已有可选或受治理约束的实现路径，但默认关闭、只读或 recommendation-only，不改变保守自动化边界。
