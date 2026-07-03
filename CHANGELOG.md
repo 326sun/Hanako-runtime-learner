@@ -2,6 +2,18 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.5 - 2026-07-03（结构收敛维护发布）
+
+> 在已发布的 `5.1.4` 之上完成下一步结构收敛计划 N0-N6：对外文档状态精确化、控制面 action metadata 集中、入口 runtime wiring 聚合、结构性复杂度报告、以及 release zip 真实安装/升级 smoke。
+
+- **能力状态文档精确化（README）**：将“本版本不包含 M1/M4/M5”的粗粒度表述改为能力状态矩阵，明确 local vector index 未完整发布、semantic embeddings 默认关闭、agent orchestration 受治理约束、adaptive thresholds 为 recommendation-only、LLM extraction 只产待审候选。
+- **控制面 action metadata 集中（`tools/control-action-registry.js`）**：把 `tools/control.js` 内多组 action 分类 Set 收敛为单一 registry，统一 side-effect、config/pattern loading 分类；新增 registry 覆盖测试，防止新增 action 忘记更新权限/加载语义。
+- **入口 runtime wiring 聚合（`index.js`）**：抽出 `lib/runtime-live-config.js` 与 `lib/runtime-skill-refresh.js` 两个聚合模块。`index.js` 从 838 LOC / 27 imports 降到 588 LOC / 19 imports，入口 LOC/import 两条 soft warning 消除。
+- **复杂度治理升级（report-only structural warnings）**：`complexity` 新增结构规则警告通道，当前只报告、不阻断 release；覆盖 index runtime wiring 聚合边界与 control action registry 边界。当前 structural warnings 为 0。
+- **真实安装/升级 smoke**：从 GitHub Release 下载 `v5.1.4` zip，SHA256 匹配；本机旧安装 5.0.0 已备份并升级到 5.1.4 release 包，插件 onload/onunload、control status、doctor json、search 空 store smoke 通过。该项验证已发布包，v5.1.5 发布后应复用同流程验证新 asset。
+- **复杂度结果**：soft warnings `5 → 2`；剩余为 `lib module count` 109 > soft 105、`tools/control.js` imports 32 > soft 20。hard violations 0。
+- **测试与发布门**：测试总数 `938` → `943`（`938 passed` / `5 skipped` / `0 failed`）。`npm run build`、`npm run check`、`npm test`、`npm run benchmark`、`npm run perf`、`npm run complexity:check`、`npm run release:check`、`npm audit --audit-level=high` 已通过；release zip SHA256 为 `44A53715E21DE5C0B468AB08FF46B53C2A2F1D424C4DE2778257A117DB7A5884`。
+
 ## 5.1.4 - 2026-07-03（性能护栏 + 简化治理收口）
 
 > 在已发布的 `5.1.3` 之上完成性能计划 P6-P10 与简化计划 S1-S6，收口 C-005
