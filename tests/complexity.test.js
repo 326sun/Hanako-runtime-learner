@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { scanComplexity, analyzeSource } from "../lib/complexity.js";
+import { scanComplexity, analyzeSource, INDEX_BANNED_DIRECT_IMPORTS } from "../lib/complexity.js";
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "complexity-test-"));
 
@@ -102,6 +102,30 @@ describe("complexity scan (simplify-S2 rootFiles)", () => {
       0,
       "modules still owned by a must-remain control.js action must not trip the router rule",
     );
+  });
+});
+
+describe("S3.P3: index_runtime_wiring_aggregators ban list stays in sync with reality", () => {
+  // Foundation modules legitimately imported from many places, including
+  // index.js directly — not owned by either aggregator, so absence from the
+  // ban list is correct, not a gap.
+  const FOUNDATION_MODULES = new Set(["common", "helpers"]);
+
+  it("every lib/ import of runtime-live-config.js and runtime-skill-refresh.js (besides shared foundation modules) has a matching INDEX_BANNED_DIRECT_IMPORTS entry", () => {
+    // node --test (and npm test) always run with cwd at the project root.
+    const repoRoot = process.cwd();
+    const bannedModules = new Set(INDEX_BANNED_DIRECT_IMPORTS.map((item) => item.module));
+    const aggregatorFiles = ["lib/runtime-live-config.js", "lib/runtime-skill-refresh.js"];
+    const missing = [];
+    for (const rel of aggregatorFiles) {
+      const text = fs.readFileSync(path.join(repoRoot, rel), "utf-8");
+      const imports = [...text.matchAll(/from\s+["']\.\/([\w-]+)\.js["']/g)].map((m) => m[1]);
+      for (const mod of imports) {
+        if (FOUNDATION_MODULES.has(mod)) continue;
+        if (!bannedModules.has(mod)) missing.push(`${rel} imports ./${mod}.js, not in INDEX_BANNED_DIRECT_IMPORTS`);
+      }
+    }
+    assert.deepEqual(missing, [], "INDEX_BANNED_DIRECT_IMPORTS has fallen out of sync with the aggregator modules' real imports");
   });
 });
 

@@ -300,3 +300,27 @@ warnings 保持 0。C-001 的"import 聚合专项"deferred 项在此正式解除
   验证：runtime-e2e、live-config、runtime-config、perf-onload、install-smoke 定向测试
   通过；`npm run check`、`npm run build`、`npm test`（942 total / 937 passed / 5 skipped）、
   `npm run release:check`（ready / 100）通过。
+
+  #### S3.P1/P3 追记（subsystem-simplify-v5.1.6，2026-07-03）
+
+  S3.P1 对 17 个具名 onload 阶段逐一核对 timer mark 顺序（11 个 mark，无缺口/乱序）、
+  `rt` 字段归属（三个来源——index.js 自身、`runtime-live-config.js`、
+  `runtime-skill-refresh.js`——写入的 key 互不重叠）、以及两个聚合模块的边界
+  （`runtime-live-config.js` 只 import 配置/凭证/live-config 相关模块，
+  `runtime-skill-refresh.js` 只 import 技能/提案/审核/session-messenger 相关模块，
+  均未越界）。onunload 与 onload `register()` 的"双重清理"确认为宿主生命周期两种
+  不同触发路径的有意冗余（各自 try/catch 包裹，幂等安全），非缺陷。
+
+  S3.P3 核对现有 `index_runtime_wiring_aggregators` 结构规则（`INDEX_BANNED_DIRECT_IMPORTS`）
+  是否覆盖了 `runtime-live-config.js`/`runtime-skill-refresh.js` 实际 import 的每个深层模块：
+  **结果是已经逐一覆盖，零缺口**。因此本轮未新增禁止条目，而是把这一事实**自动化**——
+  `lib/complexity.js` 导出 `INDEX_BANNED_DIRECT_IMPORTS`，`tests/complexity.test.js` 新增
+  一个 drift 检测用例，直接读取两个聚合模块的真实源码、解析其 `./xxx.js` 相对 import，
+  断言除 `common.js`/`helpers.js`（基础设施 facade，index.js 本就可直接 import）外，
+  每一个都在禁止名单里。以后若聚合模块新增深层 import 而忘记同步名单，这个测试会先于
+  `complexity:check` 的 report-only 规则失效前失败，把"规则要手工核对是否过期"变成
+  "规则自己会说过期"。
+
+  `lib/human-interrupt.js` 被计划书 S3 范围误列——实际消费者是 `lib/agent-controller.js`
+  与 `lib/agent-resume.js`（S7 动作/agent 子系统），与 index.js/runtime-live-config/
+  runtime-skill-refresh 均无 import 关系。仅在此记录澄清，未移动该文件（不属本轮改动范围）。
