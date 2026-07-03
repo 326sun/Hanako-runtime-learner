@@ -2,6 +2,14 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.6 - 2026-07-03（文档统计修正发布）
+
+> 在已发布的 `5.1.5` 之上修正测试统计漂移，不移动既有 `v5.1.5` tag，使用 `v5.1.6` 作为干净补丁发布。
+
+- **测试统计修正**：将当前发布文档中的 `943 tests · 938 passed · 5 skipped` 校正为真实本地结果 `943 tests · 943 passed · 0 skipped · 0 failed`。
+- **版本元数据同步**：同步 package.json、package-lock.json、manifest.json、README、设计目标矩阵与验收记录到 `5.1.6`。
+- **发布门**：`npm run build`、`npm run check`、`npm test`、`npm run complexity:check`、`npm run release:check` 通过。
+
 ## 5.1.5 - 2026-07-03（结构收敛维护发布）
 
 > 在已发布的 `5.1.4` 之上完成下一步结构收敛计划 N0-N6：对外文档状态精确化、控制面 action metadata 集中、入口 runtime wiring 聚合、结构性复杂度报告、以及 release zip 真实安装/升级 smoke。

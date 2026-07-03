@@ -1,6 +1,6 @@
 # 设计目标完成矩阵
 
-当前版本：`5.1.5`（在 v5.0 冻结表面上追加默认关闭/只读的实验能力，外加 model advisor 可观测性补强、v5.1.1 全面审计加固、v5.1.3 的 profile 安全闸门修复与设置面板即时生效、v5.1.4 的性能/复杂度治理收口，以及 v5.1.5 的入口/控制面结构收敛）
+当前版本：`5.1.6`（在 v5.0 冻结表面上追加默认关闭/只读的实验能力，外加 model advisor 可观测性补强、v5.1.1 全面审计加固、v5.1.3 的 profile 安全闸门修复与设置面板即时生效、v5.1.4 的性能/复杂度治理收口、v5.1.5 的入口/控制面结构收敛，以及 v5.1.6 的文档统计修正）
 
 ## 总体状态
 
@@ -28,4 +28,4 @@
 
 ## 未完成项
 
-v5.1.5 当前仍未发布完整的 M1 本地 vector index；语义检索、agent task/graph/resume 与 adaptive thresholds 已有可选或受治理约束的实现路径，但默认关闭、只读或 recommendation-only，不改变保守自动化边界。
+v5.1.6 当前仍未发布完整的 M1 本地 vector index；语义检索、agent task/graph/resume 与 adaptive thresholds 已有可选或受治理约束的实现路径，但默认关闭、只读或 recommendation-only，不改变保守自动化边界。
