@@ -12,7 +12,7 @@
 - **复杂度治理升级（report-only structural warnings）**：`complexity` 新增结构规则警告通道，当前只报告、不阻断 release；覆盖 index runtime wiring 聚合边界与 control action registry 边界。当前 structural warnings 为 0。
 - **真实安装/升级 smoke**：从 GitHub Release 下载 `v5.1.4` zip，SHA256 匹配；本机旧安装 5.0.0 已备份并升级到 5.1.4 release 包，插件 onload/onunload、control status、doctor json、search 空 store smoke 通过。该项验证已发布包，v5.1.5 发布后应复用同流程验证新 asset。
 - **复杂度结果**：soft warnings `5 → 2`；剩余为 `lib module count` 109 > soft 105、`tools/control.js` imports 32 > soft 20。hard violations 0。
-- **测试与发布门**：测试总数 `938` → `943`（`938 passed` / `5 skipped` / `0 failed`）。`npm run build`、`npm run check`、`npm test`、`npm run benchmark`、`npm run perf`、`npm run complexity:check`、`npm run release:check`、`npm audit --audit-level=high` 已通过；release zip SHA256 为 `44A53715E21DE5C0B468AB08FF46B53C2A2F1D424C4DE2778257A117DB7A5884`。
+- **测试与发布门**：测试总数 `938` → `943`（`943 passed` / `0 skipped` / `0 failed`）。`npm run build`、`npm run check`、`npm test`、`npm run benchmark`、`npm run perf`、`npm run complexity:check`、`npm run release:check`、`npm audit --audit-level=high` 已通过；release zip SHA256 为 `44A53715E21DE5C0B468AB08FF46B53C2A2F1D424C4DE2778257A117DB7A5884`。
 
 ## 5.1.4 - 2026-07-03（性能护栏 + 简化治理收口）
 

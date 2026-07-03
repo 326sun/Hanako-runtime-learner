@@ -35,7 +35,7 @@
 |---|---|
 | `npm run build` | passed（dist 13 files / release zip generated） |
 | `npm run check` | passed |
-| `npm test` | 943 tests · 938 passed · 5 skipped · 0 failed |
+| `npm test` | 943 tests · 943 passed · 0 skipped · 0 failed |
 | `npm run benchmark` | passed（17/17 scenarios） |
 | `npm run perf` | passed（all metrics within thresholds） |
 | `npm run complexity:check` | passed（2 soft warnings / 0 structural warnings / 0 hard violations） |

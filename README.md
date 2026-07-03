@@ -244,7 +244,7 @@ npm run release:check
 ```text
 package version: 5.1.5
 npm run check: passed
-npm test: 943 tests, 938 passed, 5 skipped
+npm test: 943 tests, 943 passed, 0 skipped
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100
