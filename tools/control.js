@@ -14,21 +14,20 @@ import { runDoctorFromDisk, formatReport } from "./doctor.js";
 import { generateMemFS } from "../lib/memfs.js";
 import { applyPolicyProfile } from "../lib/policy-profiles.js";
 import { extractAndSaveCredentials, mergeCredentials, sanitizeCredentialPatch } from "../lib/credentials.js";
-import { listAgentTaskStates } from "../lib/agent-task-store.js";
-import { loadActiveSkills, loadSkillCandidates, runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
+import { runSkillPromotionLoop } from "../lib/skill-promotion-loop.js";
 import { projectScriptsFingerprint } from "../lib/project-script-trust.js";
 import { exportReleaseReadiness, formatReleaseReadinessReport } from "../lib/release-readiness.js";
 import { resolveProjectRoot } from "../lib/project-root.js";
 import { normalizeSessionTarget } from "../lib/helpers.js";
 import { toolPaths, readPluginVersion } from "./_shared.js";
-import { loadRuntimeSnapshot } from "./runtime-snapshot.js";
-import { countByStatus, summarizeDecoratedPatterns, countWaitingAgentTasks, validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
+import { validationNextAction, reviewPanelNextActions } from "./control-summaries.js";
 import { CONTROL_PARAM_PROPERTIES } from "./control-parameters.js";
+import { statusHandlers } from "./control-handlers/status.js";
 import { skillPolicyHandlers } from "./control-handlers/skill-policy.js";
 import { eventHandlers } from "./control-handlers/events.js";
 import { agentTaskHandlers } from "./control-handlers/agent-tasks.js";
 import { auditHandlers } from "./control-handlers/audit.js";
-import { countTransferCandidatesByStatus, transferHandlers } from "./control-handlers/transfer.js";
+import { transferHandlers } from "./control-handlers/transfer.js";
 import { controlNeedsConfig, controlNeedsPatterns, describeControlSideEffect } from "./control-action-registry.js";
 
 const MAX_SKILL_HISTORY = 20;
@@ -58,41 +57,8 @@ function redactConfig(config = {}) {
 
 
 const HANDLERS = {
-  status(input, p, config, patterns, ctx) {
-    const snapshot = loadRuntimeSnapshot(ctx, {
-      includeDecorated: true,
-      includeProposals: true,
-      includeReviews: true,
-      proposalLimit: 0,
-      reviewLimit: 0,
-    });
-    const statusConfig = snapshot.config;
-    const patternSummary = summarizeDecoratedPatterns(snapshot.decoratedPatterns);
-    let history = [];
-    try { history = fs.readdirSync(p.historyDir).filter((n) => n.endsWith("-SKILL.md")).sort(); } catch {}
-    const proposalCounts = countByStatus(snapshot.proposals);
-    const reviewCounts = countByStatus(snapshot.reviews);
-    const agentTasks = listAgentTaskStates(p.learnerDir, { limit: 1000 });
-    const transferCounts = countTransferCandidatesByStatus(p.learnerDir, { limit: 1000 });
-    return JSON.stringify({
-      config: redactConfig(statusConfig),
-      patterns: patternSummary.total,
-      injectable: patternSummary.injectable,
-      pending: patternSummary.pending,
-      approved: patternSummary.approved,
-      rejected: patternSummary.rejected,
-      historySnapshots: history.length,
-      proposals: { pending: proposalCounts.pending || 0, applied: proposalCounts.applied || 0, rejected: proposalCounts.rejected || 0, dir: p.proposalsDir },
-      reviews: { queued: reviewCounts.queued || 0, blocked: reviewCounts.blocked || 0, approved: reviewCounts.approved || 0 },
-      agentTasks: { total: agentTasks.length, waiting: countWaitingAgentTasks(agentTasks) },
-      transferCandidates: {
-        total: Object.values(transferCounts).reduce((s, n) => s + n, 0),
-        pending: transferCounts.transferred_candidate || 0, validated: transferCounts.validated || 0, failed: transferCounts.validation_failed || 0,
-      },
-      skillPromotion: { candidates: loadSkillCandidates(p.learnerDir).candidates.length, active: loadActiveSkills(p.learnerDir).skills.length },
-      dataDir: p.learnerDir,
-    }, null, 2);
-  },
+  // Status read-model handler lives in control-handlers/status.js (S2.P2a split).
+  ...statusHandlers,
 
   // Read-only diagnostic (M5b): surface the local feedback signal tallies.
   // Pure read — no file writes, no thresholds, no adaptive suggestions, and
