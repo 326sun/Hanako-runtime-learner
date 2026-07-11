@@ -41,4 +41,23 @@ describe("hana-runtime-compat", () => {
     assert.deepEqual(staged, [{ filePath: "/tmp/report.md", label: "report.md" }]);
     assert.deepEqual(await requestBus(ctx, "task:test", { ok: true }), { name: "task:test", payload: { ok: true } });
   });
+
+  it("preserves the v0.374.3 execution-boundary and capability context fields", async () => {
+    const executionBoundary = { kind: "local", trusted: true };
+    const fetch = async () => new Response("ok");
+    const ctx = normalizeRuntimeContext({
+      pluginId: "hanako-runtime-learner",
+      dataDir: "/data",
+      executionBoundary,
+      capabilities: ["usage.read"],
+      sensitiveCapabilities: ["usage.read"],
+      network: { fetch },
+    });
+
+    assert.equal(ctx.executionBoundary, executionBoundary);
+    assert.deepEqual(ctx.capabilities, ["usage.read"]);
+    assert.deepEqual(ctx.sensitiveCapabilities, ["usage.read"]);
+    assert.equal(typeof ctx.network.fetch, "function");
+    assert.equal(await (await ctx.network.fetch()).text(), "ok");
+  });
 });

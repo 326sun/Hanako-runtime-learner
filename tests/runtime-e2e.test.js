@@ -131,6 +131,32 @@ describe("runtime E2E with fake Hanako EventBus", () => {
     await plugin.onunload();
   });
 
+  it("cancels deferred startup work when unloaded before the next event-loop turn", async () => {
+    await resetDisk();
+    const bus = new FakeEventBus();
+    bus.listCapabilities = () => [{ type: "usage:list", available: false }];
+    const ctx = createFakeRuntimeContext({ pluginDir, bus });
+    const plugin = new RuntimePlugin();
+    plugin.ctx = ctx;
+
+    await plugin.onload();
+    await plugin.onunload();
+    await wait();
+
+    assert.equal(fs.existsSync(path.join(dataDir, "host_capabilities.json")), false);
+  });
+
+  it("rejects onload when a fatal initialization error occurs", async () => {
+    const badDataDir = path.join(tempRoot, "not-a-directory");
+    fs.writeFileSync(badDataDir, "not a directory", "utf-8");
+    const ctx = createFakeRuntimeContext({ pluginDir, dataDir: badDataDir });
+    const plugin = new RuntimePlugin();
+    plugin.ctx = ctx;
+
+    await assert.rejects(() => plugin.onload(), /EEXIST|ENOTDIR/);
+    assert.ok(ctx.logs.some((entry) => entry.level === "error" && entry.message.includes("onload failed")));
+  });
+
   it("defers startup extraction until after onload resolves", async () => {
     await resetDisk({
       ...DEFAULT_CONFIG,

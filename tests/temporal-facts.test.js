@@ -75,6 +75,12 @@ describe("facts · gate integration", () => {
     assert.equal(admitMemory(active, { scope: { project: "hanako" } }).admitted, true);
     assert.equal(admitMemory(superseded, { scope: { project: "hanako" } }).admitted, false);
   });
+
+  it("rejects a fact until validFrom is reached", () => {
+    const future = factToMemoryItem(makeFact({ subject: "release", predicate: "version", object: "future", validFrom: "2999-01-01T00:00:00.000Z" }, { now: NOW }));
+    const result = runSearch([future], "release version", { limit: 5 });
+    assert.equal(result.results.length, 0);
+  });
 });
 
 describe("facts · recordFact + retrieval (superseded never resurfaces)", () => {
@@ -85,7 +91,7 @@ describe("facts · recordFact + retrieval (superseded never resurfaces)", () => 
     assert.equal(r2.superseded.length, 1);
 
     const items = factMemoryItems(dir);
-    const results = runSearch(items, "model module", { limit: 5 }).results;
+    const results = runSearch(items, "model module", { project: "yolo", limit: 5 }).results;
     const objs = results.map((r) => r.desc);
     assert.ok(objs.some((d) => d.includes("CBAM")), "active fact present");
     assert.ok(!objs.some((d) => d.includes("LSCD")), "superseded fact absent");

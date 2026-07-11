@@ -11,7 +11,7 @@
 
 import fs from "fs";
 import path from "path";
-import { learnerDir, readJson, writeJson, cleanupTempFiles } from "./lib/common.js";
+import { learnerDir, readJson, writeJson, updateJsonLocked, cleanupTempFiles } from "./lib/common.js";
 import { definePlugin } from "./lib/hana-runtime-compat.js";
 import { createAdvisorRunner } from "./lib/model-advisor.js";
 import { createExtractionRunner } from "./lib/llm-extraction-worker.js";
@@ -72,6 +72,8 @@ const runtimeState = {
   sessionStart: null,
   sessionActivityCount: 0,
   pendingAdoptionChecks: new Map(),
+  lifecycle: null,
+  shutdownBackground: null,
 };
 
 
@@ -92,13 +94,18 @@ function createRuntimeLoggers(paths) {
     logActivity: (event) => activity.log(event),
     pruneDataFiles: createJsonlRetentionPruner(
       [paths.EXPERIENCE_LOG, paths.TURNS_FILE, paths.EPISODES_FILE, paths.ERROR_LOG, paths.ACTIVITY_LOG],
-      { retentionDays: LOG_RETENTION_DAYS }
+      {
+        retentionDays: LOG_RETENTION_DAYS,
+        eventLogArchive: { baseDir: paths.DATA_DIR },
+      }
     ),
   };
 }
 
-function scheduleAfterOnload(ctx, label, fn, onloadTimer = null) {
+function scheduleAfterOnload(ctx, label, fn, onloadTimer = null, lifecycle = null, registerDispose = null) {
   const timer = setTimeout(() => {
+    lifecycle?.timers?.delete(timer);
+    if (lifecycle && lifecycle.active !== true) return;
     try {
       Promise.resolve(fn()).catch((err) => {
         ctx.log.warn(`runtime-learner: ${label} skipped: ${err?.message || err}`);
@@ -109,15 +116,22 @@ function scheduleAfterOnload(ctx, label, fn, onloadTimer = null) {
       ctx.log.warn(`runtime-learner: ${label} skipped: ${err?.message || err}`);
     }
   }, 0);
+  lifecycle?.timers?.add(timer);
+  if (typeof registerDispose === "function") {
+    registerDispose(() => {
+      lifecycle?.timers?.delete(timer);
+      clearTimeout(timer);
+    });
+  }
   timer.unref?.();
   return timer;
 }
 
-function scheduleCapabilitySnapshot(ctx, capabilitiesFile, onloadTimer = null) {
+function scheduleCapabilitySnapshot(ctx, capabilitiesFile, onloadTimer = null, lifecycle = null, registerDispose = null) {
   return scheduleAfterOnload(ctx, "capability_snapshot", () => {
     const capabilities = snapshotHostCapabilities(ctx);
     writeJson(capabilitiesFile, capabilities);
-  }, onloadTimer);
+  }, onloadTimer, lifecycle, registerDispose);
 }
 
 // patterns.json retention is intentionally NOT handled here. It used to read
@@ -170,18 +184,21 @@ function initDetectorState(ctx, rt) {
 /** One-time migration: mark legacy preferences as durable knowledge. */
 function migrateLegacyPreferences(ctx, rt) {
   try {
-    const patterns = readJson(rt.paths.PATTERNS_FILE, []);
+    // Do not create an empty patterns file during startup merely to inspect it:
+    // that would turn a no-op onload into a persistence write.
+    if (!fs.existsSync(rt.paths.PATTERNS_FILE)) return;
     let migrated = 0;
-    for (const p of patterns) {
-      if (p.type === "preference" && !p.knowledgeTier) {
-        p.knowledgeTier = "durable";
-        migrated += 1;
-      }
-    }
-    if (migrated > 0) {
-      writeJson(rt.paths.PATTERNS_FILE, patterns);
-      ctx.log.info(`runtime-learner: migrated ${migrated} preferences to durable tier`);
-    }
+    updateJsonLocked(rt.paths.PATTERNS_FILE, [], (patterns) => {
+      const next = Array.isArray(patterns) ? patterns.map((p) => {
+        if (p?.type === "preference" && !p.knowledgeTier) {
+          migrated += 1;
+          return { ...p, knowledgeTier: "durable" };
+        }
+        return p;
+      }) : [];
+      return next;
+    }, { lockName: "patterns-state" });
+    if (migrated > 0) ctx.log.info(`runtime-learner: migrated ${migrated} preferences to durable tier`);
   } catch {}
 }
 
@@ -241,14 +258,38 @@ function initSessionsAndPersistence(ctx, rt) {
   };
 
   const persistPatternsNow = () => {
-    syncDiskStatus();
     let currentMtime = 0;
     try { currentMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
     if (!detector.isDirty?.() && currentMtime === _patternsMtime) return false;
-    const changed = writeJson(PATTERNS_FILE, [...detector.patterns.values()].map(p => ({ ...p })));
+
+    // Hold the lock across the fresh disk read, reconciliation, and atomic
+    // rename. Atomic rename alone only prevents torn files; without this
+    // critical section a control action and runtime flush can both succeed yet
+    // the later whole-file snapshot erases the former's change.
+    const result = updateJsonLocked(PATTERNS_FILE, [], (disk) => {
+      const merged = new Map(detector.patterns);
+      let reconciled = false;
+      for (const p of (Array.isArray(disk) ? disk : [])) {
+        if (!p?.id) continue;
+        const stored = merged.get(p.id);
+        if (!stored) {
+          merged.set(p.id, { ...p });
+          reconciled = true;
+        } else if (absorbDiskPatternState(stored, p)) {
+          reconciled = true;
+        }
+      }
+      // restore rebuilds detector indexes; re-dirty because this reconciliation
+      // is followed by the write that commits the merged successor.
+      if (reconciled) {
+        detector.restore([...merged.values()]);
+        detector.invalidate();
+      }
+      return [...detector.patterns.values()].map((p) => ({ ...p }));
+    }, { lockName: "patterns-state" });
     try { _patternsMtime = fs.statSync(PATTERNS_FILE).mtimeMs; } catch {}
     detector.markClean?.();
-    return changed;
+    return result.changed;
   };
 
   // Debounced persist: coalesce the many flush/usage writes in a busy session
@@ -378,6 +419,8 @@ async function setupBackground(ctx, rt) {
     backgroundTasks = { ok: false, useLegacyPath: true };
   }
   rt.useScheduledBackground = backgroundTasks.ok && backgroundTasks.useLegacyPath === false;
+  rt.shutdownBackground = backgroundTasks.shutdown || null;
+  runtimeState.shutdownBackground = rt.shutdownBackground;
   rt.timer.mark("background_setup");
 }
 
@@ -516,8 +559,8 @@ function runInitialRefresh(ctx, rt) {
     if (!rt.useScheduledBackground) rt.pruneDataFiles().catch(() => {});
     rt.refreshSkill(true, null, allPatterns);
     if (!rt.useScheduledBackground) {
-      scheduleAfterOnload(ctx, "startup_advisor", () => rt.advisorRunner.maybeRun("startup", null, allPatterns), rt.timer);
-      scheduleAfterOnload(ctx, "startup_extraction", () => rt.extractionRunner.maybeRun("startup", null, allPatterns), rt.timer);
+      scheduleAfterOnload(ctx, "startup_advisor", () => rt.advisorRunner.maybeRun("startup", null, allPatterns), rt.timer, rt.lifecycle, rt.register);
+      scheduleAfterOnload(ctx, "startup_extraction", () => rt.extractionRunner.maybeRun("startup", null, allPatterns), rt.timer, rt.lifecycle, rt.register);
     }
   } catch (err) {
     ctx.log.warn(`runtime-learner: initial refresh failed: ${err.message}`);
@@ -529,8 +572,11 @@ function runInitialRefresh(ctx, rt) {
 
 export default definePlugin({
   async onload(ctx, { register }) {
+    const lifecycle = { active: true, timers: new Set() };
+    runtimeState.lifecycle = lifecycle;
+    register?.(() => { lifecycle.active = false; });
     try {
-      const rt = { register, timer: createOnloadTimer(ctx) };
+      const rt = { register, lifecycle, timer: createOnloadTimer(ctx) };
       initPathsAndDirs(ctx, rt);
       loadRuntimeConfig(ctx, rt);
       bridgePanelConfig(ctx, rt);
@@ -545,7 +591,7 @@ export default definePlugin({
       });
       createModelRunners(ctx, rt);
       restorePatternsFromDisk(ctx, rt);
-      scheduleCapabilitySnapshot(ctx, rt.paths.CAPABILITIES_FILE, rt.timer);
+      scheduleCapabilitySnapshot(ctx, rt.paths.CAPABILITIES_FILE, rt.timer, lifecycle, register);
       rt.timer.mark("capability_snapshot_scheduled");
       createAutoApprove(ctx, rt);
       await setupBackground(ctx, rt);
@@ -557,17 +603,31 @@ export default definePlugin({
       ctx.log.info("runtime-learner: started three-layer self-learning runtime");
       rt.timer.mark("complete");
     } catch (err) {
+      lifecycle.active = false;
+      for (const timer of lifecycle.timers) clearTimeout(timer);
+      lifecycle.timers.clear();
       try { ctx.log.error(`runtime-learner: onload failed: ${err.message}`); } catch {}
+      throw err;
     }
   },
 
   async onunload(ctx = {}) {
+    if (runtimeState.lifecycle) {
+      runtimeState.lifecycle.active = false;
+      for (const timer of runtimeState.lifecycle.timers || []) clearTimeout(timer);
+      runtimeState.lifecycle.timers?.clear?.();
+    }
     const logActivity = runtimeState.logActivity || createRuntimeLoggers(createRuntimePaths(ctx.dataDir)).logActivity;
     logActivity({
       type: "session_end",
       summary: `Self-learning session ended. ${runtimeState.sessionActivityCount} activities this session. ${runtimeState.detector?.all()?.length || 0} total patterns.`,
     });
     const safeCall = (fn) => { try { fn(); } catch {} };
+    // Cancellation is best-effort by host contract. Await the bounded drain so
+    // no late task result is accepted by this plugin after unload returns.
+    if (runtimeState.shutdownBackground) {
+      try { await runtimeState.shutdownBackground(); } catch {}
+    }
     if (runtimeState.unsub) safeCall(runtimeState.unsub);
     if (runtimeState.persistSeenIds) safeCall(runtimeState.persistSeenIds);
     if (runtimeState.persistPatterns) safeCall(runtimeState.persistPatterns);
@@ -583,5 +643,7 @@ export default definePlugin({
     runtimeState.pendingAdoptionChecks.clear();
     runtimeState.proposalNotifiedIds.clear();
     runtimeState.logActivity = null;
+    runtimeState.lifecycle = null;
+    runtimeState.shutdownBackground = null;
   },
 });

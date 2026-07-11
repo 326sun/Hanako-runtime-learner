@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
 import test from "node:test";
-import { REQUIRED_TOOL_FILES } from "../lib/dist-verify.js";
+import { REQUIRED_DIST_FILES, REQUIRED_TOOL_FILES } from "../lib/dist-verify.js";
+import { computeSourceFingerprint } from "../lib/source-fingerprint.js";
 import { buildReleaseReadiness, exportReleaseReadiness, formatReleaseReadinessReport, REQUIRED_RELEASE_DOCS } from "../lib/release-readiness.js";
 
 function writeZipEntryNames(filePath, entryNames = []) {
@@ -43,7 +45,7 @@ function write(filePath, content) {
   fs.writeFileSync(filePath, content, "utf-8");
 }
 
-function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 950, zipEntries = ["index.js", "manifest.json", ...REQUIRED_TOOL_FILES] } = {}) {
+function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16, omitAcceptance = false, testCount = 953, zipEntries = [...REQUIRED_DIST_FILES, ...REQUIRED_TOOL_FILES] } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "hanako-release-readiness-"));
   const baseVersion = version.replace(/-lts$/, "");
   write(path.join(root, "package.json"), JSON.stringify({ name: "hanako-runtime-learner", version }, null, 2));
@@ -65,19 +67,34 @@ function makeProject({ version = "5.0.0", lockVersion = version, scenarios = 16,
   if (!omitAcceptance) write(path.join(root, `docs/ACCEPTANCE-v${version.replace(/-lts$/i, "-LTS")}.md`), "# 验收报告\n\nok\n");
   write(path.join(root, "benchmarks", "baseline-v4.0.9.json"), JSON.stringify({ metrics: { task_success_rate: 1 } }, null, 2));
   write(path.join(root, "benchmarks", "thresholds.json"), JSON.stringify({ thresholds: {} }, null, 2));
-  for (const rel of ["index.js", "manifest.json", "README.md", "LICENSE", "plugin-process-runner-child.js", ...REQUIRED_TOOL_FILES]) {
+  for (const rel of [...REQUIRED_DIST_FILES, ...REQUIRED_TOOL_FILES]) {
     write(path.join(root, "dist", rel), rel.endsWith(".js") ? "export default {};\n" : "ok\n");
   }
-  writeZipEntryNames(path.join(root, "release", "hanako-runtime-learner-dist.zip"), zipEntries);
+  const zipPath = path.join(root, "release", "hanako-runtime-learner-dist.zip");
+  writeZipEntryNames(zipPath, zipEntries);
+  const zipHash = crypto.createHash("sha256").update(fs.readFileSync(zipPath)).digest("hex");
+  write(`${zipPath}.sha256`, `${zipHash}  hanako-runtime-learner-dist.zip\n`);
   for (let i = 0; i < scenarios; i += 1) {
     write(path.join(root, "benchmarks", "scenarios", "quality", `scenario-${i}.json`), JSON.stringify({ id: `quality.scenario_${i}`, title: `Scenario ${i}`, steps: [{ type: "note", note: "ok" }] }, null, 2));
   }
+  write(path.join(root, "benchmark-results", "test-results.json"), JSON.stringify({
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    sourceFingerprint: computeSourceFingerprint(root),
+    tests: testCount,
+    pass: testCount,
+    fail: 0,
+    skipped: 0,
+    cancelled: 0,
+    todo: 0,
+    exitCode: 0,
+  }, null, 2));
   return root;
 }
 
 test("release readiness passes when v5 release contract is coherent", () => {
   const root = makeProject();
-  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true });
+  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true, requireTestEvidence: true });
   assert.equal(result.summary.status, "ready");
   assert.equal(result.summary.ok, true);
   assert.equal(result.summary.failed, 0);
@@ -94,8 +111,17 @@ test("release readiness blocks mismatched lockfile and missing acceptance report
 
 test("release readiness blocks a release zip that nests the plugin under dist", () => {
   const root = makeProject({ zipEntries: ["dist/index.js", "dist/manifest.json", ...REQUIRED_TOOL_FILES.map((file) => `dist/${file}`)] });
-  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true });
+  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true, requireTestEvidence: true });
   assert.equal(result.summary.status, "blocked");
+  assert(result.summary.failedChecks.includes("dist.package_verified"));
+});
+
+test("release readiness blocks stale test evidence and a mismatched ZIP digest", () => {
+  const root = makeProject();
+  write(path.join(root, "README.md"), `${fs.readFileSync(path.join(root, "README.md"), "utf-8")}\nchanged after tests\n`);
+  write(path.join(root, "release", "hanako-runtime-learner-dist.zip.sha256"), `${"0".repeat(64)}  hanako-runtime-learner-dist.zip\n`);
+  const result = buildReleaseReadiness(root, { minBenchmarkScenarios: 16, requireDistPackage: true, requireTestEvidence: true });
+  assert(result.summary.failedChecks.includes("tests.current_source_passed"));
   assert(result.summary.failedChecks.includes("dist.package_verified"));
 });
 

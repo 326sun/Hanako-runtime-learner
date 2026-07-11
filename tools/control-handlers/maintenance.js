@@ -55,7 +55,7 @@ export const maintenanceHandlers = {
       const failures = validation.checks.filter((c) => c.status === "fail").map((c) => c.name).join(", ");
       throw new Error(`config validation failed: ${failures}`);
     }
-    extractAndSaveCredentials(patch);
+    extractAndSaveCredentials(patch, { dataDir: p.learnerDir });
     const next = mergeConfig(config, sanitisedPatch);
     writeJson(p.configPath, next);
     regenerateSkill(p, patterns, next);

@@ -10,7 +10,11 @@ import {
   isActionableCodePatchPattern,
   listProposals,
   proposalPath,
+  proposalContentHash,
+  readProposal,
+  rejectProposal,
   verifyProposal,
+  writeProposal,
 } from "../lib/proposals.js";
 
 const tmpDir = path.join(os.tmpdir(), "learner-proposals-test-" + Date.now());
@@ -38,6 +42,71 @@ describe("proposal engine", () => {
     assert.equal(applied.status, "applied");
     assert.equal(fs.readFileSync(skillPath, "utf-8"), content);
     assert.equal(listProposals(tmpDir, { status: "applied" }).length, 1);
+  });
+
+  it("treats an already-applied proposal as idempotent", () => {
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath, content: "# Runtime Self-Learning\n\nonce\n" });
+    const first = applyProposal(tmpDir, proposal.id);
+    const second = applyProposal(tmpDir, proposal.id);
+
+    assert.deepEqual(second, first);
+    assert.deepEqual(fs.readdirSync(path.dirname(skillPath)).filter((name) => name.endsWith(".bak")), []);
+  });
+
+  it("does not allow an applied proposal to become rejected", () => {
+    const skillPath = path.join(tmpDir, "plugin", "skills", "self-learning", "SKILL.md");
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath, content: "# Runtime Self-Learning\n\nterminal\n" });
+    applyProposal(tmpDir, proposal.id);
+    assert.throws(() => rejectProposal(tmpDir, proposal.id, "late rejection"), /already applied/);
+  });
+
+  it("recovers an interrupted applying skill proposal by converging its target and governance record", () => {
+    const skillPath = path.join(tmpDir, "recover", "SKILL.md");
+    const content = "# Runtime Self-Learning\n\nRecovered content.\n";
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath, content });
+    // Model a crash after the target's atomic replacement but before proposal
+    // metadata can be finalized. The next apply call must not write a second
+    // time or reopen the already-realized side effect.
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+    fs.writeFileSync(skillPath, content, "utf-8");
+    fs.writeFileSync(proposalPath(tmpDir, proposal.id), JSON.stringify({ ...proposal, status: "applying" }, null, 2), "utf-8");
+
+    const recovered = applyProposal(tmpDir, proposal.id);
+    assert.equal(recovered.status, "applied");
+    assert.equal(fs.readFileSync(skillPath, "utf-8"), content);
+  });
+
+  it("keeps proposal ids distinct even when their readable slugs collide", () => {
+    writeProposal(tmpDir, { id: "a:b", type: "code_patch", title: "colon" });
+    writeProposal(tmpDir, { id: "a/b", type: "code_patch", title: "slash" });
+    assert.equal(listProposals(tmpDir).length, 2);
+    assert.equal(readProposal(tmpDir, "a:b").title, "colon");
+    assert.equal(readProposal(tmpDir, "a/b").title, "slash");
+  });
+
+  it("binds nested status and result fields into the reviewed content hash", () => {
+    const proposal = {
+      id: "action:nested",
+      type: "action_plan",
+      status: "pending",
+      plan: { steps: [{ action: "verify", status: "pending", result: { ok: false } }] },
+    };
+    const changed = structuredClone(proposal);
+    changed.plan.steps[0].status = "completed";
+    changed.plan.steps[0].result.ok = true;
+    assert.notEqual(proposalContentHash(changed), proposalContentHash(proposal));
+  });
+
+  it("does not bind top-level crash-recovery metadata into reviewed content", () => {
+    const proposal = { id: "skill:recovery", type: "skill_patch", patch: { content: "same" } };
+    const applying = {
+      ...proposal,
+      status: "applying",
+      applicationStartedAt: new Date().toISOString(),
+      recovery: { action: "reopened", at: new Date().toISOString() },
+    };
+    assert.equal(proposalContentHash(applying), proposalContentHash(proposal));
   });
 
   it("rejects skill patches whose target is not a SKILL.md file", () => {
@@ -90,6 +159,28 @@ describe("proposal engine", () => {
     assert.equal(isActionableCodePatchPattern({ id: "error:file_not_found", type: "error", count: 3 }), true);
     assert.equal(isActionableCodePatchPattern({ id: "usage:failed_request:openai_chat", type: "usage", count: 3 }), false);
     assert.equal(isActionableCodePatchPattern({ id: "usage:large_context:pixel_api_gpt-5.5", type: "usage", count: 3 }), false);
+  });
+
+  it("keeps a rejected stable proposal terminal after its proposal file is pruned", () => {
+    const pattern = {
+      id: "error:permission_denied",
+      type: "error",
+      count: 3,
+      desc: "Repeated error: permission_denied",
+      fix: "Check write permissions.",
+    };
+    const rejected = buildCodePatchProposal({ learnerDir: tmpDir, pattern });
+    rejectProposal(tmpDir, rejected.id, "duplicate");
+
+    // Simulate resolved-proposal retention pruning. Review records are the
+    // durable tombstones and must prevent the same stable id from reopening.
+    fs.rmSync(proposalPath(tmpDir, rejected.id));
+    const regenerated = buildCodePatchProposal({ learnerDir: tmpDir, pattern });
+
+    assert.equal(regenerated.status, "rejected");
+    assert.equal(regenerated.rejectionReason, "duplicate");
+    assert.equal(fs.existsSync(proposalPath(tmpDir, rejected.id)), false);
+    assert.equal(listProposals(tmpDir, { status: "pending" }).length, 0);
   });
 
   it("caps resolved proposals but always keeps pending ones", () => {

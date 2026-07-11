@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { readJson, writeJson, loadLearnerConfig, decoratePatterns } from "../lib/common.js";
+import { readJson, writeJson, updateJsonLocked, loadLearnerConfig, decoratePatterns } from "../lib/common.js";
 import { runModelAdvisor } from "../lib/model-advisor.js";
 import { mergeAdvisorSuggestions } from "../lib/advisor-insights.js";
 import { appendEvent } from "../lib/event-log.js";
@@ -43,33 +43,45 @@ const HANDLERS = {
     })), null, 2);
   },
 
-  approve(input, p, config, patterns) {
+  approve(input, p, config) {
     const id = input.id || input.proposalId;
     if (!id) throw new Error("id is required for approve");
-    let idx = patterns.findIndex((pat) => pat.id === id);
-    if (idx === -1) throw new Error(`pattern not found: ${id}`);
-    patterns[idx] = { ...patterns[idx], status: "approved", reviewedAt: new Date().toISOString() };
-    writeJson(p.patternsPath, patterns);
-    appendEvent(p.learnerDir, { type: "pattern.approved", entityType: "pattern", entityId: id, summary: `Approved pattern: ${patterns[idx].desc}` });
-    regenerateSkill(p, patterns, config);
+    let approved = null;
+    const { value: next } = updateJsonLocked(p.patternsPath, [], (patterns) => {
+      const rows = Array.isArray(patterns) ? patterns : [];
+      const idx = rows.findIndex((pat) => pat.id === id);
+      if (idx === -1) throw new Error(`pattern not found: ${id}`);
+      approved = { ...rows[idx], status: "approved", reviewedAt: new Date().toISOString() };
+      const updated = [...rows];
+      updated[idx] = approved;
+      return updated;
+    }, { lockName: "patterns-state" });
+    appendEvent(p.learnerDir, { type: "pattern.approved", entityType: "pattern", entityId: id, summary: `Approved pattern: ${approved.desc}` });
+    regenerateSkill(p, next, config);
     return JSON.stringify({ ok: true, id, status: "approved" }, null, 2);
   },
 
-  reject(input, p, config, patterns) {
+  reject(input, p, config) {
     const id = input.id || input.proposalId;
     if (!id) throw new Error("id is required for reject");
-    let idx = patterns.findIndex((pat) => pat.id === id);
-    if (idx === -1) throw new Error(`pattern not found: ${id}`);
-    patterns[idx] = { ...patterns[idx], status: "rejected", reviewedAt: new Date().toISOString() };
-    writeJson(p.patternsPath, patterns);
-    appendEvent(p.learnerDir, { type: "pattern.rejected", entityType: "pattern", entityId: id, summary: `Rejected pattern: ${patterns[idx].desc}` });
+    let rejected = null;
+    const { value: next } = updateJsonLocked(p.patternsPath, [], (patterns) => {
+      const rows = Array.isArray(patterns) ? patterns : [];
+      const idx = rows.findIndex((pat) => pat.id === id);
+      if (idx === -1) throw new Error(`pattern not found: ${id}`);
+      rejected = { ...rows[idx], status: "rejected", reviewedAt: new Date().toISOString() };
+      const updated = [...rows];
+      updated[idx] = rejected;
+      return updated;
+    }, { lockName: "patterns-state" });
+    appendEvent(p.learnerDir, { type: "pattern.rejected", entityType: "pattern", entityId: id, summary: `Rejected pattern: ${rejected.desc}` });
     // Feedback signals (M5, instrumentation only, fail-soft): the user closed a
     // memory; if it had been injected, its injection is now revoked.
     if (config.feedbackSignalsEnabled !== false) {
       recordMemoryClosed(p.learnerDir, { patternId: id, actor: "user", reason: "rejected" });
       if (wasRecentlyInjected(p.learnerDir, id)) recordInjectionRevoked(p.learnerDir, { patternId: id, reason: "rejected" });
     }
-    regenerateSkill(p, patterns, config);
+    regenerateSkill(p, next, config);
     return JSON.stringify({ ok: true, id, status: "rejected" }, null, 2);
   },
 
@@ -80,13 +92,21 @@ const HANDLERS = {
     // placeholder as a bearer token and 401. Scoped to this handler so the
     // decrypted secret never reaches handlers that persist config (set_config,
     // set_policy_profile) and leak it back to disk in plaintext.
-    const advisorConfig = mergeCredentials(config);
+    const advisorConfig = mergeCredentials(config, { dataDir: p.learnerDir });
     const result = await runModelAdvisor({ config: advisorConfig, patterns, usage: readJson(p.usageSummaryPath, null), capabilities: readJson(p.capabilitiesPath, null), reason: "manual", ctx, dataDir: p.learnerDir });
     if (!result.ok) return JSON.stringify({ ok: false, error: result.reason || "advisor skipped" }, null, 2);
-    const { merged } = mergeAdvisorSuggestions(new Map(patterns.map((pat) => [pat.id, pat])), result.advice);
-    if (merged > 0) writeJson(p.patternsPath, patterns);
+    let merged = 0;
+    let currentPatterns = patterns;
+    if (result.advice?.suggestions?.length) {
+      const committed = updateJsonLocked(p.patternsPath, [], (diskPatterns) => {
+        const rows = Array.isArray(diskPatterns) ? diskPatterns : [];
+        merged = mergeAdvisorSuggestions(new Map(rows.map((pat) => [pat.id, pat])), result.advice).merged;
+        return rows;
+      }, { lockName: "patterns-state" });
+      currentPatterns = committed.value;
+    }
     appendEvent(p.learnerDir, { type: "model_advisor.ran", entityType: "advisor", entityId: "manual", summary: `Manual advisor run: ${result.advice?.suggestions?.length || 0} suggestions, ${merged} merged` });
-    regenerateSkill(p, patterns, config);
+    regenerateSkill(p, currentPatterns, config);
     return JSON.stringify({ ok: true, suggestions: result.advice?.suggestions?.length || 0, merged }, null, 2);
   },
 

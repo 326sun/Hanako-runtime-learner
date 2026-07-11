@@ -19,14 +19,14 @@ const LOG_FILES = {
   activity: "activity_log.jsonl",
 };
 
-function loadLogSnapshot(file, { cutoff = null, maxLines = 5000 } = {}) {
+function loadLogSnapshot(file, { cutoff = null, maxLines = 5000, includeSessions = false } = {}) {
   const sample = readJsonlSample(file, { cutoff, maxLines });
   return {
     path: file,
-    count: countJsonl(file),
+    count: sample.complete ? sample.lineCount : countJsonl(file),
     rows: sample.rows,
     coverage: sample.coverage,
-    sessions: summarizeSessionRows(sample.rows),
+    sessions: includeSessions ? summarizeSessionRows(sample.rows, { normalized: true }) : [],
   };
 }
 
@@ -74,6 +74,7 @@ export function loadRuntimeSnapshot(ctx, {
       snapshot.logs[key] = loadLogSnapshot(path.join(paths.learnerDir, name), {
         cutoff: logCutoff,
         maxLines: logMaxLines,
+        includeSessions: key === "experience" || key === "error",
       });
     }
   }

@@ -3,7 +3,7 @@
 > 自动生成，请勿手工编辑。运行 `npm run complexity:report` 刷新。
 > 预算与规则见 [COMPLEXITY_BUDGET.md](COMPLEXITY_BUDGET.md)，债务清单见 [COMPLEXITY_DEBT.md](COMPLEXITY_DEBT.md)。
 
-Generated at: 2026-07-03T02:25:01.437Z
+Generated at: 2026-07-10T08:12:25.101Z
 Scan scope: lib, scripts, tests, tools
 Status: within budget
 
@@ -11,15 +11,15 @@ Status: within budget
 
 | 指标 | 当前值 | hard limit | soft target |
 |---|---|---|---|
-| 文件数 | 254 | - | - |
+| 文件数 | 259 | - | - |
 | lib 模块数 | 109 | 118 | 105 |
-| 总 LOC | 36873 | - | - |
-| 总代码 LOC | 30538 | - | - |
-| 单文件最大 LOC | 588 | 900 | 600 |
-| 单文件最大 imports | 32 | 35 | 20 |
+| 总 LOC | 37475 | - | - |
+| 总代码 LOC | 31033 | - | - |
+| 单文件最大 LOC | 614 | 900 | 600 |
+| 单文件最大 imports | 19 | 35 | 20 |
 | 单文件最大 exports | 18 | 25 | 18 |
 | TODO/FIXME 总数 | 0 | 40 | 10 |
-| soft 警告数 | 2 | - | 0 |
+| soft 警告数 | 3 | - | 0 |
 | 结构规则警告数 | 0 | - | 0 |
 | hard 违规数 | 0 | 0 | - |
 
@@ -27,46 +27,46 @@ Status: within budget
 
 | 文件 | LOC | 代码 LOC |
 |---|---|---|
-| index.js | 588 | 477 |
-| tests/runtime-e2e.test.js | 588 | 480 |
-| tests/common.test.js | 551 | 454 |
-| tools/control.js | 533 | 458 |
-| tools/doctor.js | 506 | 422 |
+| tests/runtime-e2e.test.js | 614 | 501 |
+| index.js | 611 | 500 |
+| tests/common.test.js | 582 | 481 |
+| tools/doctor.js | 507 | 423 |
 | tests/observer.test.js | 489 | 392 |
 | lib/observer.js | 463 | 342 |
-| tools/search.js | 461 | 381 |
-| tests/doctor.test.js | 445 | 399 |
+| tests/doctor.test.js | 456 | 409 |
+| tools/search.js | 437 | 358 |
 | lib/pattern-detector.js | 422 | 288 |
+| lib/release-readiness.js | 415 | 382 |
 
 ## Top 10 import 最多文件
 
 | 文件 | imports |
 |---|---|
-| tools/control.js | 32 |
 | index.js | 19 |
+| tools/control.js | 18 |
 | tests/runtime-e2e.test.js | 15 |
 | tests/action-runtime.test.js | 14 |
 | tests/review-governance.test.js | 14 |
-| tools/search.js | 13 |
 | tests/agent-resume.test.js | 12 |
 | tools/control-handlers/audit.js | 12 |
 | tools/doctor.js | 12 |
+| tools/search.js | 12 |
 | lib/action-executor.js | 11 |
 
 ## Top 10 export 最多文件
 
 | 文件 | exports |
 |---|---|
-| lib/helpers.js | 18 |
-| lib/json-io.js | 17 |
+| lib/json-io.js | 18 |
+| lib/proposals.js | 16 |
+| lib/helpers.js | 15 |
 | lib/host-tasks.js | 15 |
-| lib/proposals.js | 15 |
 | lib/scoring.js | 12 |
 | lib/agent-controller-nodes.js | 11 |
 | lib/action-types.js | 10 |
+| lib/complexity.js | 10 |
 | lib/llm-extraction-queue.js | 10 |
 | tools/search.js | 10 |
-| lib/credentials.js | 9 |
 
 ## TODO / FIXME 统计
 
@@ -76,6 +76,7 @@ Status: within budget
 
 以下项目超出 soft target 但仍在 hard limit 内，是优先治理对象（参见 COMPLEXITY_DEBT.md）。
 
+- tests/runtime-e2e.test.js has 614 LOC > soft target 600
+- index.js has 611 LOC > soft target 600
 - lib module count 109 > soft target 105
-- tools/control.js has 32 imports > soft target 20
 

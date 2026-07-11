@@ -13,6 +13,7 @@
  */
 
 import esbuild from "esbuild";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -34,6 +35,7 @@ const COPY_FILES = [
   ["README.md", "README.md"],
   ["LICENSE", "LICENSE"],
   ["lib/plugin-process-runner-child.js", "plugin-process-runner-child.js"],
+  ["skills/self-learning/SKILL.md", "skills/self-learning/SKILL.md"],
 ];
 
 function collectFiles(dir, base = dir, out = []) {
@@ -138,7 +140,9 @@ async function build() {
   for (const [from, to] of COPY_FILES) {
     const src = path.join(ROOT, from);
     if (!fs.existsSync(src)) throw new Error(`build: missing source file to copy: ${from}`);
-    fs.copyFileSync(src, path.join(DIST, to));
+    const dest = path.join(DIST, to);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
   }
 
   const distCheck = verifyDistStructure(DIST);
@@ -147,11 +151,13 @@ async function build() {
   const entries = collectFiles(DIST);
   const zipPath = path.join(RELEASE, ZIP_NAME);
   writeZip(zipPath, entries);
+  const zipHash = crypto.createHash("sha256").update(fs.readFileSync(zipPath)).digest("hex");
+  fs.writeFileSync(`${zipPath}.sha256`, `${zipHash}  ${path.basename(zipPath)}\n`, "utf-8");
   const zipCheck = verifyZipRoot(entries.map((e) => e.name));
   if (!zipCheck.ok) throw new Error(`build: zip root self-check failed:\n- ${zipCheck.problems.join("\n- ")}`);
 
   const bundleBytes = fs.statSync(path.join(DIST, "index.js")).size;
-  console.log(`build ok · dist/ ${entries.length} files · bundle ${(bundleBytes / 1024).toFixed(1)}kB · zip → ${path.relative(ROOT, zipPath)}`);
+  console.log(`build ok · dist/ ${entries.length} files · bundle ${(bundleBytes / 1024).toFixed(1)}kB · zip → ${path.relative(ROOT, zipPath)} · sha256 ${zipHash}`);
 }
 
 build().catch((err) => {

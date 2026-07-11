@@ -1,4 +1,3 @@
-import https from "https";
 import fs from "fs";
 import path from "path";
 import { readJson, memoryStrength, DEFAULT_CONFIG, knowledgeTier, mergeConfig } from "../lib/common.js";
@@ -156,9 +155,9 @@ export function prepareSearch(allPatterns, { type = null, taskType = null } = {}
 function fileSignature(file) {
   try {
     const stat = fs.statSync(file);
-    return `${stat.mtimeMs}:${stat.size}`;
+    return `${path.resolve(file)}:${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
   } catch {
-    return "missing";
+    return `${path.resolve(file)}:missing`;
   }
 }
 
@@ -236,7 +235,8 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
   // 1) BM25 candidate generation. Strong-token filtering happens inside the
   // index so incidental single-CJK-character matches are dropped before rerank.
   const strongQ = buildStrongTokenSet(tokens);
-  const candidateLimit = Math.max(limit, Number(cfg.retrievalCandidateLimit || 20));
+  const safeLimit = Math.max(0, Math.floor(Number.isFinite(Number(limit)) ? Number(limit) : 0));
+  const candidateLimit = Math.max(safeLimit, Number(cfg.retrievalCandidateLimit || 20));
   const index = usePrepared ? prepared.index : new MemoryIndex().rebuild(prefiltered);
   const bm25Hits = index.search(tokens, { limit: candidateLimit, requireAnyToken: strongQ });
   if (!bm25Hits.length) return { results: [], queryScope };
@@ -303,7 +303,7 @@ export function runSearch(allPatterns, query, { config = DEFAULT_CONFIG, type = 
 
   scored.sort((a, b) => b.composite - a.composite);
 
-  const resultLimit = Math.min(limit, scored.length);
+  const resultLimit = Math.min(safeLimit, scored.length);
   const results = new Array(resultLimit);
   for (let i = 0; i < resultLimit; i++) {
     const { p, gate, breakdown, composite, memStr } = scored[i];
@@ -356,46 +356,24 @@ export async function execute(input = {}, ctx) {
   const typeFilter = input.type || null;
   const taskFilter = input.taskType || null;
   const projectFilter = input.project || null;
-  const limit = Math.min(input.limit || 5, 10);
+  const requestedLimit = input.limit === undefined ? 5 : Number(input.limit);
+  const limit = Math.max(0, Math.min(Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 0, 10));
 
   const { allPatterns, prepared } = loadPreparedSearchFromDisk(dataDir, patternsFile, { type: typeFilter, taskType: taskFilter });
-  const config = mergeCredentials(loadConfig(p.configPath));
+  const config = mergeCredentials(loadConfig(p.configPath), { dataDir });
   const officialMemorySearch = config.officialMemoryBridgeEnabled
     ? searchOfficialMemoryWithStats(query, {
       limit: Math.max(0, Math.min(Number(config.officialMemoryBridgeMaxResults || 3), 10)),
-      project: projectFilter,
+      agentId: ctx?.agentId,
     })
     : { results: [], stats: { lastSkippedReason: "disabled" } };
   const officialMemory = officialMemorySearch.results;
 
-  // Use a direct Node.js HTTPS request for the user-configured embedding
-  // endpoint. The host's declarative ctx.network.fetch channel needs a static
-  // manifest allowedHosts allowlist and cannot express the arbitrary OpenAI-
-  // compatible base URL a user supplies, so it would reject every request on
-  // v0.341+ hosts. Direct outbound requests stay compatible for this case.
-  const nodeFetch = (url, init = {}) => new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const opts = {
-      hostname: u.hostname,
-      port: u.port || 443,
-      path: u.pathname + u.search,
-      method: init.method || "GET",
-      headers: init.headers || {},
-      timeout: 15000,
-    };
-    const req = https.request(opts, (res) => {
-      let data = "";
-      res.on("data", (c) => data += c);
-      res.on("end", () => {
-        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: () => JSON.parse(data), text: () => data });
-      });
-    });
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
-    if (init.body) req.write(init.body);
-    req.end();
-  });
-  const fetchImpl = nodeFetch;
+  // User-configured embedding endpoints cannot be represented by Hanako's
+  // static network allowlist. Node's standards-based fetch preserves the
+  // explicit opt-in while correctly supporting HTTPS and localhost HTTP, and
+  // honors the AbortSignal supplied by embedTexts().
+  const fetchImpl = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
 
   let semantic = null;
   let semanticUsed = false;

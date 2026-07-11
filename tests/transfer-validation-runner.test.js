@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import { runTransferCandidateValidation, summarizeTransferValidationReadiness } from "../lib/transfer-validation-runner.js";
-import { loadTransferCandidateRecord, TRANSFER_STATUSES } from "../lib/transfer-registry.js";
+import { loadTransferCandidateRecord, recordTransferValidation, registerTransferCandidate, TRANSFER_STATUSES } from "../lib/transfer-registry.js";
 
 function tmpdir(prefix = "transfer-validation-runner-") {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -64,4 +64,28 @@ test("transfer validation runner fails closed when candidate weakens safety poli
   assert.equal(readiness.ok, false);
   assert.equal(readiness.decision, "reject");
   assert.ok(readiness.violations.some((violation) => violation.includes("unsafe")));
+});
+
+test("transfer candidate ids are content-bound and cannot validate substituted commands", async () => {
+  const workspaceRoot = tmpdir();
+  const registryBaseDir = tmpdir();
+  fs.writeFileSync(path.join(workspaceRoot, "index.mjs"), "export const ok = true;\n", "utf-8");
+  const original = candidate(["node --check missing.mjs"]);
+  registerTransferCandidate(registryBaseDir, original, { validationOptions: { targetProfile: targetProfile() } });
+  const substituted = { ...candidate(["node --check index.mjs"]), rule: "substituted" };
+
+  await assert.rejects(
+    () => runTransferCandidateValidation(substituted, { workspaceRoot, registryBaseDir, targetProfile: targetProfile() }),
+    /id conflict/,
+  );
+  assert.equal(loadTransferCandidateRecord(registryBaseDir, original.id).candidate.rule, original.rule);
+});
+
+test("passed transfer validation requires concrete evidence", () => {
+  const registryBaseDir = tmpdir();
+  const registered = registerTransferCandidate(registryBaseDir, candidate(), { validationOptions: { targetProfile: targetProfile() } });
+  assert.throws(
+    () => recordTransferValidation(registryBaseDir, registered.record.id, { status: "passed", summary: "manual claim", evidence: [] }),
+    /concrete evidence/,
+  );
 });

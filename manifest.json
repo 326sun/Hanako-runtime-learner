@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "5.1.8",
+  "version": "5.1.10",
   "description": "运行时自学习引擎：观察本地交互，归纳重复工作流、偏好与错误，并生成保守的经验提示。",
   "author": "Sun",
   "trust": "full-access",
@@ -115,7 +115,7 @@
         },
         "modelAdvisorEnabled": {
           "type": "boolean",
-          "title": "启用后台整理（Hanako ≥ 0.305 优先走官方采样；旧版本回退到自配端点）",
+          "title": "启用后台整理（官方来源走 Hanako 采样；私有来源显式使用自配端点）",
           "default": false
         },
         "modelAdvisorSource": {
@@ -135,13 +135,13 @@
         },
         "modelAdvisorBaseUrl": {
           "type": "string",
-          "title": "备用整理模型 Base URL",
+          "title": "私有整理模型 Base URL",
           "default": ""
         },
         "modelAdvisorApiKey": {
           "type": "string",
-          "title": "备用整理模型 API Key",
-          "description": "仅旧版本回退到自配端点时使用；保存后会加密存储。",
+          "title": "私有整理模型 API Key",
+          "description": "仅 modelAdvisorSource=private 时使用；保存后会加密存储。",
           "sensitive": true,
           "ui": {
             "control": "password"
@@ -150,7 +150,7 @@
         },
         "modelAdvisorModel": {
           "type": "string",
-          "title": "备用整理模型名称",
+          "title": "私有整理模型名称",
           "default": ""
         },
         "modelAdvisorMaxTokens": {

@@ -70,6 +70,24 @@ describe("embeddings · embedTexts (mocked)", () => {
     assert.equal(calls, 0, "all cache hits → no fetch");
   });
 
+  it("does not reuse vectors across different embedding endpoints", async () => {
+    const cache = {};
+    let calls = 0;
+    const fetchImpl = async (url) => {
+      calls += 1;
+      return {
+        ok: true,
+        json: async () => ({ data: [{ embedding: url.includes("one.example") ? [1, 0] : [0, 1] }] }),
+      };
+    };
+    const first = await embedTexts(["same"], { ...config, semanticEmbeddingBaseUrl: "https://one.example" }, { fetchImpl, cache });
+    const second = await embedTexts(["same"], { ...config, semanticEmbeddingBaseUrl: "https://two.example" }, { fetchImpl, cache });
+
+    assert.equal(calls, 2);
+    assert.deepEqual(first.vectors[0], [1, 0]);
+    assert.deepEqual(second.vectors[0], [0, 1]);
+  });
+
   it("reports disk cache entries and evictions", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), `embed-cache-${process.pid}-`));
     const cacheFile = embeddingCachePath(dir);
@@ -85,6 +103,35 @@ describe("embeddings · embedTexts (mocked)", () => {
       assert.equal(summary.maxEntries, 1);
       assert.equal(summary.overLimit, 0);
       assert.equal(typeof summary.newestUsedAt, "string");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("merges disk cache updates from overlapping embedding requests", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `embed-cache-race-${process.pid}-`));
+    const cacheFile = embeddingCachePath(dir);
+    const pending = [];
+    const delayedFetch = (_url, opts) => new Promise((resolve) => {
+      const input = JSON.parse(opts.body).input;
+      pending.push(() => resolve({
+        ok: true,
+        json: async () => ({ data: input.map((t) => ({ embedding: [t.length, 1] })) }),
+      }));
+    });
+
+    try {
+      const first = embedTexts(["alpha"], config, { fetchImpl: delayedFetch, cacheFile });
+      const second = embedTexts(["bravo"], config, { fetchImpl: delayedFetch, cacheFile });
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(pending.length, 2);
+      pending[0]();
+      await first;
+      pending[1]();
+      await second;
+
+      const persisted = JSON.parse(fs.readFileSync(cacheFile, "utf8"));
+      assert.equal(Object.keys(persisted).length, 2, "neither completed request may erase the other key");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -136,5 +183,10 @@ describe("runSearch · RRF semantic fusion", () => {
     const cached = runSearch(PATS, "signal", { limit: 5, prepared });
 
     assert.deepEqual(cached.results.map((r) => r.id), baseline.results.map((r) => r.id));
+  });
+
+  it("normalizes negative and non-finite result limits without throwing", () => {
+    assert.deepEqual(runSearch(PATS, "signal", { limit: -1 }).results, []);
+    assert.deepEqual(runSearch(PATS, "signal", { limit: Number.NaN }).results, []);
   });
 });

@@ -69,7 +69,9 @@ export const proposalReviewHandlers = {
     if (!proposal) throw new Error(`proposal not found: ${input.proposalId || input.id}`);
     const validation = validateProposal(proposal, { config, doctorReport: runDoctorFromDisk(p.learnerDir) });
     const review = enqueueReviewForProposal(p.learnerDir, proposal, { configPath: p.configPath, config });
-    if (review) updateReviewStatus(p.learnerDir, review.id, validation.ok ? "queued" : "blocked", { validation });
+    if (review && ["queued", "blocked"].includes(review.status)) {
+      updateReviewStatus(p.learnerDir, review.id, validation.ok ? "queued" : "blocked", { validation });
+    }
     appendEvent(p.learnerDir, { type: "proposal.validated", entityType: "proposal", entityId: proposal.id, summary: `Validated proposal: ${proposal.id}`, data: { ok: validation.ok } });
     return JSON.stringify({ ...validation, nextAction: validationNextAction(validation) }, null, 2);
   },
@@ -83,6 +85,12 @@ export const proposalReviewHandlers = {
     if (!proposal) throw new Error(`proposal not found: ${review.proposalId}`);
     const binding = verifyProposalReviewBinding(proposal, review);
     if (!binding.ok) throw new Error(binding.error);
+    if (review.status === "approved") {
+      return JSON.stringify({ ok: true, review, nextAction: "apply_review" }, null, 2);
+    }
+    if (review.status !== "queued" || review.validation?.ok !== true) {
+      throw new Error(`review must be queued with passing validation before approval: ${reviewId} (status=${review.status})`);
+    }
     const next = updateReviewStatus(p.learnerDir, reviewId, "approved");
     return JSON.stringify({ ok: true, review: next, nextAction: "apply_review" }, null, 2);
   },
@@ -90,8 +98,15 @@ export const proposalReviewHandlers = {
   reject_review(input, p) {
     const reviewId = input.id || (input.proposalId ? `review:${input.proposalId}` : null);
     if (!reviewId) throw new Error("id or proposalId is required");
-    const next = updateReviewStatus(p.learnerDir, reviewId, "rejected", { reason: input.reason || "" });
-    return JSON.stringify({ ok: true, review: next, nextAction: "reject_proposal or review_panel" }, null, 2);
+    const review = readReview(p.learnerDir, reviewId);
+    if (!review) throw new Error(`review not found: ${reviewId}`);
+    const proposal = readProposal(p.learnerDir, review.proposalId);
+    if (!proposal) throw new Error(`proposal not found: ${review.proposalId}`);
+    const binding = verifyProposalReviewBinding(proposal, review);
+    if (!binding.ok) throw new Error(binding.error);
+    rejectProposal(p.learnerDir, proposal.id, input.reason || "");
+    const next = readReview(p.learnerDir, reviewId);
+    return JSON.stringify({ ok: true, review: next, nextAction: "review_panel" }, null, 2);
   },
 
   apply_review(input, p) {

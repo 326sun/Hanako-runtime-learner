@@ -100,6 +100,33 @@ describe("SessionObserver — event routing", () => {
       assert.ok(turn.userTexts[0].includes("帮我修复文件"));
     });
 
+    it("accepts the v0.374.3 desktop text payload while ignoring host-only toolset reminders", () => {
+      const sessions = new Map();
+      const mocks = setupMocks({ sessions });
+      const observer = createObserver(mocks);
+      let eventCallback;
+      observer.subscribe({
+        subscribe(cb) { eventCallback = cb; return () => {}; },
+      }, { learnFromUsage: false });
+
+      // v0.374.3 emits this process-level notification when a plugin changes
+      // the host toolset. It is an environment reminder, not a user turn.
+      eventCallback({
+        type: "toolset_changed",
+        payload: { pluginId: "hanako-runtime-learner", action: "reloaded" },
+      }, "sessions/test.jsonl");
+      assert.equal(sessions.size, 0, "host-only environment events must not create learned turns");
+
+      // Desktop submission emits `message.text` (not promptText), so hidden
+      // [hana_reminder] blocks cannot enter the learner's user-text corpus.
+      eventCallback({
+        type: "session_user_message",
+        message: { text: "只分析我的实际请求" },
+      }, "sessions/test.jsonl");
+      const turn = sessions.get("sessions/test.jsonl");
+      assert.deepEqual(turn.userTexts, ["只分析我的实际请求"]);
+    });
+
     it("routes user_message with role=user to addUserText", () => {
       const sessions = new Map();
       const mocks = setupMocks({ sessions });

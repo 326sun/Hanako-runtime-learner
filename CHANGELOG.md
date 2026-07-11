@@ -2,6 +2,29 @@
 
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
+## 5.1.10 - 2026-07-11（发布准备与 Hanako v0.374.3 兼容加固）
+
+- **Hanako v0.374.3 预览兼容**：以官方源码核对插件生命周期、`ctx.dataDir`、EventBus、session 身份及执行边界契约；新增回归测试，确保 `toolset_changed` 环境提醒不会被误学为用户回合，桌面 `session_user_message.message.text` 仍只采集真实用户文本。
+- **安全提案恢复**：安全技能应用路径补齐 durable `applying` 写前状态；目标文件已写入而治理记录未完成时，下次调用自动收敛为 applied，并同步审核记录。恢复元数据不再破坏已审批内容哈希。
+- **跨进程状态可靠性**：whole-file 状态更新使用短时跨进程锁；修复 Windows 并发创建/删除锁文件时瞬态 `EPERM` 被误判为硬失败的问题，15 轮并发压力验证通过。
+- **发布链完整性**：安装预检递归覆盖运行模块，dist/ZIP 强制包含基线 `SKILL.md`；README、验收和设计矩阵同步至当前测试证据。
+- **测试与门禁**：994 tests，989 passed，5 skipped，0 failed；`check`、`benchmark`、`perf`、`release:check` 与 `npm audit --audit-level=high` 全部通过。
+
+## 5.1.9 - 2026-07-10（Hanako v0.357.17 设计审计修复）
+
+- **Hanako v0.357.17 会话权限适配**：`self_learning_console` 不再错误声明为只读；创建或刷新插件私有控制台会话现按宿主 `review` 边界申报，避免绕过新版会话只读模式。
+- **官方记忆 v4 布局优化**：官方记忆桥按分段文件优先、聚合 `memory.md` 兜底读取并做规范化去重；当 `week.md` 尚未装配时读取最新 `memory/daily/*.md`，兼容 v0.357.17 的 daily conveyor，同时避免正常状态下的重复搜索命中。
+- **权限与 capability 不扩张**：仍为 `trust: full-access` + `permissions: ["usage.read"]`，未新增外部调用或宿主 capability。
+- **Agent 记忆隔离**：官方记忆桥必须使用 Hanako 工具上下文提供的 `agentId`，只读取当前 Agent；身份缺失、非法或目录不存在时 fail-closed，不再遍历 `HANA_HOME/agents/*`，Agent 身份也不再被误当成 project scope。
+- **生命周期失败可见**：致命 `onload` 错误清理延迟任务后重新抛给宿主；startup advisor、extraction 与 capability snapshot 定时器纳入卸载取消，避免旧实例热重载后继续写入。
+- **官方模型凭证边界**：`model:sample-text` 失败时 fail-soft，不再读取宿主 `added-models.yaml` / preferences 凭证并绕过宿主直连；显式 `private` 来源仍使用插件自己的加密配置。
+- **Embedding 正确性**：语义检索改用支持 AbortSignal 的标准 `fetch`，显式配置的 localhost HTTP 端点可用；缓存键加入规范化 endpoint，避免同名模型跨向量空间复用。
+- **发布证据闭环**：全量测试生成绑定当前源码 fingerprint 的 `benchmark-results/test-results.json`；正式 `release:check` 拒绝缺失/失败/陈旧证据。构建同时生成 ZIP `.sha256` sidecar，发布门校验实际 digest，不再只检查 ZIP 结构。
+- **日志统计热路径优化**：小日志尾采样读完整文件时直接复用总行数；大日志计数改用原生缓冲区换行搜索，并以文件签名缓存结果。会话聚合只对实际展示的日志执行，且不再重复标准化采样行。10 万行冷计数由约 `18 ms` 降至 `2.6–4.7 ms`，大型 `stats` 由 `49.14 ms` 降至 `41.4–44.0 ms`。
+- **提案/审核状态机加固**：已应用提案重复执行改为幂等，禁止 applied/rejected 终态倒退；blocked 审核不可批准，重复验证不再重开终态审核；`reject_review` 同步拒绝对应提案，并自动修复历史 pending-proposal/rejected-review 分裂状态。安全应用路径也执行 resolved proposal 保留上限。
+- **JSONL 边界正确性**：尾读窗口使用前一字节判断首段是否完整，修复窗口恰好落在换行符或换行后首字符时偶发漏行；缓存键规范化为绝对路径，并加入设备、inode、ctime、mtime 与大小签名。
+- **回归测试与文档同步**：测试总数同步为 `965`；架构版本、模块数、运行时配置文件名和发布主线说明同步到当前实现。
+
 ## 5.1.8 - 2026-07-03（usage evidence + doctor 降噪补丁发布）
 
 > 在已发布的 `5.1.7` 之上做干净补丁发布，不覆盖既有 tag / release asset。主线修复已先进入 `main`，本版本重新同步版本元数据、构建 release zip 并发布新的 GitHub Release。

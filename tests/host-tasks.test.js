@@ -10,6 +10,7 @@ import {
   runHostTask,
   setupBackgroundTasks,
   TASK_OPERATIONS,
+  shutdownHostTasks,
 } from "../lib/host-tasks.js";
 import { DEFAULT_CONFIG } from "../lib/common.js";
 import { readEvents } from "../lib/event-log.js";
@@ -156,6 +157,23 @@ describe("host task adapter", () => {
     assert.equal(results.some((r) => r.skipped === "in_flight"), true);
   });
 
+  it("cancels active jobs on shutdown and ignores their late completion", async () => {
+    const bus = new FakeTaskBus();
+    let release;
+    const waiting = new Promise((resolve) => { release = resolve; });
+    const running = runHostTask(ctxFor(bus), {
+      pluginId: "shutdown-p", dataDir: tmpDir, taskId: "slow", type: "slow-job",
+      job: async () => { await waiting; return { ok: true }; },
+    });
+    await Promise.resolve();
+    const stopped = await shutdownHostTasks("shutdown-p", { timeoutMs: 5 });
+    assert.equal(stopped.drained, false);
+    assert.ok(bus.requests.some((request) => request.name === "task:cancel" && request.payload.taskId === "slow"));
+    release();
+    const outcome = await running;
+    assert.equal(outcome.skipped, "cancelled");
+  });
+
   it("writes audit events for complete, fail, and cancel outcomes", async () => {
     const ctx = ctxFor(new FakeTaskBus());
     await runHostTask(ctx, { pluginId: "p", dataDir: tmpDir, taskId: "ok", type: "ok-job", job: async () => ({ ok: true }) });
@@ -235,6 +253,27 @@ describe("M3-lite background task setup", () => {
     assert.equal(result.skipped, "unavailable");
     assert.equal(result.useLegacyPath, true);
     assert.equal(readEvents(tmpDir, { limit: 1 })[0].type, "background_tasks_unavailable");
+  });
+
+  it("keeps the legacy path when the host advertises task support but rejects setup", async () => {
+    const bus = new FakeTaskBus();
+    const original = bus.request.bind(bus);
+    bus.request = async (name, payload) => (
+      name === "task:register-handler" ? { ok: false, error: "registration rejected" } : original(name, payload)
+    );
+    const result = await setupBackgroundTasks({
+      ctx: ctxFor(bus),
+      dataDir: tmpDir,
+      config: DEFAULT_CONFIG,
+      runAdvisor: async () => ({ ok: true }),
+      runRetention: async () => ({ ok: true }),
+      runLlmExtraction: async () => ({ ok: true }),
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.useLegacyPath, true);
+    assert.equal(result.failures.length, 3);
+    assert.equal(readEvents(tmpDir, { limit: 1 })[0].type, "background_tasks_setup_failed");
   });
 
   it("marks recovering/running tasks failed during setup so they do not hang forever", async () => {

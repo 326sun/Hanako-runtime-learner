@@ -3,6 +3,7 @@ import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
 import { pathToFileURL } from "url";
+import { computeSourceFingerprint } from "../lib/source-fingerprint.js";
 
 const root = process.cwd();
 
@@ -21,6 +22,32 @@ export function listFiles(dir, { extensions = [".js"], suffix = "", baseDir = ro
 function runNode(args, { cwd = root } = {}) {
   const result = spawnSync(process.execPath, args, { stdio: "inherit", cwd });
   if (result.error) throw result.error;
+  return result.status || 0;
+}
+
+function runFullTestSuite(testFiles, { cwd = root } = {}) {
+  const result = spawnSync(process.execPath, ["--test", ...testFiles], { cwd, encoding: "utf-8" });
+  if (result.stdout) process.stdout.write(result.stdout);
+  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.error) throw result.error;
+
+  const output = `${result.stdout || ""}\n${result.stderr || ""}`;
+  const count = (name) => Number(output.match(new RegExp(`(?:ℹ\\s*)?${name}\\s+(\\d+)`, "i"))?.[1]);
+  const evidence = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    sourceFingerprint: computeSourceFingerprint(cwd),
+    tests: count("tests"),
+    pass: count("pass"),
+    fail: count("fail"),
+    skipped: count("skipped"),
+    cancelled: count("cancelled"),
+    todo: count("todo"),
+    exitCode: result.status ?? 1,
+  };
+  const evidenceDir = path.join(cwd, "benchmark-results");
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  fs.writeFileSync(path.join(evidenceDir, "test-results.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf-8");
   return result.status || 0;
 }
 
@@ -77,7 +104,7 @@ export function runCli(argv = process.argv.slice(2)) {
       console.log(`run.js test --changed: running ${recommended.length}/${allTests.length} test file(s) based on git diff:\n  ${recommended.join("\n  ")}`);
       return runNode(["--test", ...recommended]);
     }
-    return runNode(["--test", ...listFiles("tests", { suffix: ".test.js" })]);
+    return runFullTestSuite(listFiles("tests", { suffix: ".test.js" }));
   }
   console.error("Usage: node scripts/run.js <check|test> [--changed]");
   return 2;

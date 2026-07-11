@@ -21,6 +21,8 @@ function makeGoodDist(dir) {
   fs.writeFileSync(path.join(dir, "README.md"), "# readme");
   fs.writeFileSync(path.join(dir, "LICENSE"), "MIT");
   fs.writeFileSync(path.join(dir, "plugin-process-runner-child.js"), "import { pathToFileURL } from 'node:url';\n");
+  fs.mkdirSync(path.join(dir, "skills", "self-learning"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "skills", "self-learning", "SKILL.md"), "# Runtime Self-Learning\n");
   fs.mkdirSync(path.join(dir, "tools"), { recursive: true });
   for (const rel of REQUIRED_TOOL_FILES) {
     fs.writeFileSync(path.join(dir, rel), "export const name='self_learning_x';\nexport async function execute(){}\nimport fs from 'node:fs';\n");
@@ -28,10 +30,10 @@ function makeGoodDist(dir) {
 }
 
 describe("dist-verify · characterization of the source entry contract", () => {
-  it("the runtime files the bundle must reproduce are index.js, manifest.json, README.md, LICENSE, child runner", () => {
+  it("the runtime files the bundle must reproduce include the baseline skill", () => {
     assert.deepEqual(
       REQUIRED_DIST_FILES,
-      ["index.js", "manifest.json", "README.md", "LICENSE", "plugin-process-runner-child.js"],
+      ["index.js", "manifest.json", "README.md", "LICENSE", "plugin-process-runner-child.js", "skills/self-learning/SKILL.md"],
     );
   });
 
@@ -143,7 +145,9 @@ describe("dist-verify · verifyZipRoot", () => {
       "index.js",
       "manifest.json",
       "README.md",
+      "LICENSE",
       "plugin-process-runner-child.js",
+      "skills/self-learning/SKILL.md",
       ...REQUIRED_TOOL_FILES,
     ]);
     assert.equal(r.ok, true, r.problems.join("; "));
@@ -162,5 +166,6 @@ describe("dist-verify · verifyZipRoot", () => {
   it("rejects a zip missing the manifest at root", () => {
     const r = verifyZipRoot(["index.js", "README.md"]);
     assert.equal(r.ok, false);
+    assert.ok(r.problems.some((p) => /plugin-process-runner-child|SKILL\.md/.test(p)));
   });
 });
