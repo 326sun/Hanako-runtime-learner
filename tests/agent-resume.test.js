@@ -63,6 +63,30 @@ test("approved agent task resumes after the approved node", async () => {
   assert.ok(summary.byType["state.completed"] >= 1);
 });
 
+test("approving a paused ExecuteNode retries execution instead of marking it completed", async () => {
+  const learnerDir = tmpdir();
+  let calls = 0;
+  const handlers = {
+    [TASK_GRAPH_NODES.EXECUTE]: () => {
+      calls += 1;
+      return calls === 1
+        ? { status: "manual_confirm", summary: "execution approval required" }
+        : { status: "succeeded", verification: { verified: true, checks: [{ name: "executed", passed: true }] } };
+    },
+  };
+  const controller = new AgentController({ handlers });
+  const paused = await controller.run({ title: "execute approval" }, { learnerDir });
+  assert.equal(paused.state.state, AGENT_STATES.WAITING_FOR_HUMAN);
+  assert.equal(calls, 1);
+
+  const pending = latestPendingApproval(paused.state);
+  const approved = approveAgentTask(learnerDir, paused.state.taskId, { requestId: pending.id });
+  assert.equal(approved.state.graph.nodes.find((node) => node.type === TASK_GRAPH_NODES.EXECUTE).status, "pending");
+  const resumed = await resumeAgentTask(learnerDir, paused.state.taskId, { learnerDir }, { handlers });
+  assert.equal(calls, 2);
+  assert.equal(resumed.state.state, AGENT_STATES.COMPLETED);
+});
+
 test("agent task approval rejects stale pending requests", async () => {
   const learnerDir = tmpdir();
   const paused = await createPausedTask(learnerDir);

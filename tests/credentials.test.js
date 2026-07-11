@@ -206,4 +206,26 @@ describe("extractAndSaveCredentials", () => {
     assert.equal(sanitised.modelAdvisorEnabled, false);
     assert.equal(sanitised.minInjectScore, 5);
   });
+
+  it("preserves credentials omitted from a partial patch", () => {
+    saveCredentials({ modelAdvisorApiKey: "advisor-old", semanticEmbeddingApiKey: "embedding-keep" });
+    extractAndSaveCredentials({ modelAdvisorApiKey: "advisor-new" });
+    assert.deepEqual(loadCredentials(), {
+      modelAdvisorApiKey: "advisor-new",
+      semanticEmbeddingApiKey: "embedding-keep",
+    });
+  });
+
+  it("isolates credential stores by host-provided dataDir", () => {
+    const one = fs.mkdtempSync(path.join(os.tmpdir(), "credentials-one-"));
+    const two = fs.mkdtempSync(path.join(os.tmpdir(), "credentials-two-"));
+    saveCredentials({ modelAdvisorApiKey: "one" }, { dataDir: one });
+    saveCredentials({ modelAdvisorApiKey: "two" }, { dataDir: two });
+    assert.equal(loadCredentials({ dataDir: one }).modelAdvisorApiKey, "one");
+    assert.equal(loadCredentials({ dataDir: two }).modelAdvisorApiKey, "two");
+    assert.ok(fs.existsSync(path.join(one, "credentials.enc")));
+    assert.ok(fs.existsSync(path.join(two, "credentials.enc")));
+    fs.rmSync(one, { recursive: true, force: true });
+    fs.rmSync(two, { recursive: true, force: true });
+  });
 });

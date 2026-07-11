@@ -103,6 +103,25 @@ describe("ensureConsoleSession", () => {
     const state = JSON.parse(fs.readFileSync(path.join(d, CONSOLE_STATE_FILENAME), "utf-8"));
     assert.equal(state.sessionId, "console-1");
   });
+
+  it("single-flights concurrent creation for the same data directory", async () => {
+    const d = dir();
+    const bus = makeBus();
+    const original = bus.request.bind(bus);
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    bus.request = async (name, payload) => {
+      if (name === "session:create") await gate;
+      return original(name, payload);
+    };
+    const ctx = makeCtx(d, bus);
+    const one = ensureConsoleSession(ctx);
+    const two = ensureConsoleSession(ctx);
+    release();
+    const [a, b] = await Promise.all([one, two]);
+    assert.equal(a.sessionId, b.sessionId);
+    assert.equal(bus.calls.filter((c) => c.name === "session:create").length, 1);
+  });
 });
 
 describe("buildSnapshot", () => {

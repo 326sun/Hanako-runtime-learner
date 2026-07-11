@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { buildCodePatchProposal, buildSkillPatchProposal, applyProposal, rejectProposal, writeProposal } from "../lib/proposals.js";
+import { buildCodePatchProposal, buildSkillPatchProposal, applyProposal, readProposal, rejectProposal, writeProposal } from "../lib/proposals.js";
 import { previewProposalDiff } from "../lib/proposals.js";
 import { validateProposal } from "../lib/validation-gate.js";
 import { listReviews, reviewIdForProposal, updateReviewStatus, reviewPanel } from "../lib/review-queue.js";
@@ -73,6 +73,73 @@ describe("review governance", () => {
     const reviews = listReviews(tmpDir, { status: "rejected" });
     assert.equal(reviews.length, 1);
     assert.ok(readEvents(tmpDir, { limit: 20 }).some((evt) => evt.type === "proposal.rejected"));
+  });
+
+  it("does not reopen a terminal review when validation is repeated", async () => {
+    const home = path.join(tmpDir, "terminal-home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const pluginDir = path.join(tmpDir, "terminal-plugin");
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath: path.join(pluginDir, "skills", "self-learning", "SKILL.md"),
+      content: "# Runtime Self-Learning\n\nterminal review\n",
+    });
+    rejectProposal(learnerDir, proposal.id, "not needed");
+
+    await executeControl({ action: "validate_proposal", proposalId: proposal.id }, { pluginDir });
+    assert.equal(listReviews(learnerDir)[0].status, "rejected");
+  });
+
+  it("does not approve a review whose validation is blocked", async () => {
+    const home = path.join(tmpDir, "blocked-home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const pluginDir = path.join(tmpDir, "blocked-plugin");
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath: path.join(pluginDir, "skills", "self-learning", "SKILL.md"),
+      content: "# Runtime Self-Learning\n\nblocked review\n",
+    });
+    updateReviewStatus(learnerDir, reviewIdForProposal(proposal), "blocked", { validation: { ok: false } });
+
+    await assert.rejects(
+      () => executeControl({ action: "approve_review", proposalId: proposal.id }, { pluginDir }),
+      /blocked|validation/i,
+    );
+  });
+
+  it("keeps applied and rejected reviews terminal", () => {
+    const proposal = buildSkillPatchProposal({ learnerDir: tmpDir, skillPath: path.join(tmpDir, "SKILL.md"), content: "# Runtime Self-Learning\n" });
+    const reviewId = reviewIdForProposal(proposal);
+    updateReviewStatus(tmpDir, reviewId, "applied");
+    assert.throws(() => updateReviewStatus(tmpDir, reviewId, "approved"), /terminal/);
+  });
+
+  it("rejects the proposal atomically when its review is rejected", async () => {
+    const home = path.join(tmpDir, "reject-home");
+    process.env.HANA_HOME = home;
+    const learnerDir = path.join(home, "self-learning");
+    const pluginDir = path.join(tmpDir, "reject-plugin");
+    const proposal = buildSkillPatchProposal({
+      learnerDir,
+      skillPath: path.join(pluginDir, "skills", "self-learning", "SKILL.md"),
+      content: "# Runtime Self-Learning\n\nreject atomically\n",
+    });
+
+    await executeControl({ action: "reject_review", proposalId: proposal.id, reason: "not useful" }, { pluginDir });
+    assert.equal(readProposal(learnerDir, proposal.id).status, "rejected");
+    assert.equal(listReviews(learnerDir)[0].status, "rejected");
+  });
+
+  it("reconciles a legacy pending proposal with its rejected review tombstone", () => {
+    const pattern = { id: "error:legacy_review", type: "error", count: 3, desc: "legacy", fix: "inspect" };
+    const proposal = buildCodePatchProposal({ learnerDir: tmpDir, pattern });
+    updateReviewStatus(tmpDir, reviewIdForProposal(proposal), "rejected", { rejectionReason: "legacy rejection" });
+
+    const regenerated = buildCodePatchProposal({ learnerDir: tmpDir, pattern });
+    assert.equal(regenerated.status, "rejected");
+    assert.equal(readProposal(tmpDir, proposal.id).status, "rejected");
   });
 
 

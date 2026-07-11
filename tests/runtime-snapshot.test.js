@@ -80,6 +80,8 @@ describe("runtime snapshot", () => {
       assert.equal(snapshot.logs.experience.count, 1);
       assert.equal(snapshot.logs.experience.coverage.withStableIdentity, 1);
       assert.equal(snapshot.logs.experience.sessions[0].sessionKey, "sid:s1");
+      assert.deepEqual(snapshot.logs.turns.sessions, []);
+      assert.deepEqual(snapshot.logs.activity.sessions, []);
     } finally {
       fs.rmSync(store.root, { recursive: true, force: true });
     }

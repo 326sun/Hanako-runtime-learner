@@ -91,4 +91,23 @@ describe("self_learning_search prepared index cache", () => {
     assert.equal(stats.misses, 2);
     assert.equal(stats.hits, 0);
   });
+
+  it("never reuses a prepared index across different data directories", async () => {
+    const a = fs.mkdtempSync(path.join(os.tmpdir(), "search-cache-a-"));
+    const b = fs.mkdtempSync(path.join(os.tmpdir(), "search-cache-b-"));
+    writeStore(a, [{ id: "wf:a", type: "workflow", status: "approved", desc: "alpha", score: 10, count: 2 }]);
+    writeStore(b, [{ id: "wf:b", type: "workflow", status: "approved", desc: "bravo", score: 10, count: 2 }]);
+    const sameTime = new Date("2026-01-01T00:00:00.000Z");
+    for (const name of ["patterns.json", "facts.json"]) {
+      for (const dir of [a, b]) {
+        const file = path.join(dir, name);
+        if (!fs.existsSync(file)) writeJson(file, []);
+        fs.utimesSync(file, sameTime, sameTime);
+      }
+    }
+
+    assert.equal((await search(a, "alpha")).results[0]?.id, "wf:a");
+    assert.equal((await search(b, "alpha")).count, 0);
+    assert.equal(preparedSearchCacheStats().misses, 2);
+  });
 });

@@ -361,7 +361,7 @@ describe("model advisor", () => {
       assert.ok(Array.isArray(busPayload.messages) && busPayload.messages.length === 2);
     });
 
-    it("falls back to the configured HTTP endpoint when bus sampling fails", async () => {
+    it("does not bypass the host with HTTP when bus sampling fails", async () => {
       let fetchCalls = 0;
       globalThis.fetch = async () => {
         fetchCalls += 1;
@@ -374,10 +374,11 @@ describe("model advisor", () => {
         modelAdvisorModel: "small-1",
         modelAdvisorApiKey: "sk-test",
       };
-      const res = await advisor.runModelAdvisor({ config: cfg, patterns: [mkPattern("error:y")], ctx });
-      assert.equal(res.ok, true);
-      assert.equal(fetchCalls, 1);
-      assert.equal(res.advice.source, "private-fallback");
+      await assert.rejects(
+        () => advisor.runModelAdvisor({ config: cfg, patterns: [mkPattern("error:y")], ctx }),
+        /session busy/,
+      );
+      assert.equal(fetchCalls, 0);
     });
 
     it("surfaces the bus error when no HTTP fallback is configured", async () => {

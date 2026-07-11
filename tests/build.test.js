@@ -1,5 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -119,9 +120,15 @@ describe("esbuild build → dist package", () => {
     const names = readZipEntryNames(fs.readFileSync(zipPath));
     assert.ok(names.includes("index.js"), `zip has index.js at root (got ${names.join(", ")})`);
     assert.ok(names.includes("manifest.json"), "zip has manifest.json at root");
+    assert.ok(names.includes("skills/self-learning/SKILL.md"), "zip has the baseline self-learning skill");
     for (const tool of REQUIRED_TOOL_FILES) {
       assert.ok(names.includes(tool), `zip has ${tool}`);
     }
     assert.equal(verifyZipRoot(names).ok, true);
+    const digestPath = `${zipPath}.sha256`;
+    assert.ok(fs.existsSync(digestPath), "release zip SHA-256 sidecar exists");
+    const expected = fs.readFileSync(digestPath, "utf-8").trim().split(/\s+/)[0];
+    const actual = crypto.createHash("sha256").update(fs.readFileSync(zipPath)).digest("hex");
+    assert.equal(expected, actual);
   });
 });

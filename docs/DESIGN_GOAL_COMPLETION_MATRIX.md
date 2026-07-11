@@ -1,6 +1,6 @@
 # 设计目标完成矩阵
 
-当前版本：`5.1.8`（在 v5.0 冻结表面上追加默认关闭/只读的实验能力，外加 model advisor 可观测性补强、v5.1.1 全面审计加固、v5.1.3 的 profile 安全闸门修复与设置面板即时生效、v5.1.4 的性能/复杂度治理收口、v5.1.5 的入口/控制面结构收敛、v5.1.6 的文档统计修正、v5.1.7 的子系统级精简计划，以及 v5.1.8 的 usage evidence provenance 与 doctor 降噪补丁；默认边界与安全闸门不变）
+当前版本：`5.1.10`（在 v5.0 冻结表面上追加默认关闭/只读的实验能力，完成 v5.1.7 子系统精简、v5.1.8 usage evidence/doctor 降噪，并在 v5.1.10 收口 Agent 隔离、生命周期、模型凭证、embedding、提案恢复、跨进程状态锁、发布证据与 Hanako v0.374.3 预览版兼容性；默认边界与安全闸门不变）
 
 ## 总体状态
 
@@ -21,11 +21,11 @@
 | 项目 | 预期 |
 |---|---|
 | `npm run check` | 通过 |
-| `npm test` | 950 个测试，945 通过，5 跳过 |
+| `npm test` | 994 个测试，989 通过，5 跳过 |
 | `npm run benchmark` | 17/17 通过 |
 | `npm run perf` | 无阈值越界 |
 | `npm run release:check` | Score 100 |
 
 ## 未完成项
 
-v5.1.6 当前仍未发布完整的 M1 本地 vector index；语义检索、agent task/graph/resume 与 adaptive thresholds 已有可选或受治理约束的实现路径，但默认关闭、只读或 recommendation-only，不改变保守自动化边界。
+v5.1.10 当前仍未发布完整的 M1 本地 vector index；语义检索、agent task/graph/resume 与 adaptive thresholds 已有可选或受治理约束的实现路径，但默认关闭、只读或 recommendation-only，不改变保守自动化边界。

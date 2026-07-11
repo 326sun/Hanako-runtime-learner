@@ -18,6 +18,7 @@ import {
   isActiveSkillInjectable,
   selectInjectableActiveSkills,
   countJsonl,
+  clearJsonlCountCache,
   countValues,
   readRecentJsonl,
   readJsonlSample,
@@ -480,6 +481,34 @@ describe("countJsonl", () => {
     fs.writeFileSync(file, "", "utf-8");
     assert.equal(countJsonl(file), 0);
   });
+
+  it("reuses a count until the file changes", (t) => {
+    const file = path.join(tmpDir, "cached.jsonl");
+    fs.writeFileSync(file, '{"a":1}\n', "utf-8");
+    clearJsonlCountCache();
+    const originalOpenSync = fs.openSync;
+    let openCount = 0;
+    t.mock.method(fs, "openSync", (...args) => {
+      openCount += 1;
+      return originalOpenSync(...args);
+    });
+
+    assert.equal(countJsonl(file), 1);
+    assert.equal(countJsonl(file), 1);
+    assert.equal(openCount, 1);
+
+    fs.appendFileSync(file, '{"b":2}\n', "utf-8");
+    assert.equal(countJsonl(file), 2);
+    assert.equal(openCount, 2);
+  });
+
+  it("preserves blank and chunk-boundary line semantics", () => {
+    const file = path.join(tmpDir, "chunks.jsonl");
+    const longLine = JSON.stringify({ value: "x".repeat(70 * 1024) });
+    fs.writeFileSync(file, `\r\n${longLine}\n\r\n  \nlast`, "utf-8");
+    clearJsonlCountCache();
+    assert.equal(countJsonl(file), 3);
+  });
 });
 
 describe("countValues", () => {
@@ -546,5 +575,7 @@ describe("readRecentJsonl", () => {
     assert.equal(sample.coverage.legacyPathOnly, 1);
     assert.equal(sample.coverage.unknown, 1);
     assert.equal(sample.coverage.coverageRatio, 1 / 3);
+    assert.equal(sample.complete, true);
+    assert.equal(sample.lineCount, 3);
   });
 });

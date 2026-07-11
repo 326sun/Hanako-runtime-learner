@@ -9,7 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execSync } = require("child_process");
+const { execFileSync } = require("child_process");
 
 const PLUGIN_NAME = "hanako-runtime-learner";
 const PLUGIN_SRC = __dirname;
@@ -70,7 +70,6 @@ const JS_FILES = [
   "lib/observer.js",
   "lib/observer-tool-handlers.js",
   "lib/official-memory-bridge.js",
-  "lib/official-utility-model.js",
   "lib/pattern-detector.js",
   "lib/pattern-detector-ingest.js",
   "lib/pattern-detector-utils.js",
@@ -114,6 +113,32 @@ const JS_FILES = [
   "tools/search.js",
   "tools/stats.js",
 ];
+
+// Keep installer validation aligned with what is actually copied. The list
+// above documents the long-standing core surface; recursive discovery covers
+// newer nested handlers and support modules so they cannot bypass preflight.
+function collectJavaScriptFiles(relativeDir) {
+  const absoluteDir = path.join(PLUGIN_SRC, relativeDir);
+  if (!fs.existsSync(absoluteDir)) return [];
+  const files = [];
+  for (const entry of fs.readdirSync(absoluteDir, { withFileTypes: true })) {
+    const relative = path.join(relativeDir, entry.name);
+    if (entry.isDirectory()) files.push(...collectJavaScriptFiles(relative));
+    else if (entry.isFile() && [".js", ".cjs", ".mjs"].includes(path.extname(entry.name))) {
+      files.push(relative.replace(/\\/g, "/"));
+    }
+  }
+  return files;
+}
+for (const file of [...collectJavaScriptFiles("lib"), ...collectJavaScriptFiles("tools")]) {
+  if (!JS_FILES.includes(file)) JS_FILES.push(file);
+}
+JS_FILES.sort();
+
+if (process.argv.includes("--list-js")) {
+  console.log(JSON.stringify(JS_FILES));
+  process.exit(0);
+}
 let syntaxOk = true;
 for (const file of JS_FILES) {
   const fullPath = path.join(PLUGIN_SRC, file);
@@ -123,7 +148,7 @@ for (const file of JS_FILES) {
     continue;
   }
   try {
-    execSync(`node --check "${fullPath}"`, { stdio: "pipe" });
+    execFileSync(process.execPath, ["--check", fullPath], { stdio: "pipe" });
     console.log(`  OK    ${file}`);
   } catch (err) {
     console.log(`  FAIL  ${file}: ${err.stderr?.toString().trim() || err.message}`);

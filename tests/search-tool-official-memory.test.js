@@ -14,7 +14,7 @@ function writePinnedMemory(home, agent, content) {
   }), "utf-8");
 }
 
-test("self_learning_search scopes official memory by project", async () => {
+test("self_learning_search binds official memory to the invoking Agent", async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "search-official-memory-"));
   const previousHome = process.env.HANA_HOME;
   try {
@@ -26,9 +26,9 @@ test("self_learning_search scopes official memory by project", async () => {
     const searchTool = await import(`../tools/search.js?official-project-${Date.now()}`);
     const result = parseToolResult(await searchTool.execute({
       query: "shared review workflow",
-      project: "hanako",
+      project: "unrelated-project-name",
       limit: 5,
-    }));
+    }, { agentId: "hanako" }));
 
     assert.equal(result.ok, true);
     assert.ok(result.officialMemory.length >= 1);

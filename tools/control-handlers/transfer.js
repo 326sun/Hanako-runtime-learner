@@ -43,6 +43,7 @@ export const transferHandlers = {
       status: input.validationStatus || input.status || "passed",
       summary: input.reason || "target validation recorded through self_learning_control",
       evidence: input.evidence || [],
+      verifier: "self_learning_control_manual",
     });
     return JSON.stringify({ ok: recorded.ok, summary: summarizeTransferCandidate(recorded.record), nextAction: recorded.ok ? "manual skill promotion review" : "fix target issue or expire_transfer_candidate" }, null, 2);
   },

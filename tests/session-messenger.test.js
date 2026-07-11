@@ -60,4 +60,19 @@ describe("session messenger", () => {
     await messenger.notifyWorkStatus("session.md", { workStatusEnabled: true }, "done");
     assert.equal(ctx.sent.length, 0);
   });
+
+  test("treats an explicit host rejection as a failed send", async () => {
+    const ctx = makeCtx();
+    ctx.bus.request = async () => ({ ok: false, error: "rejected" });
+    const messenger = createSessionMessenger(ctx);
+    assert.equal(await messenger.send("session.md", "hello", { retries: 1, warnOnFailure: false }), false);
+  });
+
+  test("allows another work-status notification after the intended 15-minute cooldown", async () => {
+    const ctx = makeCtx();
+    const statusNotifiedAt = new Map([["session.md", Date.now() - 16 * 60_000]]);
+    const messenger = createSessionMessenger(ctx, { statusNotifiedAt });
+    await messenger.notifyWorkStatus("session.md", { workStatusEnabled: true }, "done", { sessionKey: "session.md" });
+    assert.equal(ctx.sent.length, 1);
+  });
 });

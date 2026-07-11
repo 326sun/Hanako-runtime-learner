@@ -1,6 +1,6 @@
 # 架构说明
 
-Runtime Self-Learning `v5.1.4` 当前由 `1` 个入口点、`107` 个 `lib` 模块和一组工具面组成。整体目标不是“尽量自动化”，而是“在不放宽边界的前提下，把本地经验整理成后续可复用的受限提示和低风险动作”。
+Runtime Self-Learning `v5.1.10` 当前由 `1` 个入口点、`111` 个 `lib` 模块和一组工具面组成。整体目标不是“尽量自动化”，而是“在不放宽边界的前提下，把本地经验整理成后续可复用的受限提示和低风险动作”。
 
 ---
 
@@ -100,7 +100,7 @@ flowchart TD
     H --> J["Audit Bundle"]
     I --> K["Release Readiness"]
     J --> K
-    K --> L["v4.x 发布判断"]
+    K --> L["v5.x 发布判断"]
 ```
 
 这条链路背后的原则是：
@@ -202,7 +202,7 @@ flowchart TD
 | `facts.json` | 长期事实记忆，支持 supersession。 |
 | `event_log.jsonl` | 追加写审计事件链。 |
 | `action_feedback.jsonl` | 自动动作执行结果、验证结果和反馈权重输入。 |
-| `config.json` | 非敏感配置主文件。 |
+| `runtime-config.json` | 插件非敏感运行时配置；宿主拥有同目录的 `config.json`。 |
 | `credentials.enc` | 敏感凭证加密存储。 |
 | `memfs/` | 从机器存储派生出来的人类可读视图。 |
 

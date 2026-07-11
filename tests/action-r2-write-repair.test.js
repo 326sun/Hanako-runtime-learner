@@ -87,6 +87,37 @@ describe("R2 sandboxed writes and repair", () => {
     assert.equal(fs.readFileSync(path.join(workspace, "repair.js"), "utf-8"), "const value = 3;\n");
   });
 
+  it("does not let a repair expand beyond the files approved for the main action", async () => {
+    fs.writeFileSync(path.join(workspace, "safe.js"), "export const safe = 1;\n", "utf-8");
+    const action = plan({
+      plan: {
+        filePatches: [{ path: "safe.js", oldText: "safe = 1", newText: "safe = 2" }],
+        verifyCommands: ["node -e \"require('fs').existsSync('.env') ? process.exit(0) : process.exit(1)\""],
+      },
+      repairPlan: {
+        fileWrites: [{ path: ".env", content: "SECRET=repair-bypass\n" }],
+      },
+    });
+    const config = {
+      ...DEFAULT_CONFIG,
+      autoActionCommands: {
+        allowlist: ["node -e"],
+        denylist: DEFAULT_CONFIG.autoActionCommands.denylist,
+      },
+    };
+    const result = await executeActionPlan(action, {
+      config,
+      workspaceRoot: workspace,
+      learnerDir: tmpDir,
+      taskScope: { allowedFiles: ["safe.js"], maxChangedFiles: 1 },
+    });
+
+    assert.equal(result.status, "reverted");
+    assert.match(result.repair.error, /repair scope expands/);
+    assert.equal(fs.existsSync(path.join(workspace, ".env")), false);
+    assert.equal(fs.readFileSync(path.join(workspace, "safe.js"), "utf-8"), "export const safe = 1;\n");
+  });
+
   it("writes replacement text containing dollar patterns literally", async () => {
     fs.writeFileSync(path.join(workspace, "dollar.js"), "const re = 1;\n", "utf-8");
     const action = plan({

@@ -50,6 +50,16 @@ describe("self_learning_console tool", () => {
     assert.equal(consoleTool.name, "self_learning_console");
   });
 
+  it("declares its plugin-private session mutation to the host permission gate", () => {
+    assert.equal(consoleTool.sessionPermission.readOnly, undefined);
+    assert.equal(consoleTool.sessionPermission.kind, "review");
+    assert.deepEqual(consoleTool.sessionPermission.describeSideEffect(), {
+      kind: "plugin_private_session_write",
+      summary: "Create or refresh the Runtime Self-Learning private console session.",
+      ruleId: "runtime-learner-console-session",
+    });
+  });
+
   it("returns a chat.surface card and posts a snapshot when the session is available", async () => {
     const d = dir();
     const ctx = makeCtx(d);
