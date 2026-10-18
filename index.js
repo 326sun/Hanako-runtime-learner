@@ -397,7 +397,7 @@ async function setupBackground(ctx, rt) {
     try { return rt.detector.all(); } catch { return []; }
   };
   try {
-    backgroundTasks = await setupBackgroundTasks({
+    backgroundTasks = await (ctx.setupBackgroundTasks || setupBackgroundTasks)({
       ctx,
       dataDir: rt.paths.DATA_DIR,
       config: rt.config,

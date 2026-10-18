@@ -1,5 +1,7 @@
 # v5.0 API 冻结总览
 
+`5.1.11` 为现有 v1 插件的 HanaAgent 1.1.24-beta 兼容维护候选；本地验证范围见 [HANA_1.1_COMPATIBILITY.md](HANA_1.1_COMPATIBILITY.md)。不新增模型调用、持久写入种类或默认启用的能力。
+
 `v5.0.0` 是 Runtime Self-Learning 的现代化基线。v4.x LTS 的“零依赖源码安装”约束已解除为“无运行时依赖、发布包自包含”，但安全边界、治理链和人工确认规则继续冻结。
 
 > **`5.1.0`（内部安装候选，未发布）**：在冻结的 v5.0 API 表面之上，仅追加默认关闭/只读的实验能力（M5d adaptive-threshold 建议、M4 只读 agent graph 及 `agent_graph_preview` 诊断入口、M5/M5b feedback 信号）。不改动、不移除任何已冻结的接口、安全边界或人工确认规则。

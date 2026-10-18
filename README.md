@@ -1,28 +1,45 @@
 # Runtime Self-Learning
 
+**v6.0.0：面向 HanaAgent 1.1.24-beta 的 v2 App。** 本地学习重复工作流、用户纠正和工具错误，提供检索、审核与相关经验提示。模型功能默认关闭，不直接联网。
+
+- 从 [v6.0.0 Release](https://github.com/326sun/Hanako-runtime-learner/releases/tag/v6.0.0) 下载 `app-hanako-runtime-learner-6.0.0.zip`，在 Hana 的“扩展 → 本地安装”导入并完成权限审查。
+- 设置入口：**左下角齿轮 → 应用 → 自学习**。模型功能跟随 Hana 的工具模型；后台计划须显式启用。
+- 数据保存到 `<HANA_HOME>/app-data/hanako-runtime-learner/`。停用旧 v1 后，可从空数据开始或手动迁移；不要同时运行两个版本。
+- [App 使用与权限说明](app/hanako-runtime-learner/README.md) · [迁移与构建](docs/V2_MIGRATION.md) · [验收范围](docs/ACCEPTANCE-v6.0.0.md) · [投稿流程](docs/MARKETPLACE_STATUS.md)
+
+已在 Windows 实际安装验证：加载成功、7 个工具注册、设置页可见。自动回归 1009 项（1004 通过、5 项 Windows symlink 权限跳过）。真实付费模型对话、长时间后台运行及其它系统尚未验收。
+
+开发构建：`npm ci --ignore-scripts`、`npm run build:app`；官方打包和校验需设置 `HANA_APP_TOOLS_ROOT`，详见迁移文档。`node scripts/demo-app.js` 可运行不访问生产数据的工具演示。
+
+## v1 历史参考
+
+下文仅保留 v1 5.1.11 的历史说明。根 package/manifest 属于共享核心的回归基线；**v2 版本、权限和入口以 `app/hanako-runtime-learner/manifest.json` 为准**，请勿将整个源码目录导入为 App。
+
 <p align="center">
   <sub>Hanako 本地运行时自学习引擎</sub>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.10-blue" alt="version">
+  <img src="https://img.shields.io/badge/version-5.1.11-blue" alt="version">
   <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
   <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
   <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-994%2F994-success" alt="tests">
+  <img src="https://img.shields.io/badge/tests-1001%2F1001-success" alt="tests">
 </p>
 
-> 测试徽章 `994/994` 表示测试总数 = 发布参考环境下的通过数（0 skip）。**本地开发机上实际结果可能是
-> `989 passed / 5 skipped`**——5 个跳过项由 Windows 无 symlink 创建权限触发（`t.skip(...)`
-> 环境能力探测，非功能失败），在有 symlink 权限或非 Windows 环境下会正常执行并通过。详见下方
-> “发布检查表”。
+> 本地适配候选 **v5.1.11**，目标为 **HanaAgent 1.1.24-beta（2026-10-18）**，尚未上传 GitHub 或发布 tag。
+> 测试徽章沿用总数格式；本次实际结果为 `1001 tests / 996 passed / 5 skipped / 0 failed`。
+> 5 项因本机 Windows 无 symlink 创建权限而跳过，本次没有验证其它平台。
+>
+> 这是现有 v1 插件的兼容维护版。当前官方宿主永久支持已发布 v1 插件；本次没有迁移成 v2 App。
+> 安装和验证范围见 [docs/HANA_1.1_COMPATIBILITY.md](docs/HANA_1.1_COMPATIBILITY.md)。
 
 Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
 
 设计目标很简单：让 Hanako 记住本地有价值的经验，但不扩大自动化边界。数据默认只保存在本机目录；外部模型调用和语义检索默认关闭，只有显式配置后才会启用。
 
-v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增加默认关闭的 LLM extraction worker，M3-lite 将后台整理迁移到 Hanako `task:*` bus 调度，M6 完成版本、治理和 release check 收口。v5.1.7 完成子系统级精简，v5.1.8 补齐 usage evidence 并降低 doctor 噪音。v5.1.10 在既有审计修复上补齐安全提案恢复、跨进程状态锁、发布包完整性与 Hanako v0.374.3 预览版兼容验证；默认安全/审批/事务/审计边界保持不变：
+v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增加默认关闭的 LLM extraction worker，M3-lite 将后台整理迁移到 Hanako `task:*` bus 调度，M6 完成版本、治理和 release check 收口。v5.1.7 完成子系统级精简，v5.1.8 补齐 usage evidence 并降低 doctor 噪音。v5.1.10 在既有审计修复上补齐安全提案恢复、跨进程状态锁、发布包完整性与 Hanako v0.374.3 预览版兼容验证。v5.1.11 继续适配 HanaAgent 1.1.24-beta 的事件和任务协议；默认安全/审批/事务/审计边界保持不变：
 
 | 能力 | 当前状态 | 默认值 | 自动执行边界 |
 |---|---|---|---|
@@ -98,10 +115,10 @@ npm run build
 npm run install-plugin
 ```
 
-固定版本安装：
+固定版本安装（下列命令仅供未来发布 v5.1.11 tag 后使用；当前请直接导入随附 ZIP，或使用随附源码）：
 
 ```powershell
-git clone --branch v5.1.10 https://github.com/326sun/Hanako-runtime-learner.git
+git clone --branch v5.1.11 https://github.com/326sun/Hanako-runtime-learner.git
 cd Hanako-runtime-learner
 npm install
 npm run build
@@ -246,7 +263,7 @@ flowchart LR
 ```powershell
 npm run build          # esbuild 打包为可安装的 dist/（开发期可选；发布期必跑）
 npm run check          # 语法与源代码检查
-npm test               # 994 个测试
+npm test               # 1001 个测试
 npm run benchmark      # 17 个内置基准场景
 npm run perf           # 热路径微基准
 npm run complexity:check   # 复杂度预算门禁（超 hard limit 即失败）
@@ -282,12 +299,12 @@ npm run perf -- --json
 npm run release:check
 ```
 
-`v5.1.10` 的预期结果：
+`v5.1.11` 的预期结果：
 
 ```text
-package version: 5.1.10
+package version: 5.1.11
 npm run check: passed
-npm test: 994 tests, 989 passed, 5 skipped, 0 failed
+npm test: 1001 tests, 996 passed, 5 skipped, 0 failed
 npm run benchmark: passed, 17 scenarios
 npm run perf: passed, no threshold breaches
 npm run release:check: Score 100
@@ -319,7 +336,7 @@ npm audit: 0 high/critical vulnerabilities
 | [docs/PRIVACY.md](docs/PRIVACY.md) | LLM extraction、后台任务和本地数据隐私说明。 |
 | [docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md) | v5.0.0 安全复审。 |
 | [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v5.1.10.md](docs/ACCEPTANCE-v5.1.10.md) | 当前版本验收记录。 |
+| [docs/ACCEPTANCE-v5.1.11.md](docs/ACCEPTANCE-v5.1.11.md) | 当前版本验收记录。 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
 
 ## 许可证

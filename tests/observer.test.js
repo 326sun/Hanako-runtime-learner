@@ -241,6 +241,39 @@ describe("SessionObserver — event routing", () => {
       assert.equal(sessions.has("sessions/test.jsonl"), false);
     });
 
+    it("keeps Pi toolUse and legacy tool_calls in one workflow until the final reply", () => {
+      const mocks = setupMocks();
+      const observer = createObserver(mocks);
+      let emit;
+      observer.subscribe({ subscribe(cb) { emit = cb; return () => {}; } }, { learnFromUsage: false });
+      const target = { sessionId: "pi-workflow", sessionPath: "sessions/pi.jsonl" };
+      emit({ type: "session_user_message", message: { text: "修复后验证" } }, target);
+      for (const [tool, reason] of [["read", "toolUse"], ["edit", "tool_calls"]]) {
+        emit({ type: "message_end", message: { role: "assistant", stopReason: reason } }, target);
+        assert.ok(mocks.sessions.has("sid:pi-workflow"), "toolUse must preserve the user request");
+        emit({ type: "tool_execution_start", toolName: tool }, target);
+        emit({ type: "tool_execution_end", toolName: tool }, target);
+      }
+      assert.equal(fs.existsSync(paths.EXPERIENCE_LOG), false, "intermediate messages cannot flush");
+      emit({ type: "message_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "已验证" }] } }, target);
+      const rows = fs.readFileSync(paths.EXPERIENCE_LOG, "utf8").trim().split("\n").map(JSON.parse);
+      assert.equal(rows.length, 1);
+      assert.deepEqual(rows[0].toolsUsed, ["read", "edit"]);
+      assert.equal(rows[0].resultStatus, "success");
+      assert.equal(rows[0].sessionId, "pi-workflow");
+      assert.equal(rows[0].userIntent, "修复后验证");
+    });
+
+    it("reads Pi tool error content instead of losing the diagnostic", () => {
+      const mocks = setupMocks();
+      const observer = createObserver(mocks);
+      let emit;
+      observer.subscribe({ subscribe(cb) { emit = cb; return () => {}; } }, { learnFromUsage: false });
+      emit({ type: "tool_execution_end", toolName: "exec_command", isError: true,
+        result: { content: [{ type: "text", text: "ENOENT: missing input.txt" }] } }, "sessions/error.jsonl");
+      assert.match(mocks.sessions.get("sessions/error.jsonl").errors[0], /ENOENT: missing input.txt/);
+    });
+
     it("ignores events without a type", () => {
       const sessions = new Map();
       const mocks = setupMocks({ sessions });
@@ -313,6 +346,22 @@ describe("SessionObserver — event routing", () => {
   });
 
   describe("tool-end semantic handlers", () => {
+    it("keeps search adoption feedback from Pi details and content envelopes", () => {
+      for (const envelope of [
+        { details: { results: [{ id: "workflow:pi", type: "workflow" }] } },
+        { content: [{ type: "text", text: JSON.stringify({ results: [{ id: "workflow:pi", type: "workflow" }] }) }] },
+      ]) {
+        const mocks = setupMocks();
+        mocks.detector.patterns.set("workflow:pi", { id: "workflow:pi", tools: ["read", "exec_command"] });
+        const observer = createObserver(mocks);
+        let emit;
+        observer.subscribe({ subscribe(cb) { emit = cb; return () => {}; } }, { learnFromUsage: false });
+        emit({ type: "tool_execution_end", toolName: "hanako-runtime-learner_self_learning_search", result: envelope }, "sessions/pi.jsonl");
+        assert.ok(mocks.detector.patterns.get("workflow:pi").lastSearchedAt);
+        assert.equal(mocks.runtimeState.pendingAdoptionChecks.get("sessions/pi.jsonl").searches.length, 1);
+      }
+    });
+
     it("pin_memory creates durable preference pattern", () => {
       const detector = new PatternDetector({ minInjectScore: 8 });
       const mocks = setupMocks({ detector });

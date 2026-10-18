@@ -1,0 +1,144 @@
+{
+  "manifestVersion": 2,
+  "id": "hanako-runtime-learner",
+  "name": "Runtime Self-Learning",
+  "version": "6.0.0",
+  "entry": "index.js",
+  "icon": "assets/icon.svg",
+  "minAppVersion": "1.1.0",
+  "description": "本地自学习：从重复工作流、纠正与错误中提炼可审查经验，按相关性在后续回合使用。",
+  "capabilities": [
+    "app/tools.expose-to-model",
+    "app/usage.read",
+    "app/models.infer",
+    "app/tasks.manage",
+    "app/hooks.agent-before-start"
+  ],
+  "contributes": {
+    "settings": {
+      "title": "自学习",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "governanceProfile": {
+            "type": "string",
+            "title": "治理策略档位",
+            "enum": [
+              "conservative",
+              "balanced",
+              "autonomous"
+            ],
+            "default": "balanced",
+            "ui": {
+              "enumLabels": [
+                "保守 / 审查优先",
+                "均衡 / 默认",
+                "自主 / 单用户快路径"
+              ]
+            }
+          },
+          "autoInjectHighConfidence": {
+            "type": "boolean",
+            "title": "自动注入高置信经验",
+            "default": true
+          },
+          "autoApproveHighConfidence": {
+            "type": "boolean",
+            "title": "自动批准高置信模式",
+            "default": true
+          },
+          "minInjectScore": {
+            "type": "number",
+            "title": "自动注入最低分",
+            "description": "有效范围 1–50。低于此评分的经验不会自动注入。",
+            "default": 8
+          },
+          "minInjectCount": {
+            "type": "number",
+            "title": "自动注入最少重复次数",
+            "description": "有效范围 1–20。重复次数达到此值的模式才会自动注入。",
+            "default": 2
+          },
+          "decayHalfLifeDays": {
+            "type": "number",
+            "title": "经验评分半衰期（天）",
+            "description": "有效范围 1–365 天。经验评分按此半衰期随时间衰减。",
+            "default": 30
+          },
+          "includePendingPreferences": {
+            "type": "boolean",
+            "title": "允许未审核偏好参与注入（默认关闭）",
+            "default": false
+          },
+          "learnFromUsage": {
+            "type": "boolean",
+            "title": "从模型用量元数据学习",
+            "description": "从已授权的用量元数据学习。授权变化后重载 App；设置改动在下一次事件或工具调用时生效。",
+            "reloadRequired": true,
+            "default": true
+          },
+          "modelAdvisorEnabled": {
+            "type": "boolean",
+            "title": "启用宿主工具模型整理（默认关闭）",
+            "default": false
+          },
+          "modelAdvisorSource": {
+            "type": "string",
+            "title": "整理模型来源",
+            "enum": [
+              "official",
+              "off"
+            ],
+            "default": "official",
+            "ui": {
+              "enumLabels": [
+                "宿主工具模型",
+                "关闭"
+              ]
+            }
+          },
+          "modelAdvisorMaxTokens": {
+            "type": "number",
+            "title": "整理模型最大输出 token",
+            "description": "有效范围 100–4000。",
+            "default": 500
+          },
+          "modelAdvisorMinIntervalMinutes": {
+            "type": "number",
+            "title": "后台整理最小间隔（分钟）",
+            "description": "有效范围 1–1440 分钟（最长 24 小时）。",
+            "default": 60
+          },
+          "llmExtractionEnabled": {
+            "type": "boolean",
+            "title": "启用 LLM 模式抽取（默认关闭，会向宿主工具模型发送脱敏摘要）",
+            "description": "开启后仅在后台生成待人审的候选模式（pattern_candidate），绝不直接写入记忆或自动执行。",
+            "default": false
+          },
+          "llmExtractionMinIntervalMinutes": {
+            "type": "number",
+            "title": "LLM 抽取最小间隔（分钟）",
+            "description": "有效范围 1–1440 分钟。后台抽取触发的限频。",
+            "default": 30
+          },
+          "llmExtractionMinConfidence": {
+            "type": "number",
+            "title": "LLM 抽取最低置信度",
+            "description": "有效范围 0–1。低于此置信度的抽取结果被丢弃。",
+            "default": 0.72
+          },
+          "activeSkillsInjectionEnabled": {
+            "type": "boolean",
+            "title": "允许激活技能注册表参与 SKILL.md 注入（默认关闭）",
+            "default": false
+          },
+          "activeSkillsInjectionMaxCount": {
+            "type": "number",
+            "title": "激活技能最多注入条数",
+            "default": 3
+          }
+        }
+      }
+    }
+  }
+}

@@ -33,6 +33,7 @@ const ZIP_NAME = "hanako-runtime-learner-dist.zip";
 const COPY_FILES = [
   ["manifest.json", "manifest.json"],
   ["README.md", "README.md"],
+  ["docs/HANA_1.1_COMPATIBILITY.md", "docs/HANA_1.1_COMPATIBILITY.md"],
   ["LICENSE", "LICENSE"],
   ["lib/plugin-process-runner-child.js", "plugin-process-runner-child.js"],
   ["skills/self-learning/SKILL.md", "skills/self-learning/SKILL.md"],

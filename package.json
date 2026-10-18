@@ -1,6 +1,6 @@
 {
   "name": "hanako-runtime-learner",
-  "version": "5.1.10",
+  "version": "5.1.11",
   "description": "Runtime self-learning engine for Hanako: observe local interaction patterns, learn repeated workflows and errors, inject conservative skill hints.",
   "author": "Sun",
   "license": "MIT",
@@ -28,12 +28,19 @@
     "perf": "node scripts/perf-bench.js",
     "complexity:check": "node scripts/complexity-check.js",
     "complexity:report": "node scripts/complexity-report.js",
-    "release:check": "node scripts/release-readiness.js"
+    "release:check": "node scripts/release-readiness.js",
+    "build:app": "node scripts/build-app.js",
+    "test:app": "node --test tests/app-v2.test.js",
+    "migrate:v2": "node scripts/migrate-v2-data.js",
+    "validate:app": "node scripts/validate-app.js",
+    "package:app": "node scripts/package-app.js",
+    "prepare:market": "node scripts/prepare-marketplace.js"
   },
   "engines": {
     "node": ">=22"
   },
   "devDependencies": {
+    "@hana/app-sdk": "file:vendor/hana-app-sdk.tgz",
     "esbuild": "0.28.1"
   }
 }

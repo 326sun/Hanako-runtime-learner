@@ -373,7 +373,7 @@ export async function execute(input = {}, ctx) {
   // static network allowlist. Node's standards-based fetch preserves the
   // explicit opt-in while correctly supporting HTTPS and localhost HTTP, and
   // honors the AbortSignal supplied by embedTexts().
-  const fetchImpl = typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null;
+  const fetchImpl = ctx?.fetch || (typeof globalThis.fetch === "function" ? globalThis.fetch.bind(globalThis) : null);
 
   let semantic = null;
   let semanticUsed = false;

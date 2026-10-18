@@ -1,5 +1,26 @@
 # Changelog
 
+## 6.0.0 - 2026-10-18（v2 App）
+
+- 新 App 采用 manifestVersion 2、官方 defineApp 与固定版本 App SDK；运行目录只读，状态和生成提示位于 App dataDir。
+- SDK 事件异步串行处理，结束时排干已接收队列；提示注入只使用相关 general/global 经验，项目范围或待审偏好不越界。
+- 宿主工具模型调用使用 sdk.models.utility；计划采用 App 自有处理器与显式 enable，支持去重、暂停与合作式取消。
+- v1 原始数据保留，新增只读预览、空目标复制及复制中变化检测；不自动停用或替换生产插件。
+- 官方静态、隔离启动及最终 ZIP 校验通过；完整回归 1009 tests、1004 passed、5 skipped、0 failed。
+- 官方记忆文件直读、外部工作区自动执行、旧 console/open-dir 未在隔离版启用。真实模型聊天、生产迁移与跨平台验收仍未完成。
+- 本机实际安装通过：7 个工具注册、设置页可见；提供可复现的 SDK fixture 工具演示与新 Global 市场投稿材料。市场审核独立于 Release 发布，旧市场 PR #14 保留。
+
+## 5.1.11 - 2026-10-18（HanaAgent 1.1.24-beta 本地适配候选）
+
+- 修复 Pi `stopReason: toolUse` 导致中间工具调用被拆成多个学习回合；继续兼容 `tool_calls`。
+- 读取 Pi 工具错误的 `content` 文本，以及检索结果的 `details` / `content` 包装，恢复错误学习和工作流采用反馈。
+- 将 `exec_command`、`write_stdin`、`file` 纳入工作流分类。
+- 后台任务使用宿主实际要求的 `run` / `abort` 和 `intervalMs`，支持数组形式的任务与计划列表。
+- 计划执行前注册实际任务；并发触发不留下孤立任务，取消后不误标完成，部分调度失败时撤销本次注册并保留降级路径。
+- 修复 Windows 中文路径下发布包测试错误地使用 URL pathname 的问题。
+- 新增从已安装 1.1.24-beta bundle 提取真实 TaskRegistry 与任务 bus 绑定的隔离探针，不启动服务器、不访问生产学习数据。
+- 完整测试：1001 tests，996 passed，5 skipped，0 failed。保留现有 v1 格式、数据目录和默认授权边界；未发布远端 tag。
+
 本文档记录 Runtime Self-Learning 的版本演进。`v4.3.x` 进入 LTS 维护线，`v5.x` 为现代化主线。
 
 ## 5.1.10 - 2026-07-11（发布准备与 Hanako v0.374.3 兼容加固）

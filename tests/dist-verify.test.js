@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import { fileURLToPath } from "node:url";
 import {
   REQUIRED_DIST_FILES,
   REQUIRED_TOOL_FILES,
@@ -38,7 +39,7 @@ describe("dist-verify · characterization of the source entry contract", () => {
   });
 
   it("the real source child runner is self-contained (only node: imports) so it can be copied, not bundled", () => {
-    const here = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1"));
+    const here = path.dirname(fileURLToPath(import.meta.url));
     const child = fs.readFileSync(path.join(here, "..", "lib", "plugin-process-runner-child.js"), "utf-8");
     const offenders = scanUnresolvedSourceImports(child);
     assert.deepEqual(offenders, []);

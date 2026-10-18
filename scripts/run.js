@@ -87,7 +87,7 @@ export function runCli(argv = process.argv.slice(2)) {
   const mode = argv[0];
   if (mode === "check") {
     let failed = 0;
-    for (const file of ["index.js", "install.cjs", ...listFiles("lib"), ...listFiles("tools"), ...listFiles("scripts")]) {
+    for (const file of ["index.js", "install.cjs", ...listFiles("lib"), ...listFiles("tools"), ...listFiles("scripts"), ...listFiles("v2")]) {
       const status = runNode(["--check", file]);
       if (status !== 0) failed = status;
     }

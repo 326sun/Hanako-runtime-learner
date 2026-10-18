@@ -40,7 +40,10 @@ class FakeTaskBus {
     this.requests.push({ name, payload });
     if (this.unavailable.has(name)) throw new Error(`unavailable: ${name}`);
     if (name === "task:register-handler") {
-      this.handlers.set(payload.type, payload.handler);
+      assert.equal(typeof payload.abort, "function", "current TaskRegistry requires abort(taskId)");
+      assert.equal(typeof payload.run, "function", "schedules call the run field");
+      this.handlers.set(payload.type, payload.run);
+      this.abortHandler = payload.abort;
       return { ok: true, handlerId: payload.handlerId };
     }
     if (name === "task:unregister-handler") {
@@ -48,14 +51,19 @@ class FakeTaskBus {
       return { ok: true };
     }
     if (name === "task:schedule") {
+      assert.ok(payload.intervalMs > 0, "current TaskRegistry requires intervalMs");
       this.schedules.set(payload.scheduleId, payload);
       return { ok: true, scheduleId: payload.scheduleId };
     }
     if (name === "task:list-schedules") {
-      return { schedules: [...this.schedules.values()] };
+      return [...this.schedules.values()];
+    }
+    if (name === "task:unschedule") {
+      this.schedules.delete(payload.scheduleId);
+      return { ok: true };
     }
     if (name === "task:list") {
-      return { tasks: this.tasks };
+      return this.tasks;
     }
     if (name === "task:complete" || name === "task:fail" || name === "task:cancel" || name === "task:update" || name === "task:register" || name === "task:remove") {
       return { ok: true };
@@ -112,7 +120,7 @@ describe("host task adapter", () => {
       intervalMinutes: 60,
     });
     assert.equal(scheduled.ok, true);
-    assert.equal(bus.schedules.get("job.schedule").intervalMinutes, 60);
+    assert.equal(bus.schedules.get("job.schedule").intervalMs, 60 * 60_000);
   });
 
   it("returns skipped/unavailable when a requested task operation is missing", async () => {
@@ -212,6 +220,7 @@ describe("M3-lite background task setup", () => {
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
     assert.equal([...bus.schedules.keys()].length, 3);
+    assert.equal(bus.requests.filter((r) => r.name === "task:schedule").length, 3);
   });
 
   it("P9.D: lists schedules once per setup call for the whole job batch, not once per job", async () => {
@@ -316,5 +325,47 @@ describe("M3-lite background task setup", () => {
     const result = await handler({ id: "llm-task-1", type: "hanako-runtime-learner.llm-extraction-worker" });
     assert.equal(result.result.skipped, "disabled");
     assert.equal(sampled, 0);
+  });
+
+  it("does not register an orphan task when schedule triggers overlap", async () => {
+    const bus = new FakeTaskBus();
+    let release;
+    const pending = new Promise((resolve) => { release = resolve; });
+    await setupBackgroundTasks({ ctx: ctxFor(bus), dataDir: tmpDir, config: DEFAULT_CONFIG,
+      runAdvisor: () => pending });
+    const handler = bus.handlers.get("hanako-runtime-learner.advisor-maintenance");
+    const first = handler({ scheduleId: "advisor.schedule" });
+    const second = await handler({ scheduleId: "advisor.schedule" });
+    assert.equal(second.skipped, "in_flight");
+    release({ ok: true });
+    await first;
+    assert.equal(bus.requests.filter((r) => r.name === "task:register").length, 1);
+  });
+
+  it("cleans up partial scheduling before using the fallback path", async () => {
+    const bus = new FakeTaskBus();
+    const original = bus.request.bind(bus);
+    bus.request = (name, payload) => name === "task:schedule" && payload.type.endsWith("log-retention")
+      ? Promise.resolve({ ok: false }) : original(name, payload);
+    const result = await setupBackgroundTasks({ ctx: ctxFor(bus), dataDir: tmpDir, config: DEFAULT_CONFIG });
+    assert.equal(result.useLegacyPath, true);
+    assert.equal(bus.schedules.size, 0);
+    assert.equal(bus.handlers.size, 0);
+  });
+
+  it("does not complete a task after the host aborts its running job", async () => {
+    const bus = new FakeTaskBus();
+    let release;
+    let started;
+    const pending = new Promise((resolve) => { release = resolve; });
+    const running = new Promise((resolve) => { started = resolve; });
+    await setupBackgroundTasks({ ctx: ctxFor(bus), dataDir: tmpDir, config: DEFAULT_CONFIG,
+      runLlmExtraction: () => { started(); return pending; } });
+    const outcome = bus.handlers.get("hanako-runtime-learner.llm-extraction-worker")({ taskId: "abort-me" });
+    await running;
+    bus.abortHandler("abort-me");
+    release({ ok: true });
+    assert.equal((await outcome).skipped, "cancelled");
+    assert.equal(bus.requests.some((r) => r.name === "task:complete" && r.payload.taskId === "abort-me"), false);
   });
 });

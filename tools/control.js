@@ -210,7 +210,7 @@ function controlOutputFiles(action, payload = {}) {
   return [];
 }
 
-function stageControlOutputFiles(input = {}, resultText, ctx = {}) {
+async function stageControlOutputFiles(input = {}, resultText, ctx = {}) {
   if (typeof ctx?.stageFile !== "function") return [];
   const target = sessionFileTarget(ctx);
   if (!target) return [];
@@ -219,7 +219,7 @@ function stageControlOutputFiles(input = {}, resultText, ctx = {}) {
   const staged = [];
   for (const filePath of files) {
     try {
-      const stagedFile = ctx.stageFile({
+      const stagedFile = await ctx.stageFile({
         ...target,
         filePath,
         label: path.basename(filePath),
@@ -273,7 +273,7 @@ export async function execute(input = {}, ctx) {
     : null;
   const result = await handler(input, p, config, patterns, ctx);
   if (typeof result === "string") {
-    const stagedFiles = stageControlOutputFiles(input, result, ctx);
+    const stagedFiles = await stageControlOutputFiles(input, result, ctx);
     const mediaItems = stagedFiles.map((item) => item.mediaItem).filter(Boolean);
     return {
       content: [{ type: "text", text: result }],
