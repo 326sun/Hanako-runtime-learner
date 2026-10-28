@@ -4,6 +4,8 @@ Runtime Self-Learning 默认只在本机记录学习数据。外部模型、语�
 
 ## 本地数据
 
+v6.2 episode ledger 只保留回合时间、项目/任务类别、工具名列表、纠正/错误标志、状态、经验日志 task ID 的 SHA-256 引用和 session 身份哈希；不另存原始用户/助手正文或会话路径。经验记录本身仍按既有 `experience_log.jsonl`/`error_log.jsonl` 的本地保留策略存储，可能包含已脱敏/截断的摘要；逻辑删除不构成对这些旧日志的安全擦除。
+
 默认数据目录为 `~/.hanako/self-learning/`，主要包含 `patterns.json`、`facts.json`、`event_log.jsonl`、`action_feedback.jsonl`、`SKILL.md` 和 `memfs/` 派生视图。API key、token、secret、password 等敏感字段会在审计输出中脱敏。
 
 ## LLM extraction

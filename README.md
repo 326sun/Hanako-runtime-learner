@@ -1,15 +1,41 @@
 # Runtime Self-Learning
 
-**v6.0.0：面向 HanaAgent 1.1.24-beta 的 v2 App。** 本地学习重复工作流、用户纠正和工具错误，提供检索、审核与相关经验提示。模型功能默认关闭，不直接联网。
+> 这是从 v6.1.0 候选派生的隔离 v6.2.0 工作副本，尚未发布。原 `source/`、`6.1/` 与当前生产版本均不受本目录改动影响。版本边界、已实现能力和验收限制见 [ACCEPTANCE-v6.2.0.md](docs/ACCEPTANCE-v6.2.0.md)。
 
-- 从 [v6.0.0 Release](https://github.com/326sun/Hanako-runtime-learner/releases/tag/v6.0.0) 下载 `app-hanako-runtime-learner-6.0.0.zip`，在 Hana 的“扩展 → 本地安装”导入并完成权限审查。
+**v6.2.0：面向 HanaAgent 1.3.6-beta 的 v2 App 长记忆候选。构建固定使用官方 `@hana/app-sdk` 1.3.6-beta。在 v6.1 记忆管理与事实时间线基础上，增加 episode 溯源、核心/归档分层、实体关系和字符 n-gram 多信号召回。
+
+- 正式发布的 v6.0.0 包仍在原目录的 `release-v2/`。本目录 `dist-app/` 是 v6.2.0 候选构建，只用于本地验证；不要覆盖当前生产安装。
 - 设置入口：**左下角齿轮 → 应用 → 自学习**。模型功能跟随 Hana 的工具模型；后台计划须显式启用。
-- 数据保存到 `<HANA_HOME>/app-data/hanako-runtime-learner/`。停用旧 v1 后，可从空数据开始或手动迁移；不要同时运行两个版本。
-- [App 使用与权限说明](app/hanako-runtime-learner/README.md) · [迁移与构建](docs/V2_MIGRATION.md) · [验收范围](docs/ACCEPTANCE-v6.0.0.md) · [投稿流程](docs/MARKETPLACE_STATUS.md)
+- 安装后 Hana 将目录集中在同一个 `<HANA_HOME>` 根下，但按宿主规则分开只读程序与可写数据：
 
-已在 Windows 实际安装验证：加载成功、7 个工具注册、设置页可见。自动回归 1009 项（1004 通过、5 项 Windows symlink 权限跳过）。真实付费模型对话、长时间后台运行及其它系统尚未验收。
+  ```text
+  <HANA_HOME>/
+  ├── apps/hanako-runtime-learner/                 # App 安装文件，宿主管理、只读
+  └── app-data/hanako-runtime-learner/              # 此 App 的唯一可写数据根
+      ├── patterns.json / facts.json / memory-state.json
+      ├── episodes.jsonl / experience_log.jsonl / runtime-config.json
+      ├── generated/                                # 生成的技能与提示文件
+      └── exports/                                  # 用户请求导出的记忆备份
+  ```
+
+  备份/整理运行数据时以 App 返回的 `dataDir` 为准；卸载默认保留 `app-data/hanako-runtime-learner/`。不要把可写文件放入 `apps/`，也不要把源码中的 `dist-app/` 或 `release-v2/` 当作安装后数据目录。停用旧 v1 后，可从空数据开始或手动迁移；不要同时运行两个版本。
+- [v6.2 App 使用说明](app/hanako-runtime-learner/README.md) · [迁移与构建](docs/V2_MIGRATION.md) · [v6.2 工作版验收](docs/ACCEPTANCE-v6.2.0.md) · [发布准备](docs/RELEASE-v6.2.0.md) · [Hana 1.3.6-beta 兼容审查](docs/COMPATIBILITY-HANA-1.3.6-beta.md) · [v6.0 历史验收](docs/ACCEPTANCE-v6.0.0.md)
+
+v6.0.0 曾在 Windows 实际安装验证；这些证据不适用于 v6.2.0。v6.2.0 候选尚未安装到 Hana。
 
 开发构建：`npm ci --ignore-scripts`、`npm run build:app`；官方打包和校验需设置 `HANA_APP_TOOLS_ROOT`，详见迁移文档。`node scripts/demo-app.js` 可运行不访问生产数据的工具演示。
+
+v6.2.0 是独立升级工作目录中的未发布候选，不要与生产 v6.0.0 同时启用，也不要将本目录当作已验证的安装包。本版使用独立 managed memory overlay 保留用户编辑/逻辑删除并允许自动学习继续运行；迁移导入按待审处理。未引入数据库、神经向量索引、云图服务或新的网络能力。
+
+## v6.2 长记忆增强
+
+在 v6.1 管理层上增加 episode 来源查询、时态事实的系统获知时间、core/archive 分层和本地多信号召回（BM25 + 实体关系 + 字符 n-gram + RRF）。这些是 Graphiti/Mem0/Letta 设计机制的轻量本地实现，不是它们的 SDK/服务，也不包含神经 embedding 或完整图数据库。验证边界见 [v6.2.0 工作版验收](docs/ACCEPTANCE-v6.2.0.md)。
+
+## v6.1 长期记忆升级
+
+新增只读 `self_learning_memory` 与可审阅 `self_learning_memory_manage` 工具：分页查看、作用域搜索、修改、逻辑删除、修订历史；按 preference/fact/project_state/workflow/error/event/other 分类；导出版本化 JSON 包；导入必须先预览并携带匹配数据版本的 previewId，应用时只新增且所有条目保持待审核，逐项批准后生效。已有事实的有效期与替代关系用于维护变化中的长期事实。删除隐藏检索/提示/默认导出，但不是安全擦除。
+
+当前版本保留 v6.0.0 的 JSON 持久化和 BM25 检索；数据库/索引组件替换尚未实施。DeepSeek 可作为宿主模型场景使用，但直接接入 DeepSeek 官方客户端需要独立适配。
 
 ## v1 历史参考
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 6.2.0 SDK baseline update (HanaAgent 1.3.6-beta)
+
+- Lock the build to the official `@hana/app-sdk` 1.3.6-beta distributed with the current Hana App Creator; refresh npm integrity, generated SDK mirror and third-party notices.
+- Keep `minAppVersion: 1.1.0`: the App uses no API introduced after that declared floor; newer SDK build target does not itself require dropping compatible older hosts.
+- Add a current-host compatibility audit record. Latest-host static archive validation and the full test suite are required before treating the refreshed package as ready.
+
+## 6.2.0 - 2026-10-28（可追溯的分层长期记忆工作版）
+
+- 在 v6.1 managed overlay 上增加 episode/source provenance 和事实来源链；每条记忆可追到一次/多次原始观察，不导出原始会话正文。
+- 分层核心记忆/归档记忆：核心层由用户批准且有预算约束的偏好、项目状态、当前事实组成；其余历史/过程经验可归档检索，分层本身不自动改变审批或事实有效性。
+- 多信号候选检索：CJK BM25、多查询 RRF、显式实体/关系 boost 与有界字符 n-gram 相似度；字符召回由本地确定性词法信号实现，不使用 embedding/TF-IDF 模型，也不访问网络。
+- Graphiti 的关系检索以有上限的本地事实关系边实现，不引入 Neo4j/图服务；Mem0 entity boosts 以显式实体 alias 倒排实现，不做自动云端抽取；Letta block 思路以核心层和 token 预算实现。
+- 自动观察产生的变更仍是待审建议或本地事件；人工批准后才能改变核心记忆。版本化导入仍绑定 preview，所有数据仍本地保存。
+- 生产安装、真实付费模型、完整 LongMemEval、Node 26 smoke 与跨平台尚未验收。
+
+## 6.1.0 - 2026-10-28（长期记忆升级工作版）
+
+- 增加 App 管理记忆层，以 `memory-state.json` overlay 旧 patterns/facts；学习器继续写旧结构时，管理修改与逻辑删除仍优先。
+- 新增 `self_learning_memory`：按类型/项目分页查看、BM25+CJK+别名/摘要及多查询融合搜索、手工记忆增改删、历史查看、事实时间线修订。
+- 导入导出采用版本化 JSON；SHA-256 绑定精确包及本地 revision 的一次性预览，ID/事实冲突可见；导入项待审，逐条批准，过期/未来事实不能关闭当前事实。
+- 自动提示使用同一有效记忆视图，先准入再召回，受作用域、审批、预算约束，提示数据安全编码；检索仍为词法 BM25+现有同义词+RRF，不包含向量索引或深度语义推理。
+- 删除为逻辑隐藏：不再进入检索、注入和默认导出；旧 patterns/facts 与历史日志、已有外部备份仍保留，不是安全擦除。
+- 本地实现及 SDK fixture 测试通过；尚未完成本机 Hana 安装替换、生产数据迁移、真实对话/模型调用与市场发布。
+
 ## 6.0.0 - 2026-10-18（v2 App）
 
 - 新 App 采用 manifestVersion 2、官方 defineApp 与固定版本 App SDK；运行目录只读，状态和生成提示位于 App dataDir。

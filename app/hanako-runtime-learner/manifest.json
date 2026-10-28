@@ -2,17 +2,18 @@
   "manifestVersion": 2,
   "id": "hanako-runtime-learner",
   "name": "Runtime Self-Learning",
-  "version": "6.0.0",
+  "version": "6.2.0",
   "entry": "index.js",
   "icon": "assets/icon.svg",
   "minAppVersion": "1.1.0",
-  "description": "本地自学习：从重复工作流、纠正与错误中提炼可审查经验，按相关性在后续回合使用。",
+  "description": "本地长记忆：可追溯事件、时态事实、分层存储和多信号检索，支持审核与迁移。",
   "capabilities": [
     "app/tools.expose-to-model",
     "app/usage.read",
     "app/models.infer",
     "app/tasks.manage",
-    "app/hooks.agent-before-start"
+    "app/hooks.agent-before-start",
+    "app/session.stage-file"
   ],
   "contributes": {
     "settings": {
@@ -126,6 +127,36 @@
             "title": "LLM 抽取最低置信度",
             "description": "有效范围 0–1。低于此置信度的抽取结果被丢弃。",
             "default": 0.72
+          },
+          "entityMemorySearchEnabled": {
+            "type": "boolean",
+            "title": "启用实体与关系记忆信号",
+            "description": "默认本地启用；只使用记忆显式保存的实体、事实主客体和别名，不调用外部模型。",
+            "default": true
+          },
+          "charMemorySearchEnabled": {
+            "type": "boolean",
+            "title": "启用字符 n-gram 召回信号",
+            "description": "默认本地启用；用于补充中英混写、短词与部分拼写差异，不是神经语义嵌入。",
+            "default": true
+          },
+          "entityMemorySearchWeight": {
+            "type": "number",
+            "title": "实体关系检索权重",
+            "description": "有效范围 0–1。",
+            "default": 0.2
+          },
+          "charMemorySearchWeight": {
+            "type": "number",
+            "title": "字符召回权重",
+            "description": "有效范围 0–1。",
+            "default": 0.25
+          },
+          "memoryCoreHintTokens": {
+            "type": "number",
+            "title": "核心记忆提示预算（token）",
+            "description": "有效范围 200–2000；核心记忆始终优先于归档记忆。",
+            "default": 600
           },
           "activeSkillsInjectionEnabled": {
             "type": "boolean",

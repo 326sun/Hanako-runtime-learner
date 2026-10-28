@@ -1,8 +1,8 @@
 # Build-only official SDK
 
-`hana-app-sdk.tgz` is the official 1.1.24-beta SDK distributed with the installed
+`hana-app-sdk.tgz` is the official 1.3.6-beta SDK distributed with the installed
 Hana App Creator. SHA-256:
-`a965055c21e8becb9ab224e6010ccb2c3d4c090b00f73f06d7819122b9af5222`.
+`4732034db0535be5a521f20558cf4fc5ba33b09bf2b0d1f3b34fe5c88f5ad73d`.
 
 It is a reproducible build dependency, not a runtime dependency on the host's
 node_modules. The build bundles its imported server code. The App includes the
