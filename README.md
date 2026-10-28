@@ -1,5 +1,12 @@
 # Runtime Self-Learning
 
+<p align="center">
+  <img src="https://img.shields.io/badge/version-5.1.11-blue" alt="version">
+  <img src="https://img.shields.io/badge/tests-1001%2F1001-success" alt="tests">
+</p>
+
+主分支保留 v5.1.11 的兼容性基线；v6.2.0 是面向长期记忆管理的公开升级发行。基线回归为 1001 tests，升级版回归结果见下方验证范围。
+
 Runtime Self-Learning 是一个本地优先、可审计的长期记忆引擎，面向需要持续积累经验的 Agent 系统。
 
 它关注的不是“保存更多文本”，而是让每条记忆都能回答四个问题：
@@ -85,6 +92,26 @@ dsh plugin --profile web add github:326sun/runtime-self-learning-harness
 - 模型整理默认关闭；启用后只生成受治理的候选结果。
 - 没有引入云端向量服务、神经 embedding 数据库或自动批准的外部知识写入。
 
+## 默认运行策略
+
+默认配置偏向保守、可回退和可解释。常用策略如下：
+
+| 配置项 | 默认值 | 作用 |
+| --- | --- | --- |
+| `governanceProfile` | `balanced` | 使用均衡治理档位。 |
+| `autoInjectHighConfidence` | `true` | 允许高置信记忆进入受预算限制的提示。 |
+| `autoApproveHighConfidence` | `true` | 允许满足门槛的稳定模式走快速审核路径。 |
+| `minInjectScore` | `8` | 自动注入的最低评分。 |
+| `minInjectCount` | `2` | 进入自动注入候选所需的最少重复次数。 |
+| `includePendingPreferences` | `false` | 待审核偏好默认不进入提示。 |
+| `modelAdvisorEnabled` | `false` | 默认不调用外部模型进行整理。 |
+| `semanticSearchEnabled` | `false` | 默认使用本地确定性检索。 |
+| `llmExtractionEnabled` | `false` | 默认不生成模型抽取候选。 |
+| `backgroundTasksEnabled` | `true` | 允许宿主支持时运行后台整理计划。 |
+| `backgroundAdvisorIntervalMinutes` | `360` | 后台整理默认间隔 6 小时。 |
+| `backgroundRetentionIntervalMinutes` | `1440` | 日志保留与清理默认间隔 24 小时。 |
+| `adaptiveThresholdsEnabled` | `false` | 默认只使用固定策略阈值。 |
+
 ## 适合的场景
 
 - 让 Agent 记住用户长期偏好，并保持可修改、可撤回；
@@ -98,6 +125,12 @@ dsh plugin --profile web add github:326sun/runtime-self-learning-harness
 v6.2 App Edition 的本地回归为 1069 项测试，1064 项通过、5 项因 Windows symlink 权限跳过、0 项失败；构建、基准、性能、复杂度和依赖审计均通过。Harness Edition 已完成独立核心、原生工具注册和安装包检查；完整生产宿主的长时间运行、真实多轮对话、Node 26 archive smoke、生产迁移以及 macOS/Linux 验收仍属于后续验证范围。
 
 ## 开发
+
+兼容性基线源码：
+
+```powershell
+git clone --branch v5.1.11 <repository>
+```
 
 App Edition 的源码检查：
 
