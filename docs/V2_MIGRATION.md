@@ -1,6 +1,7 @@
 # v6.0.0 / v2 App 迁移与验证
 
-日期：2026-10-18（Asia/Shanghai）。目标：HanaAgent 1.1.24-beta。
+> 本文记录 v6.0.0 生产验收。v6.1.0 是 `6.1/` 独立目录中的未发布候选，尚未安装或迁移生产数据。v6.1 的记忆管理与交换语义见 [ACCEPTANCE-v6.1.0.md](ACCEPTANCE-v6.1.0.md)；不要把 v6.0 的安装记录当作 v6.1 验收。
+日期：2026-10-28（Asia/Shanghai）。当前目标：HanaAgent 1.3.6-beta；v6.0.0 历史验收仍只对应 1.1.24-beta。
 
 ## 当前状态
 
@@ -8,8 +9,12 @@ v2 App 源定义位于 `app/hanako-runtime-learner/`，入口与适配器位于 
 `npm run build:app` 生成可安装目录 `dist-app/hanako-runtime-learner/`。
 旧根 manifest 和 index 保留为 v1 核心及回归基线；不要把整个源码目录作为 v2 包导入。
 
-官方 `@hana/app-sdk` 从安装包随附 tarball 固定到 `vendor/`，构建时内联。
-App 无运行时 npm 安装，不解析宿主 node_modules。SDK 类型和源码未手改。
+官方 `@hana/app-sdk` 1.3.6-beta 从当前 Hana 1.3.6-beta Creator 随附 tarball 固定到 `vendor/`，版本与 SHA-512 记录在 `vendor/README.md` 和 lockfile，构建时内联。
+App 无运行时 npm 安装，不解析宿主 node_modules。`sdk/` 下生成的官方 API 镜像与 1.3.6-beta tarball 的 `dist/` 文件清单一致；不要手工修改生成源。
+
+## 安装与数据目录
+
+Hana v2 App 的运行目录布局由宿主固定为同一个 `<HANA_HOME>` 下的两棵目录：`apps/hanako-runtime-learner/` 是宿主管理的只读安装包；`app-data/hanako-runtime-learner/` 是 App 唯一可写的数据根。6.2 的记忆文件、运行配置、episode/经验日志、`generated/` 和 `exports/` 都写入 `sdk.dataDir` 本身或其子目录，没有散写到用户桌面/工作区的路径。安装包升级只替换 `apps/`；卸载默认保留 `app-data/`。所以无需自行移动目录；需要备份时，以 `self_learning_stats.dataDir` 返回值为准。若要把整个 Hana 数据根搬到另一磁盘，应使用宿主支持的 HANA_HOME 配置/迁移流程，不要单独挪动已安装 App 的子目录。
 
 ## 接口迁移
 

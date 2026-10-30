@@ -33,6 +33,12 @@
 - 不把 LLM 输出直接写入 `patterns.json`、`facts.json` 或生成的 `SKILL.md`。
 - 不把 `node_modules`、源码 `lib/`、sourcemap、测试目录或嵌套 `dist/` 放进 release zip。
 
+## v6.2.0 App 扩展边界
+
+v6.2.0 继承 v6.1 managed memory overlay 与 import review，追加本地 episode provenance、core/archive 层、显式关系图信号及字符 n-gram 召回。episode 不含原始对话正文，session 标识哈希化；sourceRefs 必须经过项目与任务范围门控。实体关系信号只遍历过滤后的候选，不能扩大跨项目访问范围。自动提示默认仅取 approved/active core 层，归档层需显式检索。字符 n-gram 不是 embedding；此版本不新增网络端点/向量数据库/外部图服务能力。
+
+v6.1.0 是 manifestVersion 2 App 的功能升级工作版，根 `package.json` 与 v1 核心基线仍为 5.1.11。新增 `self_learning_memory` 只写 App 自有 `memory-state.json` overlay；旧自动学习器仍写 patterns/facts。统一 effective view 应供搜索、注入和导出消费。删除为逻辑 tombstone，不承诺安全擦除历史日志或旧备份。导入只可经精确 bundle hash + state revision/items fingerprint 绑定的短期预览执行；所有导入项 pending/requiresReview，事实冲突只在显式批准后生效。不得新增能跳过这一治理边界的路径。
+
 ## 版本线说明
 
 | 版本 | 状态 | 说明 |
