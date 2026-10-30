@@ -165,6 +165,37 @@ episode 的精简策略只针对来源摘要；其他学习日志与用户导出
 
 真实宿主多轮对话、Node 26 archive runtime smoke、后台任务跨重启、生产数据迁移及 macOS/Linux 验收尚未完成。上述自动化与静态检查结果不代表这些场景已经验收。
 
+<details>
+<summary>兼容基线的版本、默认配置与开发入口（v5.1.11）</summary>
+
+`main` 中的根目录 package、v1 manifest 和发布检查仍维护 v5.1.11 兼容基线。下列标记记录该基线的历史回归：1001 tests；当前提交的检查结果以 [GitHub Actions](https://github.com/326sun/runtime-learner-hanako/actions/workflows/ci.yml) 为准。v6.2.0 App 的安装与验收记录见上文。
+
+![兼容基线版本](https://img.shields.io/badge/version-5.1.11-blue)
+![兼容基线历史回归](https://img.shields.io/badge/tests-1001%2F1001-success)
+
+以下为共享学习核心的默认配置。v2 App 的宿主授权、后台计划显式启用和自动动作禁用规则仍按上文执行。
+
+| 配置项 | 默认值 | 作用 |
+| --- | --- | --- |
+| `governanceProfile` | `balanced` | 使用均衡治理档位 |
+| `autoInjectHighConfidence` | `true` | 允许满足门槛的记忆参与受预算限制的提示 |
+| `autoApproveHighConfidence` | `true` | 允许满足门槛的稳定模式进入快速审核路径 |
+| `minInjectScore` | `8` | 自动提示的最低评分 |
+| `minInjectCount` | `2` | 进入自动提示候选所需的最少重复次数 |
+| `includePendingPreferences` | `false` | 待审核偏好默认不进入提示 |
+| `modelAdvisorEnabled` | `false` | 模型整理默认关闭 |
+| `semanticSearchEnabled` | `false` | 可选语义搜索默认关闭 |
+| `llmExtractionEnabled` | `false` | 模型抽取默认关闭 |
+| `adaptiveThresholdsEnabled` | `false` | 默认使用固定策略阈值 |
+
+维护兼容基线时，检出对应版本：
+
+```powershell
+git clone --branch v5.1.11 https://github.com/326sun/runtime-learner-hanako.git
+```
+
+</details>
+
 ## 开发与许可
 
 检出当前 App 对应源码：
