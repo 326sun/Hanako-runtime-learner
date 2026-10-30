@@ -1,370 +1,214 @@
 # Runtime Self-Learning
 
-> 这是从 v6.1.0 候选派生的隔离 v6.2.0 工作副本，尚未发布。原 `source/`、`6.1/` 与当前生产版本均不受本目录改动影响。版本边界、已实现能力和验收限制见 [ACCEPTANCE-v6.2.0.md](docs/ACCEPTANCE-v6.2.0.md)。
+### 自学习与长期记忆
 
-**v6.2.0：面向 HanaAgent 1.3.6-beta 的 v2 App 长记忆候选。构建固定使用官方 `@hana/app-sdk` 1.3.6-beta。在 v6.1 记忆管理与事实时间线基础上，增加 episode 溯源、核心/归档分层、实体关系和字符 n-gram 多信号召回。
+**让反复确认的偏好、项目事实和任务经验，成为 Agent 下一次工作时可用的上下文。**
 
-- 正式发布的 v6.0.0 包仍在原目录的 `release-v2/`。本目录 `dist-app/` 是 v6.2.0 候选构建，只用于本地验证；不要覆盖当前生产安装。
-- 设置入口：**左下角齿轮 → 应用 → 自学习**。模型功能跟随 Hana 的工具模型；后台计划须显式启用。
-- 安装后 Hana 将目录集中在同一个 `<HANA_HOME>` 根下，但按宿主规则分开只读程序与可写数据：
+[下载 v6.2.0](https://github.com/326sun/runtime-learner-hanako/releases/tag/v6.2.0) · [查看源码](https://github.com/326sun/runtime-learner-hanako/tree/v6.2.0) · [验证记录](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/ACCEPTANCE-v6.2.0.md)
 
-  ```text
-  <HANA_HOME>/
-  ├── apps/hanako-runtime-learner/                 # App 安装文件，宿主管理、只读
-  └── app-data/hanako-runtime-learner/              # 此 App 的唯一可写数据根
-      ├── patterns.json / facts.json / memory-state.json
-      ├── episodes.jsonl / experience_log.jsonl / runtime-config.json
-      ├── generated/                                # 生成的技能与提示文件
-      └── exports/                                  # 用户请求导出的记忆备份
-  ```
+Runtime Self-Learning 是面向 Hanako / HanaAgent 的本地自学习与记忆 App。它观察任务中的重复工作流、用户纠正和工具错误，将经验整理为可检索、可审核、可修订的记忆，并在后续任务开始前提供与当前项目相关的提示。
 
-  备份/整理运行数据时以 App 返回的 `dataDir` 为准；卸载默认保留 `app-data/hanako-runtime-learner/`。不要把可写文件放入 `apps/`，也不要把源码中的 `dist-app/` 或 `release-v2/` 当作安装后数据目录。停用旧 v1 后，可从空数据开始或手动迁移；不要同时运行两个版本。
-- [v6.2 App 使用说明](app/hanako-runtime-learner/README.md) · [迁移与构建](docs/V2_MIGRATION.md) · [v6.2 工作版验收](docs/ACCEPTANCE-v6.2.0.md) · [发布准备](docs/RELEASE-v6.2.0.md) · [Hana 1.3.6-beta 兼容审查](docs/COMPATIBILITY-HANA-1.3.6-beta.md) · [v6.0 历史验收](docs/ACCEPTANCE-v6.0.0.md)
+长期使用时，你可以看到系统记住了什么、经验从哪里来、适用于哪个项目，以及事实何时发生变化。自学习发生在记忆与提示层，积累的知识由你查看和管理。
 
-v6.0.0 曾在 Windows 实际安装验证；这些证据不适用于 v6.2.0。v6.2.0 候选尚未安装到 Hana。
+## 为什么使用它
 
-开发构建：`npm ci --ignore-scripts`、`npm run build:app`；官方打包和校验需设置 `HANA_APP_TOOLS_ROOT`，详见迁移文档。`node scripts/demo-app.js` 可运行不访问生产数据的工具演示。
+多轮协作经常需要重复说明输出习惯、项目约定和已经排查过的问题。把这些信息写入记忆后，还需要解决召回、过期、冲突和跨项目误用。这个 App 将这些环节放在同一条可检查的链路里。
 
-v6.2.0 是独立升级工作目录中的未发布候选，不要与生产 v6.0.0 同时启用，也不要将本目录当作已验证的安装包。本版使用独立 managed memory overlay 保留用户编辑/逻辑删除并允许自动学习继续运行；迁移导入按待审处理。未引入数据库、神经向量索引、云图服务或新的网络能力。
-
-## v6.2 长记忆增强
-
-在 v6.1 管理层上增加 episode 来源查询、时态事实的系统获知时间、core/archive 分层和本地多信号召回（BM25 + 实体关系 + 字符 n-gram + RRF）。这些是 Graphiti/Mem0/Letta 设计机制的轻量本地实现，不是它们的 SDK/服务，也不包含神经 embedding 或完整图数据库。验证边界见 [v6.2.0 工作版验收](docs/ACCEPTANCE-v6.2.0.md)。
-
-## v6.1 长期记忆升级
-
-新增只读 `self_learning_memory` 与可审阅 `self_learning_memory_manage` 工具：分页查看、作用域搜索、修改、逻辑删除、修订历史；按 preference/fact/project_state/workflow/error/event/other 分类；导出版本化 JSON 包；导入必须先预览并携带匹配数据版本的 previewId，应用时只新增且所有条目保持待审核，逐项批准后生效。已有事实的有效期与替代关系用于维护变化中的长期事实。删除隐藏检索/提示/默认导出，但不是安全擦除。
-
-当前版本保留 v6.0.0 的 JSON 持久化和 BM25 检索；数据库/索引组件替换尚未实施。DeepSeek 可作为宿主模型场景使用，但直接接入 DeepSeek 官方客户端需要独立适配。
-
-## v1 历史参考
-
-下文仅保留 v1 5.1.11 的历史说明。根 package/manifest 属于共享核心的回归基线；**v2 版本、权限和入口以 `app/hanako-runtime-learner/manifest.json` 为准**，请勿将整个源码目录导入为 App。
-
-<p align="center">
-  <sub>Hanako 本地运行时自学习引擎</sub>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/badge/version-5.1.11-blue" alt="version">
-  <img src="https://github.com/326sun/Hanako-runtime-learner/actions/workflows/ci.yml/badge.svg" alt="CI">
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="license">
-  <img src="https://img.shields.io/badge/platform-Hanako%20Agent%20v0.345%2B-orange" alt="platform">
-  <img src="https://img.shields.io/badge/node-%E2%89%A522-brightgreen" alt="node">
-  <img src="https://img.shields.io/badge/tests-1001%2F1001-success" alt="tests">
-</p>
-
-> 本地适配候选 **v5.1.11**，目标为 **HanaAgent 1.1.24-beta（2026-10-18）**，尚未上传 GitHub 或发布 tag。
-> 测试徽章沿用总数格式；本次实际结果为 `1001 tests / 996 passed / 5 skipped / 0 failed`。
-> 5 项因本机 Windows 无 symlink 创建权限而跳过，本次没有验证其它平台。
->
-> 这是现有 v1 插件的兼容维护版。当前官方宿主永久支持已发布 v1 插件；本次没有迁移成 v2 App。
-> 安装和验证范围见 [docs/HANA_1.1_COMPATIBILITY.md](docs/HANA_1.1_COMPATIBILITY.md)。
-
-Runtime Self-Learning 会观察本地 Hanako 对话中的重复工作流、用户纠正、常见报错和大上下文使用模式，把经过证据约束的经验整理成后续会话可用的保守提示。
-
-设计目标很简单：让 Hanako 记住本地有价值的经验，但不扩大自动化边界。数据默认只保存在本机目录；外部模型调用和语义检索默认关闭，只有显式配置后才会启用。
-
-v5.0.0 是现代化发布基线：M0 引入自包含 dist/zip 发布包，M2 增加默认关闭的 LLM extraction worker，M3-lite 将后台整理迁移到 Hanako `task:*` bus 调度，M6 完成版本、治理和 release check 收口。v5.1.7 完成子系统级精简，v5.1.8 补齐 usage evidence 并降低 doctor 噪音。v5.1.10 在既有审计修复上补齐安全提案恢复、跨进程状态锁、发布包完整性与 Hanako v0.374.3 预览版兼容验证。v5.1.11 继续适配 HanaAgent 1.1.24-beta 的事件和任务协议；默认安全/审批/事务/审计边界保持不变：
-
-| 能力 | 当前状态 | 默认值 | 自动执行边界 |
-|---|---|---|---|
-| M1 local vector index | 未发布完整本地 vector index；默认检索仍以 BM25 为主 | 未启用 | 不参与默认检索路径 |
-| Semantic embeddings | 可选语义检索与 RRF 融合路径 | `semanticSearchEnabled=false` | 需要 endpoint/model/key，失败 fail-soft |
-| M4 agent orchestration | 受治理约束的 agent task / graph / resume 能力 | gated | 不绕过 proposal、review、action-risk 或 audit |
-| M5 adaptive thresholds | instrumentation / recommendation-only | 不驱动默认决策 | 不自动改变运行时策略 |
-| LLM extraction | 候选提取 worker | `llmExtractionEnabled=false` | 只生成待审候选，不直接写入 patterns/facts |
+| 你遇到的问题 | 插件提供的能力 |
+| --- | --- |
+| 每次新会话都要重新说明习惯 | 从纠正中积累偏好，经过审核与门槛判断后供后续任务使用 |
+| 同一个问题反复排查 | 保存错误经验与处理线索，通过关键词和相关信号找回 |
+| 多个项目的约定容易混用 | 依据宿主会话的项目范围限制检索与记忆操作 |
+| 新事实出现后，旧信息仍在干扰 | 保留有效时间、修订历史与替代关系，让当前事实和历史事实各有位置 |
+| 不清楚某条记忆为何形成 | 从记忆回查学习回合的来源摘要、工具摘要和结果信号 |
+| 长期积累后，上下文越来越拥挤 | 核心记忆按相关性和预算提示，归档经验通过显式搜索调用 |
 
 ## 核心能力
 
-| 领域 | 行为 |
-|---|---|
-| 工作流学习 | 连续观察到 3 次以上的稳定工具类别序列后，提炼为可复用工作流模式。 |
-| 偏好学习 | 记录用户纠正、固定偏好和带证据的长期事实。 |
-| 错误学习 | 把重复错误转成修复建议，并提示“不要盲重试”。 |
-| 使用模式学习 | 记录大上下文、失败请求和资源使用特征。 |
-| 检索 | 使用 CJK 友好的 BM25、作用域门禁、关系加权和可选语义融合。 |
-| 技能注入 | 将高置信、受预算限制的提示写入生成的 `SKILL.md`。 |
-| 治理 | 所有提案经过校验、审核队列、审计事件和健康检查。 |
-| 自动动作 | 只允许低风险、可回滚、可验证的动作通过策略门执行。 |
+### 从日常协作中积累经验
 
-## 安全边界
+插件在获授权的会话事件中观察重复工作流、纠正和错误，记录模式及证据。稳定经验可以成为后续任务的提示；一次出现的信息仍受评分、重复次数和审核状态约束，待审偏好默认不进入自动提示。
 
-插件故意做得保守，默认行为是“看得见才放行、看不清就拒绝”。
+例如，你可以逐步积累“文档使用中文”“这个项目的测试步骤”“某类工具错误应先检查哪些条件”等经验，再通过工具检查和修订它们。
 
-| 类别 | 规则 |
-|---|---|
-| R4 / 高影响动作 | 永不自动执行。 |
-| 外部写操作 | 永不自动执行。 |
-| `git push` / `git tag` / release / publish | 永不自动执行。 |
-| 文件写入 | 必须经过作用域门、事务快照、验证和回滚。 |
-| R2 修复动作 | 只允许一次受控修复；失败即回滚。 |
-| 项目脚本执行 | 必须先建立 `package.json` 脚本信任基线。 |
-| 主动技能注入 | 默认关闭。 |
-| 模型顾问 / 语义检索 | 默认关闭；凭证独立保存并加密。 |
-| LLM extraction | 默认关闭；启用后只进 proposal/review，不直接写 patterns/facts。 |
-| 后台任务 | 可关闭、可审计；旧宿主缺少 `task:*` 时自动降级。 |
+### 记忆可以查看、修改与撤回
 
-运行时采用 fail-closed 策略：未知命令、未知配置键、非法提案、doctor 关键状态和越界作用域变更都会被拦下，而不是靠猜测继续执行。
+长期记忆支持偏好、事实、项目状态、工作流、错误和事件等类别。你可以搜索、读取正文、查看修订历史与来源，也可以明确要求新增、修改或逻辑删除某条记忆。
 
-### 关于 `trust: full-access`
+事实采用主语、关系、对象的结构，并保留有效时间与获知时间。更新冲突事实时，系统记录新旧替代关系，方便回查“当时是什么”和“现在是什么”。
 
-`manifest.json` 声明 `"trust": "full-access"`，`"permissions": ["usage.read"]`——两者不是同一层。
-按 [docs/HOST_PROTOCOL_NOTES.md](docs/HOST_PROTOCOL_NOTES.md) 记录的宿主契约：`permissions`
-数组只用于宿主 `createPluginBusProxy` 显式强制校验的少数敏感 bus 能力（当前只有 `usage.read`，
-用于从模型用量元数据学习）；其余 bus 能力（如 `session:send`、`model:sample-text`）与全部文件系统
-/子进程访问，则统一由 `trust` 这个更粗粒度的整体授信级别放行，不经过 `permissions` 数组逐项声明。
-本插件需要 `full-access` 是因为它要做的事本身就超出 bus 订阅范围：
+### 按项目召回，按预算使用
 
-- 在 `~/.hanako/self-learning/` 下读写学习数据、生成/回滚 `SKILL.md`（见“数据与隐私”）。
-- `self_learning_open_dir` 需要打开本地目录。
-- `self_learning_control` 的部分 action（`run_benchmarks`、受控修复/回滚等）需要执行文件写入或
-  子进程调用，均经过“安全边界”表中列出的作用域门、事务快照、命令 allowlist 等约束。
+项目范围来自当前宿主会话，工具参数不能任意切换到另一个项目读取其私有记忆。无法识别项目时，只允许符合条件的通用记忆进入相关检索和提示。
 
-当前宿主协议没有比 `full-access` 更细的档位能表达“文件系统访问但仅限本插件数据目录”，所以选择
-声明 `full-access`，纵深防御落在代码层而非 manifest 层：见上表以及
-[docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md)。
+记忆分为两层：
 
-## 安装
+| 层级 | 主要内容 | 使用方式 |
+| --- | --- | --- |
+| `core` | 稳定偏好、有效事实、项目状态 | 已批准且相关的条目可参与自动提示，受 Token 预算限制 |
+| `archive` | 过程经验、历史信息、低频知识 | 按需显式检索，保留长期查阅价值 |
 
-用户安装 release zip：
+### 中文友好的本地检索
 
-下载或构建 `release/hanako-runtime-learner-dist.zip`，在 Hanako 插件管理界面导入 zip 即可。发布包已经自包含，终端用户不需要运行 `npm install`。
+检索融合 CJK BM25、多查询 RRF、显式实体与别名关系、字符 n-gram 等信号，支持中文、英文和混合表达。实体关系来自记忆中明确保存的信息，字符信号帮助补充短词和部分拼写差异的召回。
 
-开发安装：
+默认检索在本机完成，无需额外部署向量数据库或配置 embedding 服务。
 
-```powershell
-git clone https://github.com/326sun/Hanako-runtime-learner.git
-cd Hanako-runtime-learner
-npm install
-npm run build
-npm run install-plugin
-```
+### 来源可追溯，迁移可预览
 
-固定版本安装（下列命令仅供未来发布 v5.1.11 tag 后使用；当前请直接导入随附 ZIP，或使用随附源码）：
+学习回合生成受限的 episode 来源记录，保存任务和工具摘要、项目范围、结果信号与不透明的会话哈希。记忆中的来源引用可回查到这些记录；episode 不保存原始对话正文。
 
-```powershell
-git clone --branch v5.1.11 https://github.com/326sun/Hanako-runtime-learner.git
-cd Hanako-runtime-learner
-npm install
-npm run build
-npm run install-plugin
-```
+备份使用版本化 JSON。导入遵循“预览 → 检查冲突 → 导入 → 逐条批准”的流程：预览与当前数据版本绑定，同 ID 内容不直接覆盖，导入项先进入待审核状态。
 
-升级：
-
-```powershell
-git pull
-npm run install-plugin
-```
-
-升级时不要删除 `~/.hanako/self-learning`，除非你明确要清空学习记录。
-
-## 数据与隐私
-
-本地数据默认位于：
-
-```text
-~/.hanako/self-learning/
-```
-
-关键文件：
-
-| 文件 | 作用 |
-|---|---|
-| `patterns.json` | 工作流、偏好、错误、使用模式等学习结果。 |
-| `facts.json` | 带时间感知和淘汰链的事实记忆。 |
-| `event_log.jsonl` | 追加写审计事件链。 |
-| `action_feedback.jsonl` | 自动动作执行结果和策略反馈。 |
-| `SKILL.md` | 后续会话注入的受限提示。 |
-| `memfs/` | 面向人类阅读的长期记忆 Markdown 视图。 |
-
-敏感片段会被脱敏。API Key 和 embedding 凭证迁移后不会以明文形式长期保存在配置文件里。
-
-LLM extraction 默认关闭。关闭时不会调用 Hanako `model:sample-text` / `sampleText`；启用后也只请求宿主提供的脱敏摘要，模型失败时 fail-soft，输出只进入 proposal/review 治理链。后台 task schedule 不会启用新的真实自动执行面。
-
-## 工具面
-
-| 工具 | 说明 |
-|---|---|
-| `self_learning_search` | 带作用域门的记忆检索：BM25 + 门禁 + 重排 + 可选语义融合。 |
-| `self_learning_stats` | 查看当前统计、配置、能力和数据规模。 |
-| `self_learning_report` | 输出可读的学习报告和待处理提案。 |
-| `self_learning_activity` | 最近学习活动时间线。 |
-| `self_learning_doctor` | 只读健康检查，返回严重级别和修复建议。 |
-| `self_learning_control` | 治理入口：审核、策略、审计导出、发布就绪度、任务控制等。 |
-| `self_learning_open_dir` | 打开本地自学习数据目录。 |
-
-### `self_learning_control` 的 action 分组
-
-`self_learning_control` 一个工具聚合了近 50 个 action，风险差异很大——这里按
-`tools/control-action-registry.js` 里代码层的真实 side-effect 分类分组呈现，而不是按字母顺序堆一张
-长列表。分组由代码维护（新增 action 必须在 registry 声明分类，否则测试会失败），下表只是把它翻译
-成用户可读的形式。
-
-| 分组 | side-effect | 代表 action | 说明 |
-|---|---|---|---|
-| **只读查询**（20 个） | `read` | `status`、`doctor`、`review_panel`、`list_proposals`、`list_events`、`diagnose_bus` | 纯读取，不写入任何文件，日常排障/巡检首选。 |
-| **产出报告文件** | `plugin_output` | `run_benchmarks`、`export_audit_bundle`、`generate_audit_dashboard`、`release_readiness` | 只生成派生的 md/json 报告，不改动学习数据本身。 |
-| **提案预审**（进 review queue） | `plugin_state_mutation` | `preview_proposal`、`validate_proposal` | 把提案送入待审队列/写事件日志，尚未真正“应用”改动。 |
-| **调用外部模型** | `external_model_or_benchmark_run` | `run_model_advisor` | 默认关闭（`modelAdvisorEnabled=false`）；启用时才会发起出站请求。 |
-| **本地状态变更**（20 个，风险最高） | `plugin_state_mutation` / `external_side_effect` | `apply_proposal`、`apply_review`、`set_config`、`rollback`、`trust_project_scripts` | 会真正改变已批准状态、配置或信任基线；`apply_proposal`/`apply_review` 走 `applyProposalSafely`（作用域门 + 事务快照 + 回滚，见“安全边界”），`trust_project_scripts` 需要先建立脚本信任基线。 |
-
-常见只读排查命令：
-
-```text
-self_learning_control action=status
-self_learning_control action=doctor
-self_learning_control action=review_panel
-self_learning_control action=list_proposals
-self_learning_control action=release_readiness
-```
-
-常见需要谨慎使用的命令（会改变已保存状态或已批准提案，建议先跑对应只读 action 确认再执行）：
-
-```text
-self_learning_control action=validate_proposal proposalId=<id>
-self_learning_control action=approve_review reviewId=<id>
-self_learning_control action=apply_review reviewId=<id>
-self_learning_control action=set_policy_profile governanceProfile=conservative
-self_learning_control action=regenerate_memfs
-```
-
-## 配置重点
-
-默认值已经偏向本地保守使用。最常调整的是下列键：
-
-| 键 | 默认值 | 说明 |
-|---|---:|---|
-| `governanceProfile` | `balanced` | 内置档位：`conservative`、`balanced`、`autonomous`。 |
-| `autoInjectHighConfidence` | `true` | 允许高置信经验进入 `SKILL.md`。 |
-| `includePendingPreferences` | `false` | 待审核偏好默认不参与注入。 |
-| `decayHalfLifeDays` | `30` | 记忆衰减半衰期。长期知识不随普通模式一起衰减。 |
-| `activeSkillsInjectionEnabled` | `false` | 已激活技能默认不主动注入。 |
-| `modelAdvisorEnabled` | `false` | 关闭时不会发生外部模型调用。 |
-| `backgroundTasksEnabled` | `true` | 优先用 Hanako `task:*` 调度后台整理；旧宿主自动降级到机会式路径。 |
-| `backgroundAdvisorIntervalMinutes` | `360` | 后台 advisor schedule 间隔，默认 6 小时。 |
-| `backgroundRetentionIntervalMinutes` | `1440` | 后台日志保留 / prune schedule 间隔，默认 24 小时。 |
-| `backgroundLlmExtractionIntervalMinutes` | `30` | LLM extraction worker schedule 间隔；仍受 `llmExtractionEnabled=false` 默认关闭约束。 |
-| `semanticSearchEnabled` | `false` | 关闭时只使用本地 BM25。 |
-| `officialMemoryBridgeEnabled` | `true` | 启用只读官方记忆桥。 |
-
-`autoActions` 和 `autoActionCommands` 采用深合并配置，局部 patch 不会抹掉其余默认项。
-
-## 架构概览
-
-Runtime Self-Learning 是一条“四层流水线”：观察、学习、行动、治理。
+## 它如何工作
 
 ```mermaid
 flowchart LR
-    EventBus["Hanako EventBus"] --> Observer["observer.js"]
-    Observer --> Turn["SessionTurn / flushTurn"]
-    Turn --> Detector["PatternDetector"]
-    Detector --> Retrieval["MemoryIndex + scope gate"]
-    Detector --> Pipeline["post-flush pipeline"]
-    Pipeline --> Skill["生成 SKILL.md"]
-    Pipeline --> Actions["自动动作策略"]
-    Actions --> Txn["事务 / 验证 / 回滚"]
-    Pipeline --> Proposals["提案"]
-    Proposals --> Review["审核队列"]
-    Review --> Audit["审计事件 / 报表"]
+    A[会话中的纠正、工作流与错误] --> B[记录模式与来源]
+    B --> C[审核、修订与分层]
+    C --> D[项目范围内检索]
+    D --> E[相关性与提示预算]
+    E --> F[后续任务的经验提示]
+    C --> G[查看、修改、导出与迁移]
 ```
 
-关键设计决策：
+自动提示通过获授权的 `agent-before-start` 钩子加入后续任务。用户当前指令始终优先，经验提示需要结合实际任务判断。
 
-- 运行时零 npm 依赖；release zip 为自包含发布包。
-- 自带 CJK 友好的 BM25 倒排索引和 bigram 分词。
-- 跨项目记忆默认拒绝，除非显式标注为 general/global。
-- 使用遗忘曲线和知识层级控制记忆衰减。
-- JSON 写入统一走 `tmp + rename`，避免半写状态。
-- 审计事件是追加写链式日志，支持回放和校验。
-- v5.0.0 维持冻结的安全边界，同时保留 v4.3.x LTS 维护线。
+## 安装与开始使用
 
-更完整的模块图和治理链路见 [ARCHITECTURE.md](ARCHITECTURE.md) 与 [docs/API_FREEZE.md](docs/API_FREEZE.md)。
+当前公开 App 版本为 **v6.2.0**，面向 **HanaAgent 1.3.6-beta** 构建，采用 v2 App 格式。Manifest 声明的最低版本为 1.1.0；本次兼容审查基线是 1.3.6-beta，详细范围见[兼容审查](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/COMPATIBILITY-HANA-1.3.6-beta.md)。
 
-## 开发
+1. 从 [Release](https://github.com/326sun/runtime-learner-hanako/releases/tag/v6.2.0) 下载 **`app-hanako-runtime-learner-6.2.0.zip`**，通过宿主的 App ZIP 导入入口安装。GitHub 自动生成的 Source code ZIP 用于源码查看。
+2. 完成宿主的能力审查，并为需要使用的 Agent 启用 App。升级自旧 v1 插件时，先停用旧插件，保留原有学习数据。
+3. 调用 `self_learning_stats` 查看版本、数据目录和授权状态，再调用 `self_learning_doctor` 检查基础运行情况。
+4. 正常使用 Agent；需要时要求它搜索已有经验，或列出记忆并查看来源。自动提示需要授予 `app/hooks.agent-before-start`。
 
-要求 Node.js 22+（v5 构建与运行基线）。
+发布附件中的 `.entry.json` 用于市场登记。GitHub 发布与市集审核、索引更新是不同环节；市集暂未显示新版时，可通过上述 Release 获取 App 安装包。
 
-```powershell
-npm run build          # esbuild 打包为可安装的 dist/（开发期可选；发布期必跑）
-npm run check          # 语法与源代码检查
-npm test               # 1001 个测试
-npm run benchmark      # 17 个内置基准场景
-npm run perf           # 热路径微基准
-npm run complexity:check   # 复杂度预算门禁（超 hard limit 即失败）
-npm run complexity:report  # 生成 docs/COMPLEXITY_REPORT.md
-npm run release:check  # 发布元数据与 v5 契约检查（含 dist/zip 与复杂度预算）
+后台计划需要显式调用 `self_learning_background` 的 `enable` 动作。模型整理和 LLM 抽取默认关闭，可在需要时单独开启；启用后台计划不会同时开启模型调用。
+
+## 常用工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `self_learning_stats` | 查看数据规模、运行配置、数据路径与能力授权 |
+| `self_learning_search` | 在当前项目范围内搜索已有经验 |
+| `self_learning_memory` | 列表、搜索、正文、历史、来源与 episode 的只读查询 |
+| `self_learning_memory_manage` | 新增、修改、逻辑删除、导出、预览导入与逐条批准 |
+| `self_learning_report` | 查看学习情况与提案报告 |
+| `self_learning_activity` | 查看最近学习活动 |
+| `self_learning_control` | 审核、配置与本地审计等治理操作 |
+| `self_learning_doctor` | 只读健康检查 |
+| `self_learning_background` | 查看、显式启用或暂停后台计划 |
+
+在当前项目中列出核心记忆，调用 `self_learning_memory`：
+
+```json
+{ "action": "list", "memoryLayer": "core", "limit": 20 }
 ```
 
-> **开发态 vs 发布态（v5）**：开发与审计直接跑源码（`index.js` + `lib/**` + `tools/**`），`npm run install-plugin` 拷贝源码目录即可。发布态走 `npm run build` 产出的 `dist/` zip——用户拖入 zip、启用即可，**无需 `npm install`**。详见 [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md)。
+搜索历史处理经验，调用同一只读工具：
 
-当前热路径基线（以有界运行规模 `N=100 = MAX_PATTERN_COUNT * 2` 为准）：
-
-| 指标 | 典型本地结果 |
-|---|---:|
-| `search_ms` | ~0.03 ms |
-| `decorate_ms` | ~0.02 ms |
-| `skill_render_ms` | ~0.03 ms |
-| `prune_ms` | ~0.05 ms |
-| `all_cold_ms` | ~0.03 ms |
-| `all_cached_ms` | ~0.00004 ms |
-| 冷启动 import | ~27 ms |
-
-`npm run perf` 是性能护栏，不是强制发布门，但很适合抓热路径回退。
-
-## 发布检查表
-
-发布前执行：
-
-```powershell
-npm run check
-npm test
-npm run benchmark
-npm run perf -- --json
-npm run release:check
+```json
+{ "action": "search", "query": "权限错误的处理经验", "memoryLayer": "all", "limit": 5 }
 ```
 
-`v5.1.11` 的预期结果：
+拿到实际记忆 ID 后查看来源：
+
+```json
+{ "action": "provenance", "id": "<实际记忆 ID>" }
+```
+
+修改、删除和批准应针对具体记忆明确提出。导入必须先取得 `preview_import` 返回的 `previewId`，再对同一份数据执行 `import`。
+
+## 数据、权限与默认行为
+
+程序和学习数据由宿主分别管理：
 
 ```text
-package version: 5.1.11
-npm run check: passed
-npm test: 1001 tests, 996 passed, 5 skipped, 0 failed
-npm run benchmark: passed, 17 scenarios
-npm run perf: passed, no threshold breaches
-npm run release:check: Score 100
-npm audit: 0 high/critical vulnerabilities
+<HANA_HOME>/
+├── apps/hanako-runtime-learner/       # App 程序，安装目录只读
+└── app-data/hanako-runtime-learner/   # 记忆、配置、日志、生成文件与导出
 ```
 
-在具备 symlink 创建权限的发布参考环境中，这 5 个边界测试应执行并通过；在普通 Windows 开发机上它们会被能力探测跳过。
+备份以 `self_learning_stats` 返回的实际 `dataDir` 为准。升级替换程序目录，卸载默认保留 App 数据。旧 v1 数据复制迁移的步骤见 [v2 迁移说明](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/V2_MIGRATION.md)，迁移工具默认预览，目标目录必须不存在或为空。
 
-发布门不会执行 `git tag`、`git push`、`npm publish` 或任何外部副作用，它只检查本地文件和发布就绪度。
+| 功能 | 默认行为 |
+| --- | --- |
+| 数据与检索 | 本地存储、本地检索；默认不调用模型、不直接联网 |
+| 自动记忆提示 | 开启配置且获得 Hook 授权后，使用相关、已批准的核心记忆；预算默认 600 tokens |
+| 待审核偏好 | 默认不参与自动提示 |
+| 模型整理与 LLM 抽取 | 默认关闭；显式开启后使用宿主工具模型，LLM 抽取结果进入待审链 |
+| 后台计划 | 用户显式启用后建立或恢复 |
+| 激活技能注册表注入 | 默认关闭，属于单独配置的能力；不能等同于已完成自动技能效果验证 |
+| 工作区自动修复与命令执行 | v2 App 适配层禁用 |
 
-## 文档索引
+App 按功能声明工具暴露、用量读取、提示钩子、模型推理、任务管理和会话文件交付能力。缺少可选授权时，对应功能关闭，可在 stats 中查看。基础检索和记忆管理不依赖模型推理授权。
 
-| 文档 | 用途 |
-|---|---|
-| [INSTALL.md](INSTALL.md) | 安装、升级、卸载和排障。 |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | 模块分层、数据流和治理链路。 |
-| [docs/GOVERNANCE.md](docs/GOVERNANCE.md) | 提案、审核、doctor 和审计治理。 |
-| [docs/ACTION_API.md](docs/ACTION_API.md) | 动作插件 API。 |
-| [docs/POLICY.md](docs/POLICY.md) | 风险分级与策略门。 |
-| [docs/TRANSACTION.md](docs/TRANSACTION.md) | 事务、验证与回滚模型。 |
-| [docs/SANDBOX.md](docs/SANDBOX.md) | 命令与文件系统边界。 |
-| [docs/SKILL_PROMOTION.md](docs/SKILL_PROMOTION.md) | 基于证据的技能晋升。 |
-| [docs/AUDIT.md](docs/AUDIT.md) | 审计事件、报表和导出。 |
-| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | 基准场景与解释。 |
-| [docs/MIGRATION_v3_to_v4.md](docs/MIGRATION_v3_to_v4.md) | v3 到 v4 迁移说明。 |
-| [docs/MIGRATION_v4_to_v5.md](docs/MIGRATION_v4_to_v5.md) | v4 到 v5 迁移说明。 |
-| [docs/LTS_MAINTENANCE_PLAN.md](docs/LTS_MAINTENANCE_PLAN.md) | v4.3.x LTS 与 v5 主线维护策略。 |
-| [docs/SUPPLY_CHAIN.md](docs/SUPPLY_CHAIN.md) | v5 构建依赖、dist/zip 和供应链说明。 |
-| [docs/PRIVACY.md](docs/PRIVACY.md) | LLM extraction、后台任务和本地数据隐私说明。 |
-| [docs/SECURITY_REVIEW-v5.0.0.md](docs/SECURITY_REVIEW-v5.0.0.md) | v5.0.0 安全复审。 |
-| [docs/DESIGN_GOAL_COMPLETION_MATRIX.md](docs/DESIGN_GOAL_COMPLETION_MATRIX.md) | 设计目标完成矩阵。 |
-| [docs/ACCEPTANCE-v5.1.11.md](docs/ACCEPTANCE-v5.1.11.md) | 当前版本验收记录。 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本历史。 |
+episode 的精简策略只针对来源摘要；其他学习日志与用户导出仍需按实际内容管理。逻辑删除会隐藏当前可用记录，旧日志及已有备份应单独处理。可选模型功能开启后，会将对应摘要交给宿主配置的工具模型处理。
 
-## 许可证
+## 版本与验证范围
 
-[MIT](LICENSE) © Sun
+本仓库维护 Hanako 产品；[Harness 产品](https://github.com/326sun/runtime-self-learning-harness)拥有独立仓库、安装包和发布节奏。
+
+仓库 `main` 保留 v5.1.11 兼容基线，**v6.2.0 的源码、文档和安装包以对应 tag / Release 为准**。根目录旧 manifest 与安装脚本属于 v1，当前 v2 App 使用上文的 ZIP 安装流程。
+
+以下为 v6.2.0 发布时记录的本地验证结果，依据[发布验收记录](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/ACCEPTANCE-v6.2.0.md)与[兼容审查](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/COMPATIBILITY-HANA-1.3.6-beta.md)：
+
+| 检查 | 记录结果 |
+| --- | --- |
+| 自动化测试总数 | 1069 |
+| 通过 / 跳过 / 失败 | 1064 / 5 / 0；跳过项受 Windows 符号链接权限限制 |
+| 代码检查、复杂度检查与构建 | 通过 |
+| 1.3.6-beta 官方 ZIP 静态校验 | 通过 |
+| 当次依赖审计 | 0 漏洞 |
+
+真实宿主多轮对话、Node 26 archive runtime smoke、后台任务跨重启、生产数据迁移及 macOS/Linux 验收尚未完成。上述自动化与静态检查结果不代表这些场景已经验收。
+
+<details>
+<summary>兼容基线的版本、默认配置与开发入口（v5.1.11）</summary>
+
+`main` 中的根目录 package、v1 manifest 和发布检查仍维护 v5.1.11 兼容基线。下列标记记录该基线的历史回归：1001 tests；当前提交的检查结果以 [GitHub Actions](https://github.com/326sun/runtime-learner-hanako/actions/workflows/ci.yml) 为准。v6.2.0 App 的安装与验收记录见上文。
+
+![兼容基线版本](https://img.shields.io/badge/version-5.1.11-blue)
+![兼容基线历史回归](https://img.shields.io/badge/tests-1001%2F1001-success)
+
+以下为共享学习核心的默认配置。v2 App 的宿主授权、后台计划显式启用和自动动作禁用规则仍按上文执行。
+
+| 配置项 | 默认值 | 作用 |
+| --- | --- | --- |
+| `governanceProfile` | `balanced` | 使用均衡治理档位 |
+| `autoInjectHighConfidence` | `true` | 允许满足门槛的记忆参与受预算限制的提示 |
+| `autoApproveHighConfidence` | `true` | 允许满足门槛的稳定模式进入快速审核路径 |
+| `minInjectScore` | `8` | 自动提示的最低评分 |
+| `minInjectCount` | `2` | 进入自动提示候选所需的最少重复次数 |
+| `includePendingPreferences` | `false` | 待审核偏好默认不进入提示 |
+| `modelAdvisorEnabled` | `false` | 模型整理默认关闭 |
+| `semanticSearchEnabled` | `false` | 可选语义搜索默认关闭 |
+| `llmExtractionEnabled` | `false` | 模型抽取默认关闭 |
+| `adaptiveThresholdsEnabled` | `false` | 默认使用固定策略阈值 |
+
+维护兼容基线时，检出对应版本：
+
+```powershell
+git clone --branch v5.1.11 https://github.com/326sun/runtime-learner-hanako.git
+```
+
+</details>
+
+## 开发与许可
+
+检出当前 App 对应源码：
+
+```powershell
+git clone --branch v6.2.0 https://github.com/326sun/runtime-learner-hanako.git
+cd runtime-learner-hanako
+npm ci --ignore-scripts
+npm run check
+npm test
+npm run build:app
+```
+
+App 打包与官方校验需要宿主开发工具，相关步骤见 [v2 迁移与验证说明](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/docs/V2_MIGRATION.md)。
+
+插件主体采用 [MIT License](LICENSE)。内联的官方 App SDK 采用 Apache-2.0，详见[第三方声明](https://github.com/326sun/runtime-learner-hanako/blob/v6.2.0/app/hanako-runtime-learner/THIRD_PARTY_NOTICES.md)。
